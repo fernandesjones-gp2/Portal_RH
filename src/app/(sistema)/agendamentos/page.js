@@ -66,6 +66,15 @@ export default function AgendamentosPage() {
     const { data: { session } } = await supabase.auth.getSession();
     const responsible_id = session?.user?.id || null; 
 
+    // NO MOMENTO DO AGENDAMENTO: Se houver uma conta logada real, garante a existência dela na tabela pública antes de criar o vínculo
+    if (responsible_id) {
+      await supabase.from('users').upsert({
+        id: responsible_id,
+        email: session.user.email,
+        name: session.user.user_metadata?.full_name || session.user.email
+      });
+    }
+
     const { data, error } = await supabase.from('candidates').insert([
       { ...formData, responsible_id }
     ]).select();
@@ -90,7 +99,6 @@ export default function AgendamentosPage() {
     const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
     window.open(calUrl, '_blank');
   }
-
   async function changeStatus(id, newStatus) {
     const { error } = await supabase.from('candidates').update({ status: newStatus }).eq('id', id);
     if (!error) fetchData();
