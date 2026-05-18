@@ -1,22 +1,88 @@
 'use client';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Users, UserCheck, Clock, TrendingUp } from 'lucide-react';
 
-const data = [
-  { name: 'Jan', admitidos: 12, reprovados: 4 },
-  { name: 'Fev', admitidos: 19, reprovados: 7 },
-  { name: 'Mar', admitidos: 15, reprovados: 5 },
-  { name: 'Abr', admitidos: 22, reprovados: 8 },
-  { name: 'Mai', admitidos: 28, reprovados: 10 },
-];
-
 export default function DashboardPage() {
+  const [metrics, setMetrics] = useState({
+    totalCandidates: 0,
+    admittedCount: 0,
+    approvalRate: 0,
+    chartData: []
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        // Busca o status e a data de criação de todos os candidatos
+        const { data: candidates, error } = await supabase
+          .from('candidates')
+          .select('status, created_at');
+
+        if (error) throw error;
+
+        if (candidates) {
+          const total = candidates.length;
+          const admitted = candidates.filter(c => c.status === 'Concluído').length;
+          const rate = total > 0 ? Math.round((admitted / total) * 100) : 0;
+
+          // Mapeamento de meses em português
+          const monthsMap = {
+            0: 'Jan', 1: 'Fev', 2: 'Mar', 3: 'Abr', 4: 'Mai', 5: 'Jun',
+            6: 'Jul', 7: 'Ago', 8: 'Set', 9: 'Out', 10: 'Nov', 11: 'Dez'
+          };
+
+          // Inicializa os meses padrão para o gráfico não iniciar totalmente vazio
+          const defaultMonths = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai'];
+          const grouped = {};
+          
+          defaultMonths.forEach(m => {
+            grouped[m] = { name: m, admitidos: 0, reprovados: 0 };
+          });
+
+          // Contabiliza os candidatos reais por mês e status
+          candidates.forEach(c => {
+            const date = new Date(c.created_at);
+            const monthName = monthsMap[date.getMonth()];
+            
+            if (monthName) {
+              if (!grouped[monthName]) {
+                grouped[monthName] = { name: monthName, admitidos: 0, reprovados: 0 };
+              }
+              if (c.status === 'Concluído') grouped[monthName].admitidos++;
+              if (c.status === 'Reprovado') grouped[monthName].reprovados++;
+            }
+          });
+
+          setMetrics({
+            totalCandidates: total,
+            admittedCount: admitted,
+            approvalRate: rate,
+            chartData: Object.values(grouped)
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao carregar dados do dashboard:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, []);
+
   const kpis = [
-    { title: 'Total de Candidatos', value: '148', icon: <Users size={24} color="var(--saritur-orange)" />, trend: '+12% este mês' },
-    { title: 'Admitidos', value: '96', icon: <UserCheck size={24} color="var(--success-color)" />, trend: '+5% este mês' },
-    { title: 'Tempo Médio (Leadtime)', value: '14 dias', icon: <Clock size={24} color="var(--saritur-yellow)" />, trend: '-2 dias este mês' },
-    { title: 'Taxa de Aprovação', value: '64%', icon: <TrendingUp size={24} color="var(--saritur-brown)" />, trend: '+2% este mês' },
+    { title: 'Total de Candidatos Real', value: metrics.totalCandidates, icon: <Users size={24} color="var(--saritur-orange)" />, trend: 'Dados em tempo real' },
+    { title: 'Admitidos Real', value: metrics.admittedCount, icon: <UserCheck size={24} color="var(--success-color)" />, trend: 'Processos concluídos' },
+    { title: 'Tempo Médio (Leadtime)', value: 'Apurando', icon: <Clock size={24} color="var(--saritur-yellow)" />, trend: 'Necessita histórico' },
+    { title: 'Taxa de Aprovação Real', value: `${metrics.approvalRate}%`, icon: <TrendingUp size={24} color="var(--saritur-brown)" />, trend: 'Média geral' },
   ];
+
+  if (loading) {
+    return <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Carregando métricas reais do banco de dados...</p>;
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -41,10 +107,10 @@ export default function DashboardPage() {
       {/* Charts Area */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
         <div style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Visão Geral de Contratações (2026)</h3>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Visão Geral de Contratações Real</h3>
           <div style={{ height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data}>
+              <BarChart data={metrics.chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontFamily: 'Sora'}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontFamily: 'Sora'}} />
@@ -57,15 +123,15 @@ export default function DashboardPage() {
         </div>
 
         <div style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Evolução do Leadtime</h3>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Histórico Mensal</h3>
           <div style={{ height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
+              <LineChart data={metrics.chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontFamily: 'Sora'}} />
-                <YAxis axisLine={false} tickLine={false} domain={[0, 25]} tick={{fill: 'var(--text-muted)', fontFamily: 'Sora'}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontFamily: 'Sora'}} />
                 <Tooltip contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontFamily: 'Sora'}} />
-                <Line type="monotone" dataKey="admitidos" stroke="var(--saritur-brown)" strokeWidth={3} dot={{ r: 4, fill: 'var(--surface-color)', strokeWidth: 2 }} name="Dias" />
+                <Line type="monotone" dataKey="admitidos" stroke="var(--saritur-brown)" strokeWidth={3} dot={{ r: 4, fill: 'var(--surface-color)', strokeWidth: 2 }} name="Admitidos" />
               </LineChart>
             </ResponsiveContainer>
           </div>
