@@ -230,7 +230,7 @@ export default function AgendamentosPage() {
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label>
-                  <input type="text" style={{ width: '100%' }} value={formData.mother_name} onChange={e => setFormData({...formData, mother_name: e.target.value})} />
+                  <input required type="text" style={{ width: '100%' }} value={formData.mother_name} onChange={e => setFormData({...formData, mother_name: e.target.value})} />
                 </div>
               </div>
 
@@ -245,7 +245,7 @@ export default function AgendamentosPage() {
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label>
-                  <input type="text" style={{ width: '100%' }} value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} />
+                  <input required type="text" style={{ width: '100%' }} value={formData.rg} onChange={e => setFormData({...formData, rg: e.target.value})} />
                 </div>
               </div>
 
