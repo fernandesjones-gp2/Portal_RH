@@ -106,7 +106,7 @@ export default function PipelineAdmissaoPage() {
     fetchData();
   }
 
-  const handleDateChange = (val) => val ? new Date(val).toISOString() : null;
+  const handleDateChange = (val) => val ? new Date(val + 'T12:00:00').toISOString() : null;
   const formatInputDate = (isoString) => isoString ? isoString.split('T')[0] : '';
 
   async function handleSaveEditing(e) {
@@ -180,13 +180,13 @@ export default function PipelineAdmissaoPage() {
     setAdmissionDate('');
   };
 
-  const handleGridConfirmAdmission = async (e) => {
+const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
 
     const { error } = await supabase.from('candidates').update({ 
       status: 'Pré-Admissão (Pronto)',
-      admission_date: new Date(admissionDate).toISOString()
+      admission_date: new Date(admissionDate + 'T12:00:00').toISOString()
     }).eq('id', admissionModalCandidate.id);
 
     if (!error) {
