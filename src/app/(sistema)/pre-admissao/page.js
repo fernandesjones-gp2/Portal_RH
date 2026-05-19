@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, Calendar, ArrowRight } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, Calendar, ArrowRight, ThumbsDown } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [candidates, setCandidates] = useState([]);
@@ -16,6 +16,10 @@ export default function PipelineAdmissaoPage() {
   // Modal de Transição Manual (Data de Admissão)
   const [admissionModalCandidate, setAdmissionModalCandidate] = useState(null);
   const [admissionDate, setAdmissionDate] = useState('');
+
+  // Modal de Interrupção Direta (Reprovar/Cancelar)
+  const [rejectCandidate, setRejectCandidate] = useState(null);
+  const [rejectForm, setRejectForm] = useState({ reason: '', notes: '' });
 
   // Filtros
   const [filterProcessType, setFilterProcessType] = useState('');
@@ -144,6 +148,28 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
+  // Interrupção/Reprovação Direta do Pipeline
+  async function handleConfirmReject(e) {
+    e.preventDefault();
+    if (!rejectForm.reason) return alert('Selecione o motivo principal.');
+
+    const rejectionText = `\n[CANCELADO NO PIPELINE] Motivo: ${rejectForm.reason}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
+    const newFeedback = (rejectCandidate.feedback || '') + rejectionText;
+
+    const { error } = await supabase.from('candidates').update({ 
+      status: 'Reprovado',
+      feedback: newFeedback
+    }).eq('id', rejectCandidate.id);
+
+    if (!error) {
+      setRejectCandidate(null);
+      setRejectForm({ reason: '', notes: '' });
+      fetchData();
+    } else {
+      alert('Erro ao interromper processo: ' + error.message);
+    }
+  }
+
   // Transição Manual Bloco 2 -> Bloco 3
   const handleOpenAdmissionModal = (c) => {
     if (c.medical_status !== 'Apto') {
@@ -154,7 +180,7 @@ export default function PipelineAdmissaoPage() {
     setAdmissionDate('');
   };
 
-  const handleConfirmAdmission = async (e) => {
+  const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
 
@@ -191,7 +217,6 @@ export default function PipelineAdmissaoPage() {
     }
   };
 
-  // Componente de Card reutilizável para os blocos
   const renderCard = (c, isBloco3 = false) => (
     <div key={c.id} className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderLeft: isBloco3 ? '3px solid var(--success-color)' : 'none' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -199,7 +224,7 @@ export default function PipelineAdmissaoPage() {
           <h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
           <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Observações">
             <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
           </button>
@@ -208,6 +233,10 @@ export default function PipelineAdmissaoPage() {
               <Settings2 size={12} /> Editar
             </button>
           )}
+          {/* BOTÃO OPÇÃO DE INTERROMPER/REPROVAR EM QUALQUE ETAPA */}
+          <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper/Cancelar Processo">
+            <ThumbsDown size={12} />
+          </button>
         </div>
       </div>
 
@@ -236,7 +265,6 @@ export default function PipelineAdmissaoPage() {
         </div>
       </div>
 
-      {/* Botões de Ação Específicos por Bloco */}
       {!isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
         <div style={{ marginTop: '0.5rem' }}>
           <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
@@ -268,7 +296,6 @@ export default function PipelineAdmissaoPage() {
         </button>
       </div>
 
-      {/* BARRA DE FILTROS */}
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
         <Filter size={20} color="var(--text-muted)" />
         <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
@@ -301,7 +328,6 @@ export default function PipelineAdmissaoPage() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', overflowX: 'auto', paddingBottom: '1rem' }}>
           
-          {/* BLOCO 1: EM ANDAMENTO */}
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
               <AlertCircle size={20} color="var(--saritur-orange)" />
@@ -313,7 +339,6 @@ export default function PipelineAdmissaoPage() {
             </div>
           </div>
 
-          {/* BLOCO 2: PRÉ-ADMISSÃO */}
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
               <Check size={20} color="var(--saritur-yellow)" />
@@ -325,7 +350,6 @@ export default function PipelineAdmissaoPage() {
             </div>
           </div>
 
-          {/* BLOCO 3: PRONTOS */}
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
               <CheckCircle2 size={20} color="var(--success-color)" />
@@ -449,7 +473,7 @@ export default function PipelineAdmissaoPage() {
               O candidato <strong>{admissionModalCandidate.name}</strong> cumpriu todas as exigências. Defina a data da admissão para enviá-lo ao 3º Bloco.
             </p>
 
-            <form onSubmit={handleConfirmAdmission} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <form onSubmit={handleGridConfirmAdmission} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
                 <input required type="date" style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
@@ -458,6 +482,49 @@ export default function PipelineAdmissaoPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Confirmar e Mover</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: INTERROMPER PROCESSO DIRETAMENTE DO PIPELINE */}
+      {rejectCandidate && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Interromper Processo</h2>
+              <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
+            
+            <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento/Reprovação *</label>
+                <select required style={{ width: '100%' }} value={rejectForm.reason} onChange={e => setRejectForm({...rejectForm, reason: e.target.value})}>
+                  <option value="">-- Selecione um motivo --</option>
+                  <option value="Reprovado na Análise Administrativa">Reprovado na Análise Administrativa</option>
+                  <option value="Inapto no Exame Médico">Inapto no Exame Médico</option>
+                  <option value="Desistência do Candidato">Desistência do Candidato</option>
+                  <option value="Documentação Pendente/Irregular">Documentação Pendente/Irregular</option>
+                  <option value="Erro de Cadastro / Duplicidade">Erro de Cadastro / Duplicidade</option>
+                  <option value="Outros">Outros</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
+                <textarea 
+                  style={{ width: '100%', minHeight: '80px' }} 
+                  placeholder="Detalhes adicionais sobre a interrupção do processo..."
+                  value={rejectForm.notes} 
+                  onChange={e => setRejectForm({...rejectForm, notes: e.target.value})}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
               </div>
             </form>
           </div>
