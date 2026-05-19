@@ -11,7 +11,7 @@ export default function AgendamentosPage() {
   const [loading, setLoading] = useState(true);
   
   // Controle de Abas
-  const [currentTab, setCurrentTab] = useState('Agendado'); // 'Agendado' ou 'Banco de Talentos'
+  const [currentTab, setCurrentTab] = useState('Agendado'); // 'Agendado', 'Banco de Talentos' ou 'Reprovado'
 
   // Controle de Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,9 +35,9 @@ export default function AgendamentosPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Busca Agendados e Banco de Talentos
+      // Busca Agendados, Banco de Talentos e Reprovados
       const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
-        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos']).order('created_at', { ascending: false }),
+        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos', 'Reprovado']).order('created_at', { ascending: false }),
         supabase.from('units').select('*'),
         supabase.from('job_roles').select('*'),
         supabase.from('users').select('*')
@@ -155,7 +155,7 @@ export default function AgendamentosPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Processos Seletivos</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Gerencie as entrevistas e o banco de talentos.</p>
+          <p style={{ color: 'var(--text-muted)' }}>Gerencie as entrevistas, banco de talentos e histórico.</p>
         </div>
         <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
           <Plus size={20} /> Novo Candidato
@@ -163,7 +163,7 @@ export default function AgendamentosPage() {
       </div>
 
       {/* ABAS (TABS) */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
         <button 
           className={currentTab === 'Agendado' ? 'btn-primary' : 'btn-secondary'} 
           onClick={() => setCurrentTab('Agendado')}
@@ -176,6 +176,13 @@ export default function AgendamentosPage() {
           style={{ backgroundColor: currentTab === 'Banco de Talentos' ? 'var(--saritur-brown)' : 'white' }}
         >
           Banco de Talentos / Reservas
+        </button>
+        <button 
+          className={currentTab === 'Reprovado' ? 'btn-primary' : 'btn-secondary'} 
+          onClick={() => setCurrentTab('Reprovado')}
+          style={{ backgroundColor: currentTab === 'Reprovado' ? 'var(--danger-color)' : 'white', color: currentTab === 'Reprovado' ? 'white' : 'var(--text-main)' }}
+        >
+          Reprovados / Cancelados
         </button>
       </div>
 
@@ -209,8 +216,8 @@ export default function AgendamentosPage() {
       ) : (
         <div style={{ display: 'grid', gap: '1rem' }}>
           {filteredCandidates.map((c) => (
-            <div key={c.id} style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
+            <div key={c.id} style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                   <span style={{ backgroundColor: c.process_type === 'Promoção' ? 'var(--saritur-yellow)' : 'var(--saritur-orange)', color: c.process_type === 'Promoção' ? 'black' : 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
                     {c.process_type}
@@ -221,26 +228,32 @@ export default function AgendamentosPage() {
                 <p style={{ color: 'var(--text-main)', fontSize: '0.875rem', fontWeight: '500', marginTop: '0.5rem' }}>
                   Entrevista: {new Date(c.interview_date).toLocaleString('pt-BR')} • Resp: {c.users?.name || 'N/A'}
                 </p>
+                
+                {/* Exibir o motivo da reprovação destacado se estiver na aba de Reprovados */}
+                {currentTab === 'Reprovado' && c.feedback && (
+                   <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--danger-color)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                     <strong>Histórico / Reprovação:</strong> {c.feedback}
+                   </div>
+                )}
               </div>
 
               {/* BOTÕES DE AÇÃO DEPENDENDO DA ABA */}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button className="btn-secondary" onClick={() => openFeedbackModal(c)} title="Parecer / Histórico"><MessageSquare size={16} /></button>
                 
-                {currentTab === 'Agendado' ? (
+                {currentTab === 'Agendado' && (
                   <>
                     <button className="btn-secondary" onClick={() => setEditingCandidate(c)} title="Editar Cadastro"><Edit2 size={16} /></button>
                     <button className="btn-secondary" onClick={() => changeStatus(c.id, 'Banco de Talentos')} title="Mover para Banco de Talentos"><Database size={16} /></button>
                     <button className="btn-secondary" onClick={() => handleApprove(c)} style={{ color: 'var(--success-color)', borderColor: 'var(--success-color)' }} title="Aprovar (Avançar)"><ThumbsUp size={16} /></button>
                     <button className="btn-secondary" onClick={() => setRejectCandidate(c)} style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Reprovar / Cancelar"><ThumbsDown size={16} /></button>
                   </>
-                ) : (
-                  <>
-                    {/* Ações exclusivas para o Banco de Talentos */}
-                    <button className="btn-primary" onClick={() => changeStatus(c.id, 'Agendado')} style={{ backgroundColor: 'var(--saritur-orange)' }} title="Retomar Processo">
-                      <RotateCcw size={16} /> Retomar Processo
-                    </button>
-                  </>
+                )}
+                
+                {(currentTab === 'Banco de Talentos' || currentTab === 'Reprovado') && (
+                  <button className="btn-primary" onClick={() => changeStatus(c.id, 'Agendado')} style={{ backgroundColor: 'var(--saritur-orange)' }} title="Retomar Processo">
+                    <RotateCcw size={16} /> Retomar Processo
+                  </button>
                 )}
               </div>
             </div>
@@ -258,7 +271,6 @@ export default function AgendamentosPage() {
             </div>
             
             <form onSubmit={editingCandidate ? handleUpdateCandidate : handleSaveCandidate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* O formulário usa o editingCandidate se ele existir, senão usa o formData normal */}
               {(() => {
                 const data = editingCandidate || formData;
                 const setData = editingCandidate ? setEditingCandidate : setFormData;
