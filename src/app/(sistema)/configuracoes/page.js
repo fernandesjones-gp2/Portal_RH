@@ -11,6 +11,7 @@ export default function ConfiguracoesPage() {
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
   const [usersList, setUsersList] = useState([]);
+  const [permissions, setPermissions] = useState([]);
 
   // Seleção dos Dropdowns (Muitos dados)
   const [selectedUnitId, setSelectedUnitId] = useState('');
@@ -24,17 +25,25 @@ export default function ConfiguracoesPage() {
   // Estados de Edição
   const [editingUnit, setEditingUnit] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
-  const [editingUser, setEditingUser] = useState(null);
 
   // Configurações do Dashboard (Metas salvas no LocalStorage para persistência simples)
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
   // Lista oficial de Perfis de Acesso (ENUM do Banco)
   const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
+  
+  // Lista de Menus para a Matriz de Permissões
+  const menusAcessiveis = [
+    { path: '/dashboard', label: 'Dashboard' },
+    { path: '/agendamentos', label: 'Agendamentos' },
+    { path: '/pre-admissao', label: 'Pipeline de Admissão' },
+    { path: '/promocoes', label: 'Promoções' },
+    { path: '/concluidos', label: 'Concluídos' },
+    { path: '/configuracoes', label: 'Configurações' }
+  ];
 
   useEffect(() => {
     checkAccessAndFetchData();
-    // Carrega metas salvas do dashboard
     const savedTargets = localStorage.getItem('portal_rh_targets');
     if (savedTargets) setDashTargets(JSON.parse(savedTargets));
   }, []);
@@ -64,16 +73,6 @@ export default function ConfiguracoesPage() {
     }
   }
 
-const [permissions, setPermissions] = useState([]);
-  const menusAcessiveis = [
-    { path: '/dashboard', label: 'Dashboard' },
-    { path: '/agendamentos', label: 'Agendamentos' },
-    { path: '/pre-admissao', label: 'Pipeline de Admissão' },
-    { path: '/promocoes', label: 'Promoções' },
-    { path: '/concluidos', label: 'Concluídos' },
-    { path: '/configuracoes', label: 'Configurações' }
-  ];
-
   async function fetchAllData() {
     const [unitsRes, rolesRes, usersRes, permsRes] = await Promise.all([
       supabase.from('units').select('*').order('name'),
@@ -90,13 +89,11 @@ const [permissions, setPermissions] = useState([]);
   // Função para marcar/desmarcar o acesso
   async function togglePermission(role, menu_path, hasPermission) {
     if (hasPermission) {
-      // Se tinha, remove a permissão
       await supabase.from('role_permissions').delete().match({ role, menu_path });
     } else {
-      // Se não tinha, adiciona a permissão
       await supabase.from('role_permissions').insert([{ role, menu_path }]);
     }
-    fetchAllData(); // Atualiza a tela
+    fetchAllData();
   }
 
   // --- CONTROLE DE DADOS BASE: UNIDADES (DROPDOWN) ---
@@ -152,10 +149,9 @@ const [permissions, setPermissions] = useState([]);
   // --- GESTÃO E CRIAÇÃO DE USUÁRIOS (CONTROLE DE ACESSO) ---
   async function handleCreateUser(e) {
     e.preventDefault();
-    // Criação manual/Pré-cadastro: Vincula pelo e-mail institucional quando o funcionário acessar via Google
     const { error } = await supabase.from('users').insert([
       { 
-        id: supabase.auth.uid ? undefined : crypto.randomUUID(), // ID temporário caso não use o Auth da API corporativa
+        id: supabase.auth.uid ? undefined : crypto.randomUUID(), 
         email: newUser.email.toLowerCase(), 
         name: newUser.name, 
         role: newUser.role, 
@@ -183,46 +179,7 @@ const [permissions, setPermissions] = useState([]);
     if (error) alert('Erro ao remover: ' + error.message);
     else fetchAllData();
   }
-{/* NOVO BLOCO: MATRIZ DE ACESSO (PERMISSÕES POR PERFIL) */}
-      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
-        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <ShieldAlert size={20} color="var(--saritur-orange)" /> Matriz de Permissões (Acesso a Menus)
-        </h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Marque quais telas cada perfil de usuário tem permissão para acessar no menu lateral.</p>
-        
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'center' }}>
-                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Perfil / Telas</th>
-                {menusAcessiveis.map(menu => (
-                  <th key={menu.path} style={{ padding: '0.75rem', fontWeight: '600' }}>{menu.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {availableRoles.map(role => (
-                <tr key={role} style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'center' }}>
-                  <td style={{ padding: '0.75rem', fontWeight: '600', textAlign: 'left' }}>{role}</td>
-                  {menusAcessiveis.map(menu => {
-                    const hasPerm = permissions.some(p => p.role === role && p.menu_path === menu.path);
-                    return (
-                      <td key={`${role}-${menu.path}`} style={{ padding: '0.75rem' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={hasPerm}
-                          onChange={() => togglePermission(role, menu.path, hasPerm)}
-                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }}
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
   // --- CONFIGURAÇÃO DE INDICADORES DO DASHBOARD ---
   function handleSaveTargets(e) {
     e.preventDefault();
@@ -400,6 +357,47 @@ const [permissions, setPermissions] = useState([]);
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                     <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }} title="Excluir Usuário"><Trash2 size={14} /></button>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* NOVO BLOCO: MATRIZ DE ACESSO (PERMISSÕES POR PERFIL) */}
+      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <ShieldAlert size={20} color="var(--saritur-orange)" /> Matriz de Permissões (Acesso a Menus)
+        </h2>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Marque quais telas cada perfil de usuário tem permissão para acessar no menu lateral.</p>
+        
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'center' }}>
+                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Perfil / Telas</th>
+                {menusAcessiveis.map(menu => (
+                  <th key={menu.path} style={{ padding: '0.75rem', fontWeight: '600' }}>{menu.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {availableRoles.map(role => (
+                <tr key={role} style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'center' }}>
+                  <td style={{ padding: '0.75rem', fontWeight: '600', textAlign: 'left' }}>{role}</td>
+                  {menusAcessiveis.map(menu => {
+                    const hasPerm = permissions.some(p => p.role === role && p.menu_path === menu.path);
+                    return (
+                      <td key={`${role}-${menu.path}`} style={{ padding: '0.75rem' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={hasPerm}
+                          onChange={() => togglePermission(role, menu.path, hasPerm)}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }}
+                        />
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
