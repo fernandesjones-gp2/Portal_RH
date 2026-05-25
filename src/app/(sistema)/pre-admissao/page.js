@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, Calendar, ArrowRight, ThumbsDown } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -22,6 +22,10 @@ export default function PipelineAdmissaoPage() {
   // Modal de Interrupção Direta (Reprovar/Cancelar)
   const [rejectCandidate, setRejectCandidate] = useState(null);
   const [rejectForm, setRejectForm] = useState({ reason: '', notes: '' });
+
+  // Modal de Mensagem / Feedback rápido
+  const [feedbackCandidate, setFeedbackCandidate] = useState(null);
+  const [feedbackText, setFeedbackText] = useState('');
 
   // Filtros
   const [filterProcessType, setFilterProcessType] = useState('');
@@ -93,12 +97,10 @@ export default function PipelineAdmissaoPage() {
     else setExpandedNotes([...expandedNotes, id]);
   };
 
-  // --- FUNÇÃO ATUALIZADA: DOWNLOAD .XLS COM TODOS OS DADOS ---
   async function requestAnalysisBatch() {
     const listToRequest = bloco1.filter(c => c.analysis_status === 'Pendente' && c.process_type !== 'Promoção');
     if (listToRequest.length === 0) return alert('Nenhum candidato no bloco 1 aguardando análise administrativa.');
     
-    // 1. Gera o conteúdo da tabela HTML compatível com Excel (.XLS)
     let htmlContent = `
       <html xmlns:x="urn:schemas-microsoft-com:office:excel">
         <head>
@@ -128,7 +130,6 @@ export default function PipelineAdmissaoPage() {
     `;
 
     listToRequest.forEach(c => {
-      // Formatação amigável das datas
       const createdAt = c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '';
       const interviewDate = c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
       
@@ -152,7 +153,6 @@ export default function PipelineAdmissaoPage() {
 
     htmlContent += `</table></body></html>`;
 
-    // 2. Transforma em um arquivo blob e força o download
     const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -164,7 +164,6 @@ export default function PipelineAdmissaoPage() {
     link.click();
     document.body.removeChild(link);
 
-    // 3. Informa o usuário e atualiza o banco de dados para "Solicitada"
     alert(`O arquivo Excel (${fileName}) contendo todos os dados dos candidatos foi baixado. O status deles será atualizado para "Solicitada" agora.`);
     
     for (const c of listToRequest) {
@@ -174,7 +173,6 @@ export default function PipelineAdmissaoPage() {
       }).eq('id', c.id);
     }
     
-    // 4. Recarrega a tela com os status atualizados
     fetchData();
   }
 
@@ -274,6 +272,29 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
+  function openFeedbackModal(c) {
+    setFeedbackCandidate(c);
+    setFeedbackText('');
+  }
+
+  async function handleSaveFeedback(e) {
+    e.preventDefault();
+    if(!feedbackText) return;
+    
+    const newNote = `\n[${currentUserRole}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
+    const updatedFeedback = (feedbackCandidate.feedback || '') + newNote;
+
+    const { error } = await supabase.from('candidates').update({ feedback: updatedFeedback }).eq('id', feedbackCandidate.id);
+    
+    if (!error) {
+      setFeedbackCandidate(null);
+      setFeedbackText('');
+      fetchData();
+    } else {
+      alert('Erro ao salvar mensagem: ' + error.message);
+    }
+  }
+
   const getStatusColor = (status) => {
     switch(status) {
       case 'Aprovado': 
@@ -294,24 +315,39 @@ export default function PipelineAdmissaoPage() {
           <h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Observações">
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          
+          {/* Botão de Ver Mensagens (Liberado para Todos) */}
+          <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico/Observações">
             <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
           </button>
-          {!isBloco3 && (
+          
+          {/* Botão de Adicionar Mensagem (Liberado para Recrutadores, ou para o DP caso esteja no Bloco 3) */}
+          {(currentUserRole !== 'DP' || isBloco3) && (
+            <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem/Observação">
+              <MessageSquare size={14} color="var(--text-main)" />
+            </button>
+          )}
+
+          {/* Botão de Editar (Oculto para o DP) */}
+          {currentUserRole !== 'DP' && !isBloco3 && (
             <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.3rem 0.5rem', fontSize: '0.7rem' }}>
               <Settings2 size={12} /> Editar
             </button>
           )}
-          <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper/Cancelar Processo">
-            <ThumbsDown size={12} />
-          </button>
+
+          {/* Botão de Interromper Processo (Oculto para o DP) */}
+          {currentUserRole !== 'DP' && (
+            <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper/Cancelar Processo">
+              <ThumbsDown size={12} />
+            </button>
+          )}
         </div>
       </div>
 
       {expandedNotes.includes(c.id) && (
-        <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)' }}>
-          <p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Observações:</p>
+        <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
+          <p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Histórico:</p>
           <p style={{ color: 'var(--text-muted)' }}>{c.feedback || 'Nenhuma observação registrada.'}</p>
         </div>
       )}
@@ -334,7 +370,8 @@ export default function PipelineAdmissaoPage() {
         </div>
       </div>
 
-      {!isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
+      {/* Botão Definir Data Admissão (Oculto para DP) */}
+      {currentUserRole !== 'DP' && !isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
         <div style={{ marginTop: '0.5rem' }}>
           <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
             Definir Data Admissão <ArrowRight size={14} style={{ marginLeft: '4px' }}/>
@@ -342,9 +379,10 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {isBloco3 && (
+      {/* Botão Concluir Admissão (Apenas ADMIN e DP) */}
+      {isBloco3 && ['ADMIN', 'DP'].includes(currentUserRole) && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
-          <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>
+          <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--success-color)' }}>
             <FileCheck size={14} /> Concluir Admissão
           </button>
         </div>
@@ -527,6 +565,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
+      {/* ADMISSION MODAL */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -549,6 +588,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
+      {/* REJECT MODAL */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -577,6 +617,36 @@ export default function PipelineAdmissaoPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FEEDBACK (MENSAGEM) MODAL */}
+      {feedbackCandidate && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Adicionar Mensagem</h2>
+              <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+            <form onSubmit={handleSaveFeedback} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                  Deixe uma observação no histórico de <strong>{feedbackCandidate.name}</strong> para o restante da equipe.
+                </p>
+                <textarea 
+                  required
+                  style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} 
+                  placeholder="Sua mensagem..."
+                  value={feedbackText} 
+                  onChange={e => setFeedbackText(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+                <button type="button" className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button>
+                <button type="submit" className="btn-primary">Salvar Mensagem</button>
               </div>
             </form>
           </div>
