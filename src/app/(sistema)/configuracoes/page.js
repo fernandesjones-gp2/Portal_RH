@@ -64,15 +64,39 @@ export default function ConfiguracoesPage() {
     }
   }
 
+const [permissions, setPermissions] = useState([]);
+  const menusAcessiveis = [
+    { path: '/dashboard', label: 'Dashboard' },
+    { path: '/agendamentos', label: 'Agendamentos' },
+    { path: '/pre-admissao', label: 'Pipeline de Admissão' },
+    { path: '/promocoes', label: 'Promoções' },
+    { path: '/concluidos', label: 'Concluídos' },
+    { path: '/configuracoes', label: 'Configurações' }
+  ];
+
   async function fetchAllData() {
-    const [unitsRes, rolesRes, usersRes] = await Promise.all([
+    const [unitsRes, rolesRes, usersRes, permsRes] = await Promise.all([
       supabase.from('units').select('*').order('name'),
       supabase.from('job_roles').select('*').order('name'),
-      supabase.from('users').select(`*, units(name)`).order('name')
+      supabase.from('users').select(`*, units(name)`).order('name'),
+      supabase.from('role_permissions').select('*')
     ]);
     if (unitsRes.data) setUnits(unitsRes.data);
     if (rolesRes.data) setRoles(rolesRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
+    if (permsRes.data) setPermissions(permsRes.data);
+  }
+
+  // Função para marcar/desmarcar o acesso
+  async function togglePermission(role, menu_path, hasPermission) {
+    if (hasPermission) {
+      // Se tinha, remove a permissão
+      await supabase.from('role_permissions').delete().match({ role, menu_path });
+    } else {
+      // Se não tinha, adiciona a permissão
+      await supabase.from('role_permissions').insert([{ role, menu_path }]);
+    }
+    fetchAllData(); // Atualiza a tela
   }
 
   // --- CONTROLE DE DADOS BASE: UNIDADES (DROPDOWN) ---
@@ -159,7 +183,46 @@ export default function ConfiguracoesPage() {
     if (error) alert('Erro ao remover: ' + error.message);
     else fetchAllData();
   }
-
+{/* NOVO BLOCO: MATRIZ DE ACESSO (PERMISSÕES POR PERFIL) */}
+      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <ShieldAlert size={20} color="var(--saritur-orange)" /> Matriz de Permissões (Acesso a Menus)
+        </h2>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Marque quais telas cada perfil de usuário tem permissão para acessar no menu lateral.</p>
+        
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'center' }}>
+                <th style={{ padding: '0.75rem', textAlign: 'left' }}>Perfil / Telas</th>
+                {menusAcessiveis.map(menu => (
+                  <th key={menu.path} style={{ padding: '0.75rem', fontWeight: '600' }}>{menu.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {availableRoles.map(role => (
+                <tr key={role} style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'center' }}>
+                  <td style={{ padding: '0.75rem', fontWeight: '600', textAlign: 'left' }}>{role}</td>
+                  {menusAcessiveis.map(menu => {
+                    const hasPerm = permissions.some(p => p.role === role && p.menu_path === menu.path);
+                    return (
+                      <td key={`${role}-${menu.path}`} style={{ padding: '0.75rem' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={hasPerm}
+                          onChange={() => togglePermission(role, menu.path, hasPerm)}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
   // --- CONFIGURAÇÃO DE INDICADORES DO DASHBOARD ---
   function handleSaveTargets(e) {
     e.preventDefault();
