@@ -93,7 +93,7 @@ export default function PipelineAdmissaoPage() {
     else setExpandedNotes([...expandedNotes, id]);
   };
 
-  // --- FUNÇÃO ATUALIZADA: DOWNLOAD .XLS E ATUALIZAÇÃO AUTOMÁTICA ---
+  // --- FUNÇÃO ATUALIZADA: DOWNLOAD .XLS COM TODOS OS DADOS ---
   async function requestAnalysisBatch() {
     const listToRequest = bloco1.filter(c => c.analysis_status === 'Pendente' && c.process_type !== 'Promoção');
     if (listToRequest.length === 0) return alert('Nenhum candidato no bloco 1 aguardando análise administrativa.');
@@ -104,33 +104,48 @@ export default function PipelineAdmissaoPage() {
         <head>
           <meta charset="utf-8">
           <style>
-            table { border-collapse: collapse; }
-            th { background-color: #F37137; color: white; font-weight: bold; border: 1px solid #000; padding: 5px; }
-            td { border: 1px solid #000; padding: 5px; }
+            table { border-collapse: collapse; font-family: Arial, sans-serif; }
+            th { background-color: #F37137; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; }
+            td { border: 1px solid #000; padding: 8px; vertical-align: middle; }
           </style>
         </head>
         <body>
           <table>
             <tr>
+              <th>Data de Cadastro</th>
+              <th>Tipo de Processo</th>
               <th>Nome do Candidato</th>
+              <th>Nome da Mãe</th>
               <th>CPF</th>
+              <th>RG</th>
               <th>Função (Cargo)</th>
               <th>Unidade</th>
               <th>Telefone</th>
               <th>Data da Entrevista</th>
+              <th>Responsável pelo Processo</th>
+              <th>Status Atual</th>
             </tr>
     `;
 
     listToRequest.forEach(c => {
-      const interviewDate = c.interview_date ? new Date(c.interview_date).toLocaleDateString('pt-BR') : 'N/A';
+      // Formatação amigável das datas
+      const createdAt = c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '';
+      const interviewDate = c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+      
       htmlContent += `
         <tr>
-          <td>${c.name}</td>
-          <td>${c.cpf}</td>
+          <td>${createdAt}</td>
+          <td>${c.process_type || ''}</td>
+          <td>${c.name || ''}</td>
+          <td>${c.mother_name || ''}</td>
+          <td>${c.cpf || ''}</td>
+          <td>${c.rg || ''}</td>
           <td>${c.job_roles?.name || ''}</td>
           <td>${c.units?.name || ''}</td>
-          <td>${c.phone}</td>
+          <td>${c.phone || ''}</td>
           <td>${interviewDate}</td>
+          <td>${c.users?.name || ''}</td>
+          <td>${c.status || ''}</td>
         </tr>
       `;
     });
@@ -150,7 +165,7 @@ export default function PipelineAdmissaoPage() {
     document.body.removeChild(link);
 
     // 3. Informa o usuário e atualiza o banco de dados para "Solicitada"
-    alert(`O arquivo Excel (${fileName}) foi baixado. O status dos candidatos será atualizado automaticamente agora.`);
+    alert(`O arquivo Excel (${fileName}) contendo todos os dados dos candidatos foi baixado. O status deles será atualizado para "Solicitada" agora.`);
     
     for (const c of listToRequest) {
       await supabase.from('candidates').update({ 
@@ -345,7 +360,6 @@ export default function PipelineAdmissaoPage() {
           <p style={{ color: 'var(--text-muted)' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p>
         </div>
         
-        {/* BOTÃO LIBERADO APENAS PARA ADMIN E RECRUITER_ANALYST */}
         {['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) && (
           <button className="btn-primary" onClick={requestAnalysisBatch}>
             <Send size={18} />
@@ -513,7 +527,6 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* ADMISSION MODAL E REJECT MODAL MANTIDOS IGUAIS */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
