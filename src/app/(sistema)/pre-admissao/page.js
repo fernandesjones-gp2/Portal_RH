@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, Calendar, ArrowRight, ThumbsDown } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
+  const [currentUserRole, setCurrentUserRole] = useState('');
+  
   const [candidates, setCandidates] = useState([]);
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -34,6 +36,14 @@ export default function PipelineAdmissaoPage() {
   async function fetchData() {
     setLoading(true);
     try {
+      // 1. Descobre quem é o usuário logado e qual o seu perfil (Role)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).single();
+        setCurrentUserRole(user?.role || '');
+      }
+
+      // 2. Busca os dados gerais da tela
       const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
         supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)']).order('created_at', { ascending: false }),
         supabase.from('units').select('*'),
@@ -60,15 +70,12 @@ export default function PipelineAdmissaoPage() {
     return true;
   });
 
-  // BLOCO 1: Em Andamento (Falta Análise ou Falta Documentação)
+  // BLOCO 1: Em Andamento
   const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
-  
-  // BLOCO 2: Pré-Admissão (Análise OK e Documentação OK. Aguardando Médico + Data de Admissão)
+  // BLOCO 2: Pré-Admissão (Aguardando Médico / Data)
   const bloco2 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida');
-
-  // BLOCO 3: Prontos para Admitir (Status = Pronto, Ordenado por Data de Admissão)
-  const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)')
-    .sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
+  // BLOCO 3: Prontos para Admitir
+  const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
 
   const groupedBloco3 = [];
   bloco3.forEach(c => {
@@ -86,16 +93,64 @@ export default function PipelineAdmissaoPage() {
     else setExpandedNotes([...expandedNotes, id]);
   };
 
+  // --- FUNÇÃO ATUALIZADA: DOWNLOAD .XLS E ATUALIZAÇÃO AUTOMÁTICA ---
   async function requestAnalysisBatch() {
     const listToRequest = bloco1.filter(c => c.analysis_status === 'Pendente' && c.process_type !== 'Promoção');
     if (listToRequest.length === 0) return alert('Nenhum candidato no bloco 1 aguardando análise administrativa.');
     
-    let text = "Lista de Análise Administrativa Solicitada:\n\n";
+    // 1. Gera o conteúdo da tabela HTML compatível com Excel (.XLS)
+    let htmlContent = `
+      <html xmlns:x="urn:schemas-microsoft-com:office:excel">
+        <head>
+          <meta charset="utf-8">
+          <style>
+            table { border-collapse: collapse; }
+            th { background-color: #F37137; color: white; font-weight: bold; border: 1px solid #000; padding: 5px; }
+            td { border: 1px solid #000; padding: 5px; }
+          </style>
+        </head>
+        <body>
+          <table>
+            <tr>
+              <th>Nome do Candidato</th>
+              <th>CPF</th>
+              <th>Função (Cargo)</th>
+              <th>Unidade</th>
+              <th>Telefone</th>
+              <th>Data da Entrevista</th>
+            </tr>
+    `;
+
     listToRequest.forEach(c => {
-      text += `- ${c.name} (CPF: ${c.cpf}) - Função: ${c.job_roles?.name}\n`;
+      const interviewDate = c.interview_date ? new Date(c.interview_date).toLocaleDateString('pt-BR') : 'N/A';
+      htmlContent += `
+        <tr>
+          <td>${c.name}</td>
+          <td>${c.cpf}</td>
+          <td>${c.job_roles?.name || ''}</td>
+          <td>${c.units?.name || ''}</td>
+          <td>${c.phone}</td>
+          <td>${interviewDate}</td>
+        </tr>
+      `;
     });
+
+    htmlContent += `</table></body></html>`;
+
+    // 2. Transforma em um arquivo blob e força o download
+    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const fileName = `Analises_Administrativas_Pendentes_${new Date().toISOString().split('T')[0]}.xls`;
     
-    alert(text);
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 3. Informa o usuário e atualiza o banco de dados para "Solicitada"
+    alert(`O arquivo Excel (${fileName}) foi baixado. O status dos candidatos será atualizado automaticamente agora.`);
     
     for (const c of listToRequest) {
       await supabase.from('candidates').update({ 
@@ -103,6 +158,8 @@ export default function PipelineAdmissaoPage() {
         analysis_request_date: new Date().toISOString()
       }).eq('id', c.id);
     }
+    
+    // 4. Recarrega a tela com os status atualizados
     fetchData();
   }
 
@@ -148,7 +205,6 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  // Interrupção/Reprovação Direta do Pipeline
   async function handleConfirmReject(e) {
     e.preventDefault();
     if (!rejectForm.reason) return alert('Selecione o motivo principal.');
@@ -170,7 +226,6 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  // Transição Manual Bloco 2 -> Bloco 3
   const handleOpenAdmissionModal = (c) => {
     if (c.medical_status !== 'Apto') {
       alert('O Exame Médico precisa estar marcado como "Apto" para prosseguir com a admissão.');
@@ -180,7 +235,7 @@ export default function PipelineAdmissaoPage() {
     setAdmissionDate('');
   };
 
-const handleGridConfirmAdmission = async (e) => {
+  const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
 
@@ -208,11 +263,11 @@ const handleGridConfirmAdmission = async (e) => {
     switch(status) {
       case 'Aprovado': 
       case 'Apto': 
-      case 'Recebida': return '#057a55'; // Verde
+      case 'Recebida': return '#057a55';
       case 'Reprovado': 
-      case 'Inapto': return '#e02424'; // Vermelho
-      case 'Solicitada': return '#F6D317'; // Amarelo
-      case 'Pendente': return '#888888'; // Cinza
+      case 'Inapto': return '#e02424';
+      case 'Solicitada': return '#F6D317';
+      case 'Pendente': return '#888888';
       default: return '#cccccc';
     }
   };
@@ -233,7 +288,6 @@ const handleGridConfirmAdmission = async (e) => {
               <Settings2 size={12} /> Editar
             </button>
           )}
-          {/* BOTÃO OPÇÃO DE INTERROMPER/REPROVAR EM QUALQUE ETAPA */}
           <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper/Cancelar Processo">
             <ThumbsDown size={12} />
           </button>
@@ -290,10 +344,14 @@ const handleGridConfirmAdmission = async (e) => {
           <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1>
           <p style={{ color: 'var(--text-muted)' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p>
         </div>
-        <button className="btn-primary" onClick={requestAnalysisBatch}>
-          <Send size={18} />
-          Solicitar Análises Pendentes
-        </button>
+        
+        {/* BOTÃO LIBERADO APENAS PARA ADMIN E RECRUITER_ANALYST */}
+        {['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) && (
+          <button className="btn-primary" onClick={requestAnalysisBatch}>
+            <Send size={18} />
+            Solicitar Análises Pendentes (.XLS)
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
@@ -376,7 +434,7 @@ const handleGridConfirmAdmission = async (e) => {
         </div>
       )}
 
-      {/* EDIT MODAL (Atualizar Etapas) */}
+      {/* EDIT MODAL */}
       {editingCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -395,9 +453,6 @@ const handleGridConfirmAdmission = async (e) => {
                     <option value="Aprovado">Aprovado</option>
                     <option value="Reprovado">Reprovado</option>
                   </select>
-                  {editingCandidate.analysis_request_date && (
-                    <p style={{ fontSize: '0.7rem', color: 'var(--saritur-orange)', marginTop: '0.25rem' }}>Solicitada: {new Date(editingCandidate.analysis_request_date).toLocaleDateString('pt-BR')}</p>
-                  )}
                 </div>
 
                 <div style={{ padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
@@ -408,7 +463,6 @@ const handleGridConfirmAdmission = async (e) => {
                     <option value="Apto">Apto</option>
                     <option value="Inapto">Inapto</option>
                   </select>
-                  
                   {['Solicitada', 'Apto', 'Inapto'].includes(editingCandidate.medical_status) && (
                     <div style={{ marginBottom: '0.5rem' }}>
                       <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
@@ -431,7 +485,6 @@ const handleGridConfirmAdmission = async (e) => {
                   <option value="Solicitada">Solicitada</option>
                   <option value="Recebida">Recebida</option>
                 </select>
-                
                 {['Solicitada', 'Recebida'].includes(editingCandidate.docs_status) && (
                   <div style={{ marginBottom: '0.5rem' }}>
                     <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
@@ -460,7 +513,7 @@ const handleGridConfirmAdmission = async (e) => {
         </div>
       )}
 
-      {/* ADMISSION MODAL (Data de Admissão) */}
+      {/* ADMISSION MODAL E REJECT MODAL MANTIDOS IGUAIS */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -468,17 +521,12 @@ const handleGridConfirmAdmission = async (e) => {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Definir Data de Admissão</h2>
               <button onClick={() => setAdmissionModalCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
-            
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-              O candidato <strong>{admissionModalCandidate.name}</strong> cumpriu todas as exigências. Defina a data da admissão para enviá-lo ao 3º Bloco.
-            </p>
-
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{admissionModalCandidate.name}</strong> cumpriu todas as exigências. Defina a data da admissão para enviá-lo ao 3º Bloco.</p>
             <form onSubmit={handleGridConfirmAdmission} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
                 <input required type="date" style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Confirmar e Mover</button>
@@ -488,7 +536,6 @@ const handleGridConfirmAdmission = async (e) => {
         </div>
       )}
 
-      {/* MODAL: INTERROMPER PROCESSO DIRETAMENTE DO PIPELINE */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -497,7 +544,6 @@ const handleGridConfirmAdmission = async (e) => {
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
-            
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento/Reprovação *</label>
@@ -511,17 +557,10 @@ const handleGridConfirmAdmission = async (e) => {
                   <option value="Outros">Outros</option>
                 </select>
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
-                <textarea 
-                  style={{ width: '100%', minHeight: '80px' }} 
-                  placeholder="Detalhes adicionais sobre a interrupção do processo..."
-                  value={rejectForm.notes} 
-                  onChange={e => setRejectForm({...rejectForm, notes: e.target.value})}
-                />
+                <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
