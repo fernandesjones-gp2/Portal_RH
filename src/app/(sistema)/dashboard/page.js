@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Users, UserCheck, Clock, TrendingUp } from 'lucide-react';
 
 export default function DashboardPage() {
+  const [userName, setUserName] = useState('');
   const [metrics, setMetrics] = useState({
     totalCandidates: 0,
     admittedCount: 0,
@@ -16,7 +17,15 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        // Busca o status e a data de criação de todos os candidatos
+        // 1. Busca o nome do usuário logado
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const { data: user } = await supabase.from('users').select('name').eq('id', session.user.id).single();
+          const fullName = user?.name || session.user.user_metadata?.full_name || 'Colaborador';
+          setUserName(fullName.split(' ')[0]); // Pega apenas o primeiro nome
+        }
+
+        // 2. Busca o status e a data de criação de todos os candidatos
         const { data: candidates, error } = await supabase
           .from('candidates')
           .select('status, created_at');
@@ -28,13 +37,11 @@ export default function DashboardPage() {
           const admitted = candidates.filter(c => c.status === 'Concluído').length;
           const rate = total > 0 ? Math.round((admitted / total) * 100) : 0;
 
-          // Mapeamento de meses em português
           const monthsMap = {
             0: 'Jan', 1: 'Fev', 2: 'Mar', 3: 'Abr', 4: 'Mai', 5: 'Jun',
             6: 'Jul', 7: 'Ago', 8: 'Set', 9: 'Out', 10: 'Nov', 11: 'Dez'
           };
 
-          // Inicializa os meses padrão para o gráfico não iniciar totalmente vazio
           const defaultMonths = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai'];
           const grouped = {};
           
@@ -42,7 +49,6 @@ export default function DashboardPage() {
             grouped[m] = { name: m, admitidos: 0, reprovados: 0 };
           });
 
-          // Contabiliza os candidatos reais por mês e status
           candidates.forEach(c => {
             const date = new Date(c.created_at);
             const monthName = monthsMap[date.getMonth()];
@@ -74,18 +80,27 @@ export default function DashboardPage() {
   }, []);
 
   const kpis = [
-    { title: 'Total de Candidatos Real', value: metrics.totalCandidates, icon: <Users size={24} color="var(--saritur-orange)" />, trend: 'Dados em tempo real' },
-    { title: 'Admitidos Real', value: metrics.admittedCount, icon: <UserCheck size={24} color="var(--success-color)" />, trend: 'Processos concluídos' },
+    { title: 'Total de Candidatos', value: metrics.totalCandidates, icon: <Users size={24} color="var(--saritur-orange)" />, trend: 'Dados em tempo real' },
+    { title: 'Admitidos', value: metrics.admittedCount, icon: <UserCheck size={24} color="var(--success-color)" />, trend: 'Processos concluídos' },
     { title: 'Tempo Médio (Leadtime)', value: 'Apurando', icon: <Clock size={24} color="var(--saritur-yellow)" />, trend: 'Necessita histórico' },
-    { title: 'Taxa de Aprovação Real', value: `${metrics.approvalRate}%`, icon: <TrendingUp size={24} color="var(--saritur-brown)" />, trend: 'Média geral' },
+    { title: 'Taxa de Aprovação', value: `${metrics.approvalRate}%`, icon: <TrendingUp size={24} color="var(--saritur-brown)" />, trend: 'Média geral' },
   ];
 
   if (loading) {
-    return <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Carregando métricas reais do banco de dados...</p>;
+    return <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Carregando painel e métricas de desempenho...</p>;
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      
+      {/* SAUDAÇÃO PERSONALIZADA */}
+      <div style={{ marginBottom: '-0.5rem' }}>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.25rem' }}>
+          Olá, {userName}! 👋
+        </h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Aqui está o resumo das suas métricas de recrutamento e performance.</p>
+      </div>
+
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
         {kpis.map((kpi, idx) => (
@@ -107,7 +122,7 @@ export default function DashboardPage() {
       {/* Charts Area */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
         <div style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Visão Geral de Contratações Real</h3>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Visão Geral de Contratações</h3>
           <div style={{ height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={metrics.chartData}>
