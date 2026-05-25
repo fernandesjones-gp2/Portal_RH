@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, Key } from 'lucide-react';
+import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, Key, MessageSquareText } from 'lucide-react';
 
 export default function ConfiguracoesPage() {
   const [isAdmin, setIsAdmin] = useState(null);
@@ -26,8 +26,17 @@ export default function ConfiguracoesPage() {
   const [editingUnit, setEditingUnit] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
 
-  // Configurações do Dashboard (Metas salvas no LocalStorage para persistência simples)
+  // Configurações do Dashboard (Metas)
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
+
+  // --- NOVO: Configurações de Mensagens Automáticas ---
+  const [templates, setTemplates] = useState([
+    { id: 'agendamento', title: 'Convite / Agendamento de Entrevista', content: 'Olá {nome}, sua entrevista para a função de {funcao} na unidade {unidade} está agendada para o dia {data_hora}. Estamos te aguardando!', tags: ['{nome}', '{funcao}', '{unidade}', '{data_hora}'] },
+    { id: 'aprovacao', title: 'Aprovação e Solicitação de Documentos (WhatsApp)', content: 'Olá {nome}, você foi aprovado(a) na nossa entrevista para a função de {funcao}! Por favor, envie seus documentos para darmos andamento à sua admissão corporativa.', tags: ['{nome}', '{funcao}'] },
+    { id: 'reprovacao', title: 'Aviso de Reprovação / Banco Reserva', content: 'Olá {nome}, agradecemos sua participação no processo seletivo para {funcao}. No momento optamos por seguir com outro perfil, mas manteremos seu currículo em nosso banco de reserva.', tags: ['{nome}', '{funcao}'] }
+  ]);
+  const [editingTemplateId, setEditingTemplateId] = useState(null);
+  const [editingTemplateContent, setEditingTemplateContent] = useState('');
 
   // Lista oficial de Perfis de Acesso (ENUM do Banco)
   const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
@@ -44,8 +53,14 @@ export default function ConfiguracoesPage() {
 
   useEffect(() => {
     checkAccessAndFetchData();
+    
+    // Carrega metas salvas do dashboard
     const savedTargets = localStorage.getItem('portal_rh_targets');
     if (savedTargets) setDashTargets(JSON.parse(savedTargets));
+
+    // Carrega modelos de mensagens salvos
+    const savedTemplates = localStorage.getItem('portal_rh_templates');
+    if (savedTemplates) setTemplates(JSON.parse(savedTemplates));
   }, []);
 
   async function checkAccessAndFetchData() {
@@ -86,7 +101,7 @@ export default function ConfiguracoesPage() {
     if (permsRes.data) setPermissions(permsRes.data);
   }
 
-  // Função para marcar/desmarcar o acesso
+  // Função para marcar/desmarcar o acesso na Matriz
   async function togglePermission(role, menu_path, hasPermission) {
     if (hasPermission) {
       await supabase.from('role_permissions').delete().match({ role, menu_path });
@@ -96,7 +111,21 @@ export default function ConfiguracoesPage() {
     fetchAllData();
   }
 
-  // --- CONTROLE DE DADOS BASE: UNIDADES (DROPDOWN) ---
+  // --- SALVAR ALTERAÇÃO DE TEMPLATE DE MENSAGEM ---
+  function handleSaveTemplate(id) {
+    const updatedTemplates = templates.map(t => t.id === id ? { ...t, content: editingTemplateContent } : t);
+    setTemplates(updatedTemplates);
+    localStorage.setItem('portal_rh_templates', JSON.stringify(updatedTemplates));
+    setEditingTemplateId(null);
+    alert('Modelo de mensagem automatizada atualizado com sucesso para toda a equipe!');
+  }
+
+  function startEditingTemplate(template) {
+    setEditingTemplateId(template.id);
+    setEditingTemplateContent(template.content);
+  }
+
+  // --- CONTROLE DE DADOS BASE: UNIDADES ---
   async function handleAddUnit(e) {
     e.preventDefault();
     if (!newUnit) return;
@@ -121,7 +150,7 @@ export default function ConfiguracoesPage() {
     else { setSelectedUnitId(''); await fetchAllData(); }
   }
 
-  // --- CONTROLE DE DADOS BASE: FUNÇÕES (DROPDOWN) ---
+  // --- CONTROLE DE DADOS BASE: FUNÇÕES ---
   async function handleAddRole(e) {
     e.preventDefault();
     if (!newRole) return;
@@ -146,12 +175,12 @@ export default function ConfiguracoesPage() {
     else { setSelectedRoleId(''); await fetchAllData(); }
   }
 
-  // --- GESTÃO E CRIAÇÃO DE USUÁRIOS (CONTROLE DE ACESSO) ---
+  // --- GESTÃO E CRIAÇÃO DE USUÁRIOS ---
   async function handleCreateUser(e) {
     e.preventDefault();
     const { error } = await supabase.from('users').insert([
       { 
-        id: supabase.auth.uid ? undefined : crypto.randomUUID(), 
+        id: crypto.randomUUID(), 
         email: newUser.email.toLowerCase(), 
         name: newUser.name, 
         role: newUser.role, 
@@ -161,7 +190,7 @@ export default function ConfiguracoesPage() {
     if (error) return alert('Erro ao cadastrar usuário: ' + error.message);
     setNewUser({ email: '', name: '', role: 'RECRUITER', unit_id: '' });
     await fetchAllData();
-    alert('Usuário pré-cadastrado com sucesso! Ele herdará as permissões ao efetuar o primeiro login.');
+    alert('Usuário pré-cadastrado com sucesso!');
   }
 
   async function handleUpdateUserRoleAndUnit(userId, updatedRole, updatedUnitId) {
@@ -174,7 +203,7 @@ export default function ConfiguracoesPage() {
   }
 
   async function handleDeleteUser(id) {
-    if (!confirm('Remover este usuário do sistema? Ele perderá todo o controle de acesso.')) return;
+    if (!confirm('Remover este usuário do sistema?')) return;
     const { error } = await supabase.from('users').delete().eq('id', id);
     if (error) alert('Erro ao remover: ' + error.message);
     else fetchAllData();
@@ -184,7 +213,7 @@ export default function ConfiguracoesPage() {
   function handleSaveTargets(e) {
     e.preventDefault();
     localStorage.setItem('portal_rh_targets', JSON.stringify(dashTargets));
-    alert('Metas e Indicadores do Dashboard atualizados com sucesso corporativo!');
+    alert('Metas do Dashboard atualizadas com sucesso!');
   }
 
   if (loading) return <p style={{ padding: '2rem' }}>Validando credenciais de Administrador...</p>;
@@ -194,7 +223,7 @@ export default function ConfiguracoesPage() {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
         <ShieldAlert size={64} color="var(--danger-color)" style={{ marginBottom: '1rem' }} />
         <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Acesso Restrito</h2>
-        <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>Esta seção contém chaves de segurança e governança de dados acessíveis apenas ao perfil ADMIN.</p>
+        <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>Esta seção contém chaves de segurança acessíveis apenas ao perfil ADMIN.</p>
       </div>
     );
   }
@@ -209,14 +238,13 @@ export default function ConfiguracoesPage() {
         <p style={{ color: 'var(--text-muted)' }}>Controle de acessos, tabelas institucionais e chaves do sistema.</p>
       </div>
 
-      {/* BLOCO 1: DADOS BASE DO SISTEMA (FORMATO LISTA SUSPENSA) */}
+      {/* BLOCO 1: DROPDOWNS DE DADOS BASE */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Settings2 size={20} color="var(--saritur-orange)" /> Tabelas de Dados Estruturais (Dropdowns)
         </h2>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-          {/* SEÇÃO UNIDADES */}
           <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '2rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Selecionar Unidade para Gestão</label>
             <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedUnitId} onChange={e => { setSelectedUnitId(e.target.value); setEditingUnit(null); }}>
@@ -233,15 +261,11 @@ export default function ConfiguracoesPage() {
                 )}
                 <div style={{ display: 'flex', gap: '0.3rem' }}>
                   {editingUnit ? (
-                    <>
-                      <button onClick={handleUpdateUnit} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }}><Check size={14} /></button>
-                      <button onClick={() => setEditingUnit(null)} className="btn-secondary" style={{ padding: '0.3rem' }}><X size={14} /></button>
-                    </>
+                    <><button onClick={handleUpdateUnit} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }}><Check size={14} /></button>
+                    <button onClick={() => setEditingUnit(null)} className="btn-secondary" style={{ padding: '0.3rem' }}><X size={14} /></button></>
                   ) : (
-                    <>
-                      <button onClick={() => setEditingUnit(currentUnitObj)} className="btn-secondary" style={{ padding: '0.3rem' }}><Edit2 size={14} /></button>
-                      <button onClick={() => handleDeleteUnit(selectedUnitId)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button>
-                    </>
+                    <><button onClick={() => setEditingUnit(currentUnitObj)} className="btn-secondary" style={{ padding: '0.3rem' }}><Edit2 size={14} /></button>
+                    <button onClick={() => handleDeleteUnit(selectedUnitId)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button></>
                   )}
                 </div>
               </div>
@@ -253,7 +277,6 @@ export default function ConfiguracoesPage() {
             </form>
           </div>
 
-          {/* SEÇÃO FUNÇÕES / CARGOS */}
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Selecionar Função para Gestão</label>
             <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedRoleId} onChange={e => { setSelectedRoleId(e.target.value); setEditingRole(null); }}>
@@ -270,15 +293,11 @@ export default function ConfiguracoesPage() {
                 )}
                 <div style={{ display: 'flex', gap: '0.3rem' }}>
                   {editingRole ? (
-                    <>
-                      <button onClick={handleUpdateRole} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }}><Check size={14} /></button>
-                      <button onClick={() => setEditingRole(null)} className="btn-secondary" style={{ padding: '0.3rem' }}><X size={14} /></button>
-                    </>
+                    <><button onClick={handleUpdateRole} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }}><Check size={14} /></button>
+                    <button onClick={() => setEditingRole(null)} className="btn-secondary" style={{ padding: '0.3rem' }}><X size={14} /></button></>
                   ) : (
-                    <>
-                      <button onClick={() => setEditingRole(currentRoleObj)} className="btn-secondary" style={{ padding: '0.3rem' }}><Edit2 size={14} /></button>
-                      <button onClick={() => handleDeleteRole(selectedRoleId)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button>
-                    </>
+                    <><button onClick={() => setEditingRole(currentRoleObj)} className="btn-secondary" style={{ padding: '0.3rem' }}><Edit2 size={14} /></button>
+                    <button onClick={() => handleDeleteRole(selectedRoleId)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button></>
                   )}
                 </div>
               </div>
@@ -292,13 +311,12 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 2: GESTÃO DE USUÁRIOS, NÍVEL DE PERMISSÃO E CONTROLE DE ACESSO */}
+      {/* BLOCO 2: GESTÃO DE USUÁRIOS */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Users size={20} color="var(--saritur-orange)" /> Controle de Acesso e Perfis de Usuários
         </h2>
 
-        {/* Formulário de cadastro prévio */}
         <form onSubmit={handleCreateUser} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: '0.75rem', alignItems: 'end', marginBottom: '2rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
           <div><label style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>Nome do Colaborador</label><input required type="text" placeholder="Nome completo" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /></div>
           <div><label style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>E-mail Google Corporativo</label><input required type="email" placeholder="usuario@empresa.com" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} /></div>
@@ -318,7 +336,6 @@ export default function ConfiguracoesPage() {
           <button type="submit" className="btn-primary" style={{ padding: '0.6rem 1rem' }}>Pré-Cadastrar</button>
         </form>
 
-        {/* Tabela de listagem e controle em tempo real */}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
@@ -336,26 +353,18 @@ export default function ConfiguracoesPage() {
                   <td style={{ padding: '0.75rem', fontWeight: '600' }}>{user.name || 'Aguardando Login'}</td>
                   <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</td>
                   <td style={{ padding: '0.75rem' }}>
-                    <select 
-                      style={{ padding: '0.25rem', fontSize: '0.85rem' }} 
-                      value={user.role} 
-                      onChange={e => handleUpdateUserRoleAndUnit(user.id, e.target.value, user.unit_id)}
-                    >
+                    <select style={{ padding: '0.25rem', fontSize: '0.85rem' }} value={user.role} onChange={e => handleUpdateUserRoleAndUnit(user.id, e.target.value, user.unit_id)}>
                       {availableRoles.map(role => <option key={role} value={role}>{role}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: '0.75rem' }}>
-                    <select 
-                      style={{ padding: '0.25rem', fontSize: '0.85rem', width: '140px' }} 
-                      value={user.unit_id || ''} 
-                      onChange={e => handleUpdateUserRoleAndUnit(user.id, user.role, e.target.value)}
-                    >
+                    <select style={{ padding: '0.25rem', fontSize: '0.85rem', width: '140px' }} value={user.unit_id || ''} onChange={e => handleUpdateUserRoleAndUnit(user.id, user.role, e.target.value)}>
                       <option value="">Acesso Geral (Todas)</option>
                       {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }} title="Excluir Usuário"><Trash2 size={14} /></button>
+                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
@@ -364,7 +373,7 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* NOVO BLOCO: MATRIZ DE ACESSO (PERMISSÕES POR PERFIL) */}
+      {/* BLOCO 3: MATRIZ DE PERMISSÕES */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <ShieldAlert size={20} color="var(--saritur-orange)" /> Matriz de Permissões (Acesso a Menus)
@@ -376,9 +385,7 @@ export default function ConfiguracoesPage() {
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'center' }}>
                 <th style={{ padding: '0.75rem', textAlign: 'left' }}>Perfil / Telas</th>
-                {menusAcessiveis.map(menu => (
-                  <th key={menu.path} style={{ padding: '0.75rem', fontWeight: '600' }}>{menu.label}</th>
-                ))}
+                {menusAcessiveis.map(menu => <th key={menu.path} style={{ padding: '0.75rem', fontWeight: '600' }}>{menu.label}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -389,12 +396,7 @@ export default function ConfiguracoesPage() {
                     const hasPerm = permissions.some(p => p.role === role && p.menu_path === menu.path);
                     return (
                       <td key={`${role}-${menu.path}`} style={{ padding: '0.75rem' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={hasPerm}
-                          onChange={() => togglePermission(role, menu.path, hasPerm)}
-                          style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }}
-                        />
+                        <input type="checkbox" checked={hasPerm} onChange={() => togglePermission(role, menu.path, hasPerm)} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} />
                       </td>
                     );
                   })}
@@ -405,7 +407,46 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 3: CRIAÇÃO E CONFIGURAÇÃO DE INDICADORES DO DASHBOARD */}
+      {/* NOVO BLOCO: CONFIGURAÇÃO DE MENSAGENS AUTOMÁTICAS (TEMPLATES) */}
+      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de Mensagens Automáticas (Notificações)
+        </h2>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+          Personalize as mensagens disparadas pelo sistema para os candidatos. Use as tags indicadas para preencher dados dinâmicos.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {templates.map(template => (
+            <div key={template.id} style={{ padding: '1.25rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{template.title}</strong>
+                {editingTemplateId === template.id ? (
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button onClick={() => handleSaveTemplate(template.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><Check size={14} /> Salvar</button>
+                    <button onClick={() => setEditingTemplateId(null)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><X size={14} /> Cancelar</button>
+                  </div>
+                ) : (
+                  <button onClick={() => startEditingTemplate(template)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><Edit2 size={12} /> Alterar Texto</button>
+                )}
+              </div>
+
+              {editingTemplateId === template.id ? (
+                <div>
+                  <textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem', fontFamily: 'inherit', fontSize: '0.9rem', marginBottom: '0.5rem' }} value={editingTemplateContent} onChange={e => setEditingTemplateContent(e.target.value)} />
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Tags disponíveis para este modelo: {template.tags.map(t => <span key={t} style={{ backgroundColor: 'var(--border-color)', padding: '0.1rem 0.3rem', borderRadius: '4px', marginRight: '0.3rem', fontFamily: 'monospace' }}>{t}</span>)}
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>"{template.content}"</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* BLOCO 4: PARÂMETROS DO DASHBOARD */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <BarChart3 size={20} color="var(--saritur-orange)" /> Parâmetros e Indicadores Estratégicos (Dashboard)
@@ -415,22 +456,16 @@ export default function ConfiguracoesPage() {
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Meta de SLA de Admissão (Leadtime em Dias)</label>
             <input type="number" placeholder="Ex: 15" value={dashTargets.targetLeadtime} onChange={e => setDashTargets({...dashTargets, targetLeadtime: e.target.value})} />
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Tempo máximo aceitável entre o agendamento e a contratação final.</p>
           </div>
-
           <div>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Meta Cláusula de Eficiência (Taxa de Aprovação Mínima %)</label>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Meta de Eficiência (Taxa de Aprovação Mínima %)</label>
             <input type="number" placeholder="Ex: 60" value={dashTargets.targetApprovalRate} onChange={e => setDashTargets({...dashTargets, targetApprovalRate: e.target.value})} />
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Percentual esperado de candidatos que atingem a contratação.</p>
           </div>
-
-          <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem' }}>
-            <Save size={16} /> Salvar Parâmetros
-          </button>
+          <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem' }}><Save size={16} /> Salvar Parâmetros</button>
         </form>
       </div>
 
-      {/* BLOCO 4: SEGURANÇA ADICIONAL RECOMENDADA - TOKENS DE SISTEMA */}
+      {/* BLOCO 5: SEGURANÇA ADICIONAL */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)', borderLeft: '4px solid var(--saritur-orange)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Key size={20} color="var(--saritur-orange)" /> Chaves de Integração (Recomendado para Produção)
@@ -438,7 +473,7 @@ export default function ConfiguracoesPage() {
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Configurações de chaves de API externas utilizadas pelos módulos automáticos.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.85rem' }}>
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-            <strong>Módulo WhatsApp API:</strong> <span style={{ color: 'var(--success-color)', fontWeight: '600' }}>Ativo (Link Direto Habilitado)</span>
+            <strong>Módulo WhatsApp API:</strong> <span style={{ color: 'var(--success-color)', fontWeight: '600' }}>Ativo (Link Dinâmico Habilitado)</span>
           </div>
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
             <strong>Módulo Google Agenda:</strong> <span style={{ color: 'var(--success-color)', fontWeight: '600' }}>Ativo (OAuth Integrado)</span>
