@@ -1,10 +1,17 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import { LayoutDashboard, Users, UserCheck, CheckCircle, Settings, LogOut } from 'lucide-react';
 
 export default function SistemaLayout({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [allowedPaths, setAllowedPaths] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState('Carregando...');
+  const [userRole, setUserRole] = useState('');
 
   const menuItems = [
     { name: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
@@ -15,18 +22,86 @@ export default function SistemaLayout({ children }) {
     { name: 'Configurações', icon: <Settings size={20} />, path: '/configuracoes' },
   ];
 
+  useEffect(() => {
+    async function loadPermissions() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          router.push('/');
+          return;
+        }
+
+        // Busca as informações do usuário logado na tabela pública
+        const { data: user } = await supabase
+          .from('users')
+          .select('name, role')
+          .eq('id', session.user.id)
+          .single();
+
+        if (user) {
+          setUserName(user.name || session.user.email);
+          setUserRole(user.role);
+
+          // Puxa as permissões dinâmicas da tabela que configuramos
+          const { data: perms } = await supabase
+            .from('role_permissions')
+            .select('menu_path')
+            .eq('role', user.role);
+
+          if (perms) {
+            setAllowedPaths(perms.map(p => p.menu_path));
+          }
+        } else {
+          // Fallback seguro caso o usuário acesse antes do pré-cadastro
+          setUserName(session.user.email);
+          setUserRole('RECRUITER');
+          setAllowedPaths(['/dashboard', '/agendamentos']);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar permissões:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadPermissions();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif' }}>
+        <p style={{ fontWeight: '500' }}>Carregando ambiente seguro...</p>
+      </div>
+    );
+  }
+
+  // Filtra as opções do menu com base nas caixinhas marcadas pelo ADMIN
+  const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
+
+  // Segurança de URL (Bloqueio se tentar forçar o caminho digitando na barra do navegador)
+  const isAllowed = allowedPaths.includes(pathname);
+  if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
+    router.push(allowedPaths[0]);
+    return null;
+  }
+
+  // Iniciais do Usuário para o Avatar no Topo
+  const initials = userName ? userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'RH';
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }}>
       {/* Sidebar */}
       <aside style={{ width: '250px', backgroundColor: 'var(--surface-color)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <h2 style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: '700', letterSpacing: '-0.02em' }}>Portal RH</h2>
-          <span style={{ fontSize: '0.65rem', backgroundColor: 'var(--border-color)', color: 'var(--text-muted)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 'bold' }}>SIM</span>
+          <span style={{ fontSize: '0.65rem', backgroundColor: 'var(--saritur-orange)', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 'bold' }}>
+            {userRole}
+          </span>
         </div>
         
         <nav style={{ padding: '1rem', flex: 1 }}>
           <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {menuItems.map((item) => {
+            {filteredMenuItems.map((item) => {
               const isActive = pathname === item.path;
               return (
                 <li key={item.path}>
@@ -54,7 +129,7 @@ export default function SistemaLayout({ children }) {
         <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger-color)', padding: '0.5rem 1rem', fontWeight: '500' }}>
             <LogOut size={20} />
-            Sair da Simulação
+            Sair do Sistema
           </Link>
         </div>
       </aside>
@@ -66,12 +141,12 @@ export default function SistemaLayout({ children }) {
             {menuItems.find(i => i.path === pathname)?.name || 'Sistema'}
           </h2>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--text-main)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>
-              JF
+            <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--saritur-orange)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>
+              {initials}
             </div>
             <div>
-              <p style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)' }}>Jones Fernandes</p>
-              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Administrador</p>
+              <p style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)' }}>{userName}</p>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{userRole}</p>
             </div>
           </div>
         </header>
