@@ -57,10 +57,9 @@ export default function SistemaLayout({ children }) {
     loadPermissions();
   }, [router]);
 
-  // --- NOVA FUNÇÃO DE LOGOUT ---
   const handleLogout = async () => {
-    await supabase.auth.signOut(); // Limpa o banco/sessão
-    router.push('/'); // Manda pra tela de login
+    await supabase.auth.signOut();
+    router.push('/'); 
   };
 
   if (loading) {
@@ -120,7 +119,25 @@ export default function SistemaLayout({ children }) {
         </nav>
 
         <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
-          <button onClick={handleLogout} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger-color)', padding: '0.5rem 1rem', fontWeight: '500', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.9rem' }}>
+          {/* Botão de Logout com layout perfeitamente alinhado aos links acima */}
+          <button 
+            onClick={handleLogout} 
+            style={{ 
+              width: '100%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'flex-start',
+              gap: '0.75rem', 
+              color: 'var(--danger-color)', 
+              padding: '0.75rem 1rem', 
+              fontWeight: '500', 
+              background: 'transparent', 
+              border: 'none', 
+              cursor: 'pointer', 
+              fontFamily: 'inherit', 
+              fontSize: '0.9rem',
+              borderRadius: 'var(--radius-md)'
+            }}>
             <LogOut size={20} />
             Sair do Sistema
           </button>
