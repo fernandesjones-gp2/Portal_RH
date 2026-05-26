@@ -35,7 +35,6 @@ export default function AgendamentosPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Busca Agendados, Banco de Talentos e Reprovados
       const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
         supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos', 'Reprovado']).order('created_at', { ascending: false }),
         supabase.from('units').select('*'),
@@ -70,10 +69,14 @@ export default function AgendamentosPage() {
       await supabase.from('users').upsert({ id: responsible_id, email: session.user.email, name: session.user.user_metadata?.full_name || session.user.email });
     }
 
-    const { error } = await supabase.from('candidates').insert([{ ...formData, responsible_id }]);
+    // CORREÇÃO: Transforma a data em formato oficial Universal antes de salvar no banco
+    const interviewIso = formData.interview_date ? new Date(formData.interview_date).toISOString() : null;
+    const dataToSave = { ...formData, interview_date: interviewIso, responsible_id };
+
+    const { error } = await supabase.from('candidates').insert([dataToSave]);
     if (error) return alert('Erro ao salvar candidato: ' + error.message);
 
-    // --- GATILHO DO GOOGLE AGENDA REINTEGRADO ---
+    // --- GATILHO DO GOOGLE AGENDA ---
     try {
       const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
       const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
@@ -98,8 +101,11 @@ export default function AgendamentosPage() {
     e.preventDefault();
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date } = editingCandidate;
     
+    // CORREÇÃO: Trata a data para ISO Universal
+    const interviewIso = interview_date ? new Date(interview_date).toISOString() : null;
+
     const { error } = await supabase.from('candidates').update({
-      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date
+      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso
     }).eq('id', id);
 
     if (error) return alert('Erro ao atualizar: ' + error.message);
@@ -243,10 +249,10 @@ export default function AgendamentosPage() {
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{c.job_roles?.name} • {c.units?.name} • CPF: {c.cpf}</p>
                 <p style={{ color: 'var(--text-main)', fontSize: '0.875rem', fontWeight: '500', marginTop: '0.5rem' }}>
-                  Entrevista: {new Date(c.interview_date).toLocaleString('pt-BR')} • Resp: {c.users?.name || 'N/A'}
+                  {/* CORREÇÃO: Limpando a visualização da data na tela inicial sem perder os minutos */}
+                  Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
                 </p>
                 
-                {/* Exibir o motivo da reprovação destacado se estiver na aba de Reprovados */}
                 {currentTab === 'Reprovado' && c.feedback && (
                    <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--danger-color)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                      <strong>Histórico / Reprovação:</strong> {c.feedback}
@@ -291,6 +297,17 @@ export default function AgendamentosPage() {
               {(() => {
                 const data = editingCandidate || formData;
                 const setData = editingCandidate ? setEditingCandidate : setFormData;
+
+                // CORREÇÃO: Helper para converter a data do banco no fuso horário do usuário para o input
+                const formatToLocalDatetime = (isoString) => {
+                  if (!isoString) return '';
+                  const date = new Date(isoString);
+                  if (isNaN(date.getTime())) return isoString;
+                  const offset = date.getTimezoneOffset() * 60000;
+                  const localDate = new Date(date.getTime() - offset);
+                  return localDate.toISOString().slice(0, 16);
+                };
+
                 return (
                   <>
                     <div>
@@ -310,7 +327,6 @@ export default function AgendamentosPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Telefone (WhatsApp)</label><input required type="text" style={{ width: '100%' }} value={data.phone} onChange={e => setData({...data, phone: e.target.value})} /></div>
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%' }} value={data.cpf} onChange={e => setData({...data, cpf: e.target.value})} /></div>
-                      {/* OBRIGATORIEDADE DO RG REMOVIDA AQUI (Abaixo) */}
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} /></div>
                     </div>
 
@@ -331,7 +347,8 @@ export default function AgendamentosPage() {
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
-                      <input required type="datetime-local" style={{ width: '100%' }} value={data.interview_date ? data.interview_date.slice(0, 16) : ''} onChange={e => setData({...data, interview_date: e.target.value})} />
+                      {/* Aplicada a correção visual para o formulário funcionar perfeitamente com fusos horários */}
+                      <input required type="datetime-local" style={{ width: '100%' }} value={formatToLocalDatetime(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} />
                     </div>
                   </>
                 );
@@ -349,7 +366,7 @@ export default function AgendamentosPage() {
       {/* --- MODAL: PARECER (FEEDBACK) --- */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Parecer: {feedbackCandidate.name}</h2>
               <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
@@ -370,7 +387,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: REPROVAÇÃO --- */}
+      {/* --- MODAL: REPROVAR CANDIDATO --- */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
