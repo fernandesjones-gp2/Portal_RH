@@ -60,7 +60,7 @@ export default function AgendamentosPage() {
     }
   }
 
-  // --- FUNÇÕES DE CADASTRO E EDIÇÃO ---
+ // --- FUNÇÕES DE CADASTRO E EDIÇÃO ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
@@ -73,7 +73,26 @@ export default function AgendamentosPage() {
     const { error } = await supabase.from('candidates').insert([{ ...formData, responsible_id }]);
     if (error) return alert('Erro ao salvar candidato: ' + error.message);
 
+    // --- GATILHO DO GOOGLE AGENDA (RESTAURADO) ---
+    const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
+    const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
+    const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
+    
+    // Converte a data para o formato do Google Agenda e adiciona 1 hora de duração
+    const d = new Date(formData.interview_date);
+    const dateStr = d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    const dEnd = new Date(d.getTime() + 60 * 60 * 1000); 
+    const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    
+    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
+    window.open(calUrl, '_blank');
+    // ----------------------------------------------
+
     setIsModalOpen(false);
+    
+    // Limpa o formulário para o próximo cadastro
+    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: roles[0]?.id || '', unit_id: units[0]?.id || '', interview_date: '' });
+    
     fetchData(); 
   }
 
