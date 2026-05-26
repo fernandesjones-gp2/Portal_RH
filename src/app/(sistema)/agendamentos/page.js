@@ -44,14 +44,8 @@ export default function AgendamentosPage() {
       ]);
       
       if (candidatesRes.data) setCandidates(candidatesRes.data);
-      if (unitsRes.data) {
-        setUnits(unitsRes.data);
-        if (unitsRes.data.length > 0 && !formData.unit_id) setFormData(f => ({ ...f, unit_id: unitsRes.data[0].id }));
-      }
-      if (rolesRes.data) {
-        setRoles(rolesRes.data);
-        if (rolesRes.data.length > 0 && !formData.job_role_id) setFormData(f => ({ ...f, job_role_id: rolesRes.data[0].id }));
-      }
+      if (unitsRes.data) setUnits(unitsRes.data);
+      if (rolesRes.data) setRoles(rolesRes.data);
       if (usersRes.data) setResponsibles(usersRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -118,7 +112,8 @@ export default function AgendamentosPage() {
     }
 
     setIsModalOpen(false);
-    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: roles.length > 0 ? roles[0].id : '', unit_id: units.length > 0 ? units[0].id : '', interview_date: '' });
+    // Limpa o formulário garantindo que unidade e função voltem vazios
+    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '' });
     fetchData(); 
   }
 
@@ -193,12 +188,11 @@ export default function AgendamentosPage() {
     if (filterRole && c.job_role_id !== filterRole) return false;
     if (filterResponsible && c.responsible_id !== filterResponsible) return false;
     
-    // NOVO: Filtro por data exata (Comparando a string local da data do banco com o input)
     if (filterDate && c.interview_date) {
       const localDate = formatToBrazilDatetimeInput(c.interview_date);
       if (localDate && !localDate.startsWith(filterDate)) return false;
     } else if (filterDate && !c.interview_date) {
-      return false; // Se buscou uma data, quem não tem data fica oculto
+      return false; 
     }
     
     return true;
@@ -235,7 +229,7 @@ export default function AgendamentosPage() {
         </button>
       </div>
 
-      {/* BARRA DE FILTROS APRIMORADA */}
+      {/* BARRA DE FILTROS */}
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
         <Filter size={20} color="var(--text-muted)" />
         <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
@@ -354,22 +348,24 @@ export default function AgendamentosPage() {
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} /></div>
                     </div>
 
+                    {/* CORREÇÃO AQUI: Valores default vazios com mensagem "Selecione..." */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label>
-                        <select required style={{ width: '100%' }} value={data.job_role_id} onChange={e => setData({...data, job_role_id: e.target.value})}>
+                        <select required style={{ width: '100%' }} value={data.job_role_id || ''} onChange={e => setData({...data, job_role_id: e.target.value})}>
+                          <option value="">-- Selecione a função --</option>
                           {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                         </select>
                       </div>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Unidade</label>
-                        <select required style={{ width: '100%' }} value={data.unit_id} onChange={e => setData({...data, unit_id: e.target.value})}>
+                        <select required style={{ width: '100%' }} value={data.unit_id || ''} onChange={e => setData({...data, unit_id: e.target.value})}>
+                          <option value="">-- Selecione a unidade --</option>
                           {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                         </select>
                       </div>
                     </div>
 
-                    {/* BLOCO EDITÁVEL: DATA DA ENTREVISTA E RESPONSÁVEL */}
                     <div style={{ display: 'grid', gridTemplateColumns: editingCandidate ? '1fr 1fr' : '1fr', gap: '1rem' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
@@ -399,7 +395,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAIS DE PARECER E REPROVAÇÃO --- */}
+      {/* --- MODAIS DE PARECER E REPROVAÇÃO MANTIDOS --- */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px' }}>
