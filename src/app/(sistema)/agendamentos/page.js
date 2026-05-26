@@ -24,6 +24,7 @@ export default function AgendamentosPage() {
   const [filterUnit, setFilterUnit] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   // Formulários
   const [formData, setFormData] = useState({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '' });
@@ -62,9 +63,7 @@ export default function AgendamentosPage() {
   // --- TRAVA DE FUSO HORÁRIO BRASIL (-03:00) ---
   const getBrazilIsoDate = (val) => {
     if (!val) return null;
-    // Se a data já vem com formato universal longo ou fuso, mantemos
     if (val.endsWith('Z') || val.match(/[+-]\d\d:\d\d$/)) return val;
-    // Força o horário digitado a pertencer ao fuso horário brasileiro de forma absoluta
     return `${val}:00-03:00`;
   };
 
@@ -74,7 +73,6 @@ export default function AgendamentosPage() {
     
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return isoString;
-    // Formata ignorando o computador local, focando exclusivamente no horário de São Paulo
     const formatter = new Intl.DateTimeFormat('pt-BR', {
       timeZone: 'America/Sao_Paulo',
       year: 'numeric', month: '2-digit', day: '2-digit',
@@ -101,7 +99,6 @@ export default function AgendamentosPage() {
     const { error } = await supabase.from('candidates').insert([dataToSave]);
     if (error) return alert('Erro ao salvar candidato: ' + error.message);
 
-    // GATILHO DO GOOGLE AGENDA
     if (interviewIso) {
       try {
         const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
@@ -127,12 +124,12 @@ export default function AgendamentosPage() {
 
   async function handleUpdateCandidate(e) {
     e.preventDefault();
-    const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date } = editingCandidate;
+    const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date, responsible_id } = editingCandidate;
     
     const interviewIso = getBrazilIsoDate(interview_date);
 
     const { error } = await supabase.from('candidates').update({
-      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso
+      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id
     }).eq('id', id);
 
     if (error) return alert('Erro ao atualizar: ' + error.message);
@@ -140,7 +137,7 @@ export default function AgendamentosPage() {
     fetchData();
   }
 
-  // --- FUNÇÕES DE PARECER (FEEDBACK) ---
+  // --- FUNÇÕES DE PARECER E REPROVAÇÃO ---
   function openFeedbackModal(c) {
     setFeedbackCandidate(c);
     setFeedbackText(c.feedback || '');
@@ -154,7 +151,6 @@ export default function AgendamentosPage() {
     }
   }
 
-  // --- FUNÇÕES DE REPROVAÇÃO ---
   async function handleConfirmReject(e) {
     e.preventDefault();
     if (!rejectForm.reason) return alert('Selecione o motivo principal.');
@@ -174,7 +170,6 @@ export default function AgendamentosPage() {
     }
   }
 
-  // --- AÇÕES RÁPIDAS (STATUS) ---
   async function changeStatus(id, newStatus) {
     const { error } = await supabase.from('candidates').update({ status: newStatus }).eq('id', id);
     if (!error) fetchData();
@@ -197,15 +192,22 @@ export default function AgendamentosPage() {
     if (filterUnit && c.unit_id !== filterUnit) return false;
     if (filterRole && c.job_role_id !== filterRole) return false;
     if (filterResponsible && c.responsible_id !== filterResponsible) return false;
+    
+    // NOVO: Filtro por data exata (Comparando a string local da data do banco com o input)
+    if (filterDate && c.interview_date) {
+      const localDate = formatToBrazilDatetimeInput(c.interview_date);
+      if (localDate && !localDate.startsWith(filterDate)) return false;
+    } else if (filterDate && !c.interview_date) {
+      return false; // Se buscou uma data, quem não tem data fica oculto
+    }
+    
     return true;
   }).sort((a, b) => {
     if (currentTab === 'Agendado') {
-      // Ordenação CRESCENTE pela data da entrevista
       const timeA = a.interview_date ? new Date(a.interview_date).getTime() : Infinity;
       const timeB = b.interview_date ? new Date(b.interview_date).getTime() : Infinity;
       return timeA - timeB; 
     }
-    // Outras abas (Banco/Reprovado): Mais recentes por cadastro primeiro
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
@@ -221,56 +223,54 @@ export default function AgendamentosPage() {
         </button>
       </div>
 
-      {/* ABAS (TABS) */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
-        <button 
-          className={currentTab === 'Agendado' ? 'btn-primary' : 'btn-secondary'} 
-          onClick={() => setCurrentTab('Agendado')}
-        >
+        <button className={currentTab === 'Agendado' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentTab('Agendado')}>
           Entrevistas (Agendados)
         </button>
-        <button 
-          className={currentTab === 'Banco de Talentos' ? 'btn-primary' : 'btn-secondary'} 
-          onClick={() => setCurrentTab('Banco de Talentos')}
-          style={{ backgroundColor: currentTab === 'Banco de Talentos' ? 'var(--saritur-brown)' : 'white' }}
-        >
+        <button className={currentTab === 'Banco de Talentos' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentTab('Banco de Talentos')} style={{ backgroundColor: currentTab === 'Banco de Talentos' ? 'var(--saritur-brown)' : 'white' }}>
           Banco de Talentos / Reservas
         </button>
-        <button 
-          className={currentTab === 'Reprovado' ? 'btn-primary' : 'btn-secondary'} 
-          onClick={() => setCurrentTab('Reprovado')}
-          style={{ backgroundColor: currentTab === 'Reprovado' ? 'var(--danger-color)' : 'white', color: currentTab === 'Reprovado' ? 'white' : 'var(--text-main)' }}
-        >
+        <button className={currentTab === 'Reprovado' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentTab('Reprovado')} style={{ backgroundColor: currentTab === 'Reprovado' ? 'var(--danger-color)' : 'white', color: currentTab === 'Reprovado' ? 'white' : 'var(--text-main)' }}>
           Reprovados / Cancelados
         </button>
       </div>
 
-      {/* BARRA DE FILTROS */}
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
+      {/* BARRA DE FILTROS APRIMORADA */}
+      <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
         <Filter size={20} color="var(--text-muted)" />
         <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
           <option value="">Todos Processos</option>
           <option value="Admissão">Admissão</option>
           <option value="Readmissão">Readmissão</option>
           <option value="Promoção">Promoção</option>
         </select>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
           <option value="">Todas Unidades</option>
           {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
           <option value="">Todas Funções</option>
           {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
+          <option value="">Todos Responsáveis</option>
+          {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
+        </select>
+        <input 
+          type="date" 
+          title="Filtrar por data"
+          style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} 
+          value={filterDate} 
+          onChange={e => setFilterDate(e.target.value)} 
+        />
       </div>
 
-      {/* LISTA DE CANDIDATOS */}
       {loading ? (
         <p>Conectando ao banco de dados...</p>
       ) : sortedFilteredCandidates.length === 0 ? (
         <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)' }}>
-          <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato encontrado nesta aba.</p>
+          <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato encontrado com estes filtros.</p>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: '1rem' }}>
@@ -288,7 +288,6 @@ export default function AgendamentosPage() {
                   Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
                 </p>
                 
-                {/* Exibir o motivo da reprovação destacado se estiver na aba de Reprovados */}
                 {currentTab === 'Reprovado' && c.feedback && (
                    <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--danger-color)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                      <strong>Histórico / Reprovação:</strong> {c.feedback}
@@ -296,7 +295,6 @@ export default function AgendamentosPage() {
                 )}
               </div>
 
-              {/* BOTÕES DE AÇÃO DEPENDENDO DA ABA */}
               <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button className="btn-secondary" onClick={() => openFeedbackModal(c)} title="Parecer / Histórico"><MessageSquare size={16} /></button>
                 
@@ -371,9 +369,22 @@ export default function AgendamentosPage() {
                       </div>
                     </div>
 
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
-                      <input required type="datetime-local" style={{ width: '100%' }} value={formatToBrazilDatetimeInput(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} />
+                    {/* BLOCO EDITÁVEL: DATA DA ENTREVISTA E RESPONSÁVEL */}
+                    <div style={{ display: 'grid', gridTemplateColumns: editingCandidate ? '1fr 1fr' : '1fr', gap: '1rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
+                        <input required type="datetime-local" style={{ width: '100%' }} value={formatToBrazilDatetimeInput(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} />
+                      </div>
+                      
+                      {editingCandidate && (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Responsável pelo Processo</label>
+                          <select required style={{ width: '100%' }} value={data.responsible_id || ''} onChange={e => setData({...data, responsible_id: e.target.value})}>
+                            <option value="">Selecione o responsável</option>
+                            {responsibles.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </>
                 );
@@ -388,7 +399,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: PARECER (FEEDBACK) --- */}
+      {/* --- MODAIS DE PARECER E REPROVAÇÃO --- */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px' }}>
@@ -396,14 +407,7 @@ export default function AgendamentosPage() {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Parecer: {feedbackCandidate.name}</h2>
               <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
-            
-            <textarea 
-              style={{ width: '100%', minHeight: '150px', padding: '0.75rem' }} 
-              placeholder="Digite o parecer, notas da entrevista ou histórico do candidato..."
-              value={feedbackText} 
-              onChange={(e) => setFeedbackText(e.target.value)}
-            />
-
+            <textarea style={{ width: '100%', minHeight: '150px', padding: '0.75rem' }} placeholder="Digite o parecer, notas da entrevista ou histórico do candidato..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
               <button className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button>
               <button className="btn-primary" onClick={handleSaveFeedback}>Salvar Parecer</button>
@@ -412,7 +416,6 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: REPROVAR CANDIDATO --- */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -421,7 +424,6 @@ export default function AgendamentosPage() {
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será movido para o histórico de reprovados.</p>
-            
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo da Reprovação *</label>
@@ -436,17 +438,10 @@ export default function AgendamentosPage() {
                   <option value="Outros">Outros</option>
                 </select>
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
-                <textarea 
-                  style={{ width: '100%', minHeight: '80px' }} 
-                  placeholder="Detalhes adicionais sobre a reprovação..."
-                  value={rejectForm.notes} 
-                  onChange={e => setRejectForm({...rejectForm, notes: e.target.value})}
-                />
+                <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a reprovação..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Reprovação</button>
