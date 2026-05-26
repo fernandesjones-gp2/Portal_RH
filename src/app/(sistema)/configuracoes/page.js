@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, Key, MessageSquareText } from 'lucide-react';
+import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, Key, MessageSquareText, Info } from 'lucide-react';
 
 export default function ConfiguracoesPage() {
   const [isAdmin, setIsAdmin] = useState(null);
@@ -20,7 +20,6 @@ export default function ConfiguracoesPage() {
   // Formulários de Criação
   const [newUnit, setNewUnit] = useState('');
   const [newRole, setNewRole] = useState('');
-  const [newUser, setNewUser] = useState({ email: '', name: '', role: 'RECRUITER', unit_id: '' });
 
   // Estados de Edição
   const [editingUnit, setEditingUnit] = useState(null);
@@ -29,7 +28,7 @@ export default function ConfiguracoesPage() {
   // Configurações do Dashboard (Metas)
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
-  // --- NOVO: Configurações de Mensagens Automáticas ---
+  // Configurações de Mensagens Automáticas
   const [templates, setTemplates] = useState([
     { id: 'agendamento', title: 'Convite / Agendamento de Entrevista', content: 'Olá {nome}, sua entrevista para a função de {funcao} na unidade {unidade} está agendada para o dia {data_hora}. Estamos te aguardando!', tags: ['{nome}', '{funcao}', '{unidade}', '{data_hora}'] },
     { id: 'aprovacao', title: 'Aprovação e Solicitação de Documentos (WhatsApp)', content: 'Olá {nome}, você foi aprovado(a) na nossa entrevista para a função de {funcao}! Por favor, envie seus documentos para darmos andamento à sua admissão corporativa.', tags: ['{nome}', '{funcao}'] },
@@ -53,12 +52,8 @@ export default function ConfiguracoesPage() {
 
   useEffect(() => {
     checkAccessAndFetchData();
-    
-    // Carrega metas salvas do dashboard
     const savedTargets = localStorage.getItem('portal_rh_targets');
     if (savedTargets) setDashTargets(JSON.parse(savedTargets));
-
-    // Carrega modelos de mensagens salvos
     const savedTemplates = localStorage.getItem('portal_rh_templates');
     if (savedTemplates) setTemplates(JSON.parse(savedTemplates));
   }, []);
@@ -71,7 +66,6 @@ export default function ConfiguracoesPage() {
         setIsAdmin(false);
         return;
       }
-
       const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).single();
 
       if (user?.role === 'ADMIN') {
@@ -101,7 +95,6 @@ export default function ConfiguracoesPage() {
     if (permsRes.data) setPermissions(permsRes.data);
   }
 
-  // Função para marcar/desmarcar o acesso na Matriz
   async function togglePermission(role, menu_path, hasPermission) {
     if (hasPermission) {
       await supabase.from('role_permissions').delete().match({ role, menu_path });
@@ -111,7 +104,6 @@ export default function ConfiguracoesPage() {
     fetchAllData();
   }
 
-  // --- SALVAR ALTERAÇÃO DE TEMPLATE DE MENSAGEM ---
   function handleSaveTemplate(id) {
     const updatedTemplates = templates.map(t => t.id === id ? { ...t, content: editingTemplateContent } : t);
     setTemplates(updatedTemplates);
@@ -125,7 +117,6 @@ export default function ConfiguracoesPage() {
     setEditingTemplateContent(template.content);
   }
 
-  // --- CONTROLE DE DADOS BASE: UNIDADES ---
   async function handleAddUnit(e) {
     e.preventDefault();
     if (!newUnit) return;
@@ -150,7 +141,6 @@ export default function ConfiguracoesPage() {
     else { setSelectedUnitId(''); await fetchAllData(); }
   }
 
-  // --- CONTROLE DE DADOS BASE: FUNÇÕES ---
   async function handleAddRole(e) {
     e.preventDefault();
     if (!newRole) return;
@@ -175,24 +165,6 @@ export default function ConfiguracoesPage() {
     else { setSelectedRoleId(''); await fetchAllData(); }
   }
 
-  // --- GESTÃO E CRIAÇÃO DE USUÁRIOS ---
-  async function handleCreateUser(e) {
-    e.preventDefault();
-    const { error } = await supabase.from('users').insert([
-      { 
-        id: crypto.randomUUID(), 
-        email: newUser.email.toLowerCase(), 
-        name: newUser.name, 
-        role: newUser.role, 
-        unit_id: newUser.unit_id || null 
-      }
-    ]);
-    if (error) return alert('Erro ao cadastrar usuário: ' + error.message);
-    setNewUser({ email: '', name: '', role: 'RECRUITER', unit_id: '' });
-    await fetchAllData();
-    alert('Usuário pré-cadastrado com sucesso!');
-  }
-
   async function handleUpdateUserRoleAndUnit(userId, updatedRole, updatedUnitId) {
     const { error } = await supabase.from('users').update({
       role: updatedRole,
@@ -209,7 +181,6 @@ export default function ConfiguracoesPage() {
     else fetchAllData();
   }
 
-  // --- CONFIGURAÇÃO DE INDICADORES DO DASHBOARD ---
   function handleSaveTargets(e) {
     e.preventDefault();
     localStorage.setItem('portal_rh_targets', JSON.stringify(dashTargets));
@@ -311,37 +282,26 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 2: GESTÃO DE USUÁRIOS */}
+      {/* BLOCO 2: GESTÃO DE USUÁRIOS LIMPA */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Users size={20} color="var(--saritur-orange)" /> Controle de Acesso e Perfis de Usuários
         </h2>
 
-        <form onSubmit={handleCreateUser} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr auto', gap: '0.75rem', alignItems: 'end', marginBottom: '2rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-          <div><label style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>Nome do Colaborador</label><input required type="text" placeholder="Nome completo" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /></div>
-          <div><label style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>E-mail Google Corporativo</label><input required type="email" placeholder="usuario@empresa.com" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} /></div>
-          <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>Perfil de Acesso</label>
-            <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
-              {availableRoles.map(role => <option key={role} value={role}>{role}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>Unidade Alocada</label>
-            <select value={newUser.unit_id} onChange={e => setNewUser({...newUser, unit_id: e.target.value})}>
-              <option value="">Todas</option>
-              {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-          <button type="submit" className="btn-primary" style={{ padding: '0.6rem 1rem' }}>Pré-Cadastrar</button>
-        </form>
+        {/* CAIXA DE INFORMAÇÃO SOBRE O CADASTRO AUTOMÁTICO */}
+        <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+          <Info size={24} color="var(--saritur-orange)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+            <strong>Como adicionar alguém?</strong> Por segurança e integração corporativa, o sistema exige que o novo colaborador faça o <strong>primeiro login com a conta Google</strong> dele no site. No momento em que ele acessar a tela inicial, a conta será gerada e o nome dele aparecerá automaticamente na tabela abaixo. Basta você selecionar qual será o nível de permissão dele.
+          </p>
+        </div>
 
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
                 <th style={{ padding: '0.75rem' }}>Colaborador</th>
-                <th style={{ padding: '0.75rem' }}>E-mail</th>
+                <th style={{ padding: '0.75rem' }}>E-mail Google</th>
                 <th style={{ padding: '0.75rem' }}>Perfil de Acesso (Nível)</th>
                 <th style={{ padding: '0.75rem' }}>Restrição de Unidade</th>
                 <th style={{ padding: '0.75rem', textAlign: 'right' }}>Ações</th>
@@ -350,7 +310,7 @@ export default function ConfiguracoesPage() {
             <tbody>
               {usersList.map(user => (
                 <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '0.75rem', fontWeight: '600' }}>{user.name || 'Aguardando Login'}</td>
+                  <td style={{ padding: '0.75rem', fontWeight: '600' }}>{user.name || 'Sem nome'}</td>
                   <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</td>
                   <td style={{ padding: '0.75rem' }}>
                     <select style={{ padding: '0.25rem', fontSize: '0.85rem' }} value={user.role} onChange={e => handleUpdateUserRoleAndUnit(user.id, e.target.value, user.unit_id)}>
@@ -407,7 +367,7 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* NOVO BLOCO: CONFIGURAÇÃO DE MENSAGENS AUTOMÁTICAS (TEMPLATES) */}
+      {/* BLOCO 4: CONFIGURAÇÃO DE MENSAGENS AUTOMÁTICAS (TEMPLATES) */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de Mensagens Automáticas (Notificações)
@@ -446,7 +406,7 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 4: PARÂMETROS DO DASHBOARD */}
+      {/* BLOCO 5: PARÂMETROS DO DASHBOARD */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <BarChart3 size={20} color="var(--saritur-orange)" /> Parâmetros e Indicadores Estratégicos (Dashboard)
@@ -465,7 +425,7 @@ export default function ConfiguracoesPage() {
         </form>
       </div>
 
-      {/* BLOCO 5: SEGURANÇA ADICIONAL */}
+      {/* BLOCO 6: SEGURANÇA ADICIONAL */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)', borderLeft: '4px solid var(--saritur-orange)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Key size={20} color="var(--saritur-orange)" /> Chaves de Integração (Recomendado para Produção)
