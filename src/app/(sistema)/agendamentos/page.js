@@ -36,7 +36,7 @@ export default function AgendamentosPage() {
     setLoading(true);
     try {
       const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
-        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos', 'Reprovado']).order('created_at', { ascending: false }),
+        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos', 'Reprovado']),
         supabase.from('units').select('*'),
         supabase.from('job_roles').select('*'),
         supabase.from('users').select('*')
@@ -59,6 +59,32 @@ export default function AgendamentosPage() {
     }
   }
 
+  // --- TRAVA DE FUSO HORÁRIO BRASIL (-03:00) ---
+  const getBrazilIsoDate = (val) => {
+    if (!val) return null;
+    // Se a data já vem com formato universal longo ou fuso, mantemos
+    if (val.endsWith('Z') || val.match(/[+-]\d\d:\d\d$/)) return val;
+    // Força o horário digitado a pertencer ao fuso horário brasileiro de forma absoluta
+    return `${val}:00-03:00`;
+  };
+
+  const formatToBrazilDatetimeInput = (isoString) => {
+    if (!isoString) return '';
+    if (isoString.length === 16 && !isoString.includes('Z') && !isoString.includes('-')) return isoString; 
+    
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    // Formata ignorando o computador local, focando exclusivamente no horário de São Paulo
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    });
+    const parts = formatter.formatToParts(d);
+    const val = (type) => parts.find(p => p.type === type)?.value;
+    return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`;
+  };
+
   // --- FUNÇÕES DE CADASTRO E EDIÇÃO ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
@@ -69,21 +95,13 @@ export default function AgendamentosPage() {
       await supabase.from('users').upsert({ id: responsible_id, email: session.user.email, name: session.user.user_metadata?.full_name || session.user.email });
     }
 
-    // CORREÇÃO DEFINITIVA DE FUSO HORÁRIO PARA SALVAMENTO
-    let interviewIso = null;
-    if (formData.interview_date) {
-      const [dateP, timeP] = formData.interview_date.split('T');
-      const [y, m, d] = dateP.split('-');
-      const [hr, min] = timeP.split(':');
-      interviewIso = new Date(y, m - 1, d, hr, min).toISOString();
-    }
-
+    const interviewIso = getBrazilIsoDate(formData.interview_date);
     const dataToSave = { ...formData, interview_date: interviewIso, responsible_id };
 
     const { error } = await supabase.from('candidates').insert([dataToSave]);
     if (error) return alert('Erro ao salvar candidato: ' + error.message);
 
-    // --- GATILHO DO GOOGLE AGENDA ---
+    // GATILHO DO GOOGLE AGENDA
     if (interviewIso) {
       try {
         const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
@@ -103,7 +121,6 @@ export default function AgendamentosPage() {
     }
 
     setIsModalOpen(false);
-    // Limpar campos após salvar
     setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: roles.length > 0 ? roles[0].id : '', unit_id: units.length > 0 ? units[0].id : '', interview_date: '' });
     fetchData(); 
   }
@@ -112,20 +129,7 @@ export default function AgendamentosPage() {
     e.preventDefault();
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date } = editingCandidate;
     
-    // CORREÇÃO DEFINITIVA DE FUSO HORÁRIO PARA ATUALIZAÇÃO
-    let interviewIso = null;
-    if (interview_date && interview_date.includes('T')) {
-      if (interview_date.length === 16) {
-        // Formato vindo direto do input "YYYY-MM-DDTHH:mm"
-        const [dateP, timeP] = interview_date.split('T');
-        const [y, m, d] = dateP.split('-');
-        const [hr, min] = timeP.split(':');
-        interviewIso = new Date(y, m - 1, d, hr, min).toISOString();
-      } else {
-        // Já está no formato ISO longo
-        interviewIso = new Date(interview_date).toISOString();
-      }
-    }
+    const interviewIso = getBrazilIsoDate(interview_date);
 
     const { error } = await supabase.from('candidates').update({
       process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso
@@ -186,14 +190,23 @@ export default function AgendamentosPage() {
     fetchData();
   }
 
-  // --- FILTROS ---
-  const filteredCandidates = candidates.filter(c => {
+  // --- FILTROS E ORDENAÇÃO ---
+  const sortedFilteredCandidates = candidates.filter(c => {
     if (c.status !== currentTab) return false;
     if (filterProcessType && c.process_type !== filterProcessType) return false;
     if (filterUnit && c.unit_id !== filterUnit) return false;
     if (filterRole && c.job_role_id !== filterRole) return false;
     if (filterResponsible && c.responsible_id !== filterResponsible) return false;
     return true;
+  }).sort((a, b) => {
+    if (currentTab === 'Agendado') {
+      // Ordenação CRESCENTE pela data da entrevista
+      const timeA = a.interview_date ? new Date(a.interview_date).getTime() : Infinity;
+      const timeB = b.interview_date ? new Date(b.interview_date).getTime() : Infinity;
+      return timeA - timeB; 
+    }
+    // Outras abas (Banco/Reprovado): Mais recentes por cadastro primeiro
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
   return (
@@ -255,13 +268,13 @@ export default function AgendamentosPage() {
       {/* LISTA DE CANDIDATOS */}
       {loading ? (
         <p>Conectando ao banco de dados...</p>
-      ) : filteredCandidates.length === 0 ? (
+      ) : sortedFilteredCandidates.length === 0 ? (
         <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)' }}>
           <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato encontrado nesta aba.</p>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: '1rem' }}>
-          {filteredCandidates.map((c) => (
+          {sortedFilteredCandidates.map((c) => (
             <div key={c.id} style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -272,9 +285,10 @@ export default function AgendamentosPage() {
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{c.job_roles?.name} • {c.units?.name} • CPF: {c.cpf}</p>
                 <p style={{ color: 'var(--text-main)', fontSize: '0.875rem', fontWeight: '500', marginTop: '0.5rem' }}>
-                  Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
+                  Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
                 </p>
                 
+                {/* Exibir o motivo da reprovação destacado se estiver na aba de Reprovados */}
                 {currentTab === 'Reprovado' && c.feedback && (
                    <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--danger-color)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                      <strong>Histórico / Reprovação:</strong> {c.feedback}
@@ -320,21 +334,6 @@ export default function AgendamentosPage() {
                 const data = editingCandidate || formData;
                 const setData = editingCandidate ? setEditingCandidate : setFormData;
 
-                // FUNÇÃO DE CORREÇÃO PARA MOSTRAR A DATA CORRETA NO MODAL (EDIÇÃO)
-                const formatToLocalDatetime = (isoString) => {
-                  if (!isoString) return '';
-                  if (isoString.length === 16 && !isoString.includes('Z')) return isoString; 
-                  
-                  const d = new Date(isoString);
-                  if (isNaN(d.getTime())) return isoString;
-                  const y = d.getFullYear();
-                  const m = String(d.getMonth() + 1).padStart(2, '0');
-                  const day = String(d.getDate()).padStart(2, '0');
-                  const hr = String(d.getHours()).padStart(2, '0');
-                  const min = String(d.getMinutes()).padStart(2, '0');
-                  return `${y}-${m}-${day}T${hr}:${min}`;
-                };
-
                 return (
                   <>
                     <div>
@@ -374,7 +373,7 @@ export default function AgendamentosPage() {
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
-                      <input required type="datetime-local" style={{ width: '100%' }} value={formatToLocalDatetime(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} />
+                      <input required type="datetime-local" style={{ width: '100%' }} value={formatToBrazilDatetimeInput(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} />
                     </div>
                   </>
                 );
