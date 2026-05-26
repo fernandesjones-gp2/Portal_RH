@@ -69,31 +69,42 @@ export default function AgendamentosPage() {
       await supabase.from('users').upsert({ id: responsible_id, email: session.user.email, name: session.user.user_metadata?.full_name || session.user.email });
     }
 
-    // CORREÇÃO: Transforma a data em formato oficial Universal antes de salvar no banco
-    const interviewIso = formData.interview_date ? new Date(formData.interview_date).toISOString() : null;
+    // CORREÇÃO DEFINITIVA DE FUSO HORÁRIO PARA SALVAMENTO
+    let interviewIso = null;
+    if (formData.interview_date) {
+      const [dateP, timeP] = formData.interview_date.split('T');
+      const [y, m, d] = dateP.split('-');
+      const [hr, min] = timeP.split(':');
+      interviewIso = new Date(y, m - 1, d, hr, min).toISOString();
+    }
+
     const dataToSave = { ...formData, interview_date: interviewIso, responsible_id };
 
     const { error } = await supabase.from('candidates').insert([dataToSave]);
     if (error) return alert('Erro ao salvar candidato: ' + error.message);
 
     // --- GATILHO DO GOOGLE AGENDA ---
-    try {
-      const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
-      const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
-      const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
-      
-      const d = new Date(formData.interview_date);
-      const dateStr = d.toISOString().replace(/-|:|\.\d\d\d/g, "");
-      const dEnd = new Date(d.getTime() + 60 * 60 * 1000); 
-      const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
-      
-      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
-      window.open(calUrl, '_blank');
-    } catch (agendaError) {
-      console.error('Erro ao abrir Google Agenda:', agendaError);
+    if (interviewIso) {
+      try {
+        const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
+        const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
+        const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
+        
+        const dAgenda = new Date(interviewIso);
+        const dateStr = dAgenda.toISOString().replace(/-|:|\.\d\d\d/g, "");
+        const dEnd = new Date(dAgenda.getTime() + 60 * 60 * 1000); 
+        const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
+        
+        const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
+        window.open(calUrl, '_blank');
+      } catch (agendaError) {
+        console.error('Erro ao abrir Google Agenda:', agendaError);
+      }
     }
 
     setIsModalOpen(false);
+    // Limpar campos após salvar
+    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: roles.length > 0 ? roles[0].id : '', unit_id: units.length > 0 ? units[0].id : '', interview_date: '' });
     fetchData(); 
   }
 
@@ -101,8 +112,20 @@ export default function AgendamentosPage() {
     e.preventDefault();
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date } = editingCandidate;
     
-    // CORREÇÃO: Trata a data para ISO Universal
-    const interviewIso = interview_date ? new Date(interview_date).toISOString() : null;
+    // CORREÇÃO DEFINITIVA DE FUSO HORÁRIO PARA ATUALIZAÇÃO
+    let interviewIso = null;
+    if (interview_date && interview_date.includes('T')) {
+      if (interview_date.length === 16) {
+        // Formato vindo direto do input "YYYY-MM-DDTHH:mm"
+        const [dateP, timeP] = interview_date.split('T');
+        const [y, m, d] = dateP.split('-');
+        const [hr, min] = timeP.split(':');
+        interviewIso = new Date(y, m - 1, d, hr, min).toISOString();
+      } else {
+        // Já está no formato ISO longo
+        interviewIso = new Date(interview_date).toISOString();
+      }
+    }
 
     const { error } = await supabase.from('candidates').update({
       process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso
@@ -249,7 +272,6 @@ export default function AgendamentosPage() {
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{c.job_roles?.name} • {c.units?.name} • CPF: {c.cpf}</p>
                 <p style={{ color: 'var(--text-main)', fontSize: '0.875rem', fontWeight: '500', marginTop: '0.5rem' }}>
-                  {/* CORREÇÃO: Limpando a visualização da data na tela inicial sem perder os minutos */}
                   Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
                 </p>
                 
@@ -298,14 +320,19 @@ export default function AgendamentosPage() {
                 const data = editingCandidate || formData;
                 const setData = editingCandidate ? setEditingCandidate : setFormData;
 
-                // CORREÇÃO: Helper para converter a data do banco no fuso horário do usuário para o input
+                // FUNÇÃO DE CORREÇÃO PARA MOSTRAR A DATA CORRETA NO MODAL (EDIÇÃO)
                 const formatToLocalDatetime = (isoString) => {
                   if (!isoString) return '';
-                  const date = new Date(isoString);
-                  if (isNaN(date.getTime())) return isoString;
-                  const offset = date.getTimezoneOffset() * 60000;
-                  const localDate = new Date(date.getTime() - offset);
-                  return localDate.toISOString().slice(0, 16);
+                  if (isoString.length === 16 && !isoString.includes('Z')) return isoString; 
+                  
+                  const d = new Date(isoString);
+                  if (isNaN(d.getTime())) return isoString;
+                  const y = d.getFullYear();
+                  const m = String(d.getMonth() + 1).padStart(2, '0');
+                  const day = String(d.getDate()).padStart(2, '0');
+                  const hr = String(d.getHours()).padStart(2, '0');
+                  const min = String(d.getMinutes()).padStart(2, '0');
+                  return `${y}-${m}-${day}T${hr}:${min}`;
                 };
 
                 return (
@@ -347,7 +374,6 @@ export default function AgendamentosPage() {
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
-                      {/* Aplicada a correção visual para o formulário funcionar perfeitamente com fusos horários */}
                       <input required type="datetime-local" style={{ width: '100%' }} value={formatToLocalDatetime(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} />
                     </div>
                   </>
