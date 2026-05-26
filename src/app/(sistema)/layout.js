@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { LayoutDashboard, Users, UserCheck, CheckCircle, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, CheckCircle, Settings, LogOut, ShieldAlert } from 'lucide-react';
 
 export default function SistemaLayout({ children }) {
   const pathname = usePathname();
@@ -12,6 +12,7 @@ export default function SistemaLayout({ children }) {
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('Carregando...');
   const [userRole, setUserRole] = useState('');
+  const [userStatus, setUserStatus] = useState(''); // NOVO: Controle de status
 
   const menuItems = [
     { name: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
@@ -31,17 +32,18 @@ export default function SistemaLayout({ children }) {
           return;
         }
 
-        // Busca as informações do usuário logado
-        let { data: user } = await supabase.from('users').select('name, role').eq('id', session.user.id).single();
+        // Busca as informações do usuário logado (agora incluindo o STATUS)
+        let { data: user } = await supabase.from('users').select('name, role, status').eq('id', session.user.id).single();
 
-        // SE O USUÁRIO NÃO EXISTIR NA TABELA, CADASTRA ELE AUTOMATICAMENTE COM OS DADOS DO GOOGLE
+        // SE O USUÁRIO FOR NOVO, CADASTRA COMO "PENDENTE"
         if (!user) {
           const { data: newUser, error } = await supabase.from('users').insert([{
             id: session.user.id,
             email: session.user.email,
             name: session.user.user_metadata?.full_name || session.user.email,
-            role: 'RECRUITER' // Dá o acesso mais baixo por padrão
-          }]).select('name, role').single();
+            role: 'RECRUITER',
+            status: 'Pendente' // <-- Conta nasce bloqueada
+          }]).select('name, role, status').single();
           
           if (!error) user = newUser;
         }
@@ -49,6 +51,7 @@ export default function SistemaLayout({ children }) {
         if (user) {
           setUserName(user.name || session.user.email);
           setUserRole(user.role);
+          setUserStatus(user.status);
 
           const { data: perms } = await supabase.from('role_permissions').select('menu_path').eq('role', user.role);
 
@@ -58,7 +61,7 @@ export default function SistemaLayout({ children }) {
         } else {
           setUserName(session.user.email);
           setUserRole('RECRUITER');
-          setAllowedPaths(['/dashboard', '/agendamentos']);
+          setUserStatus('Pendente');
         }
       } catch (error) {
         console.error('Erro ao carregar permissões:', error);
@@ -78,11 +81,30 @@ export default function SistemaLayout({ children }) {
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif' }}>
-        <p style={{ fontWeight: '500' }}>Carregando ambiente seguro...</p>
+        <p style={{ fontWeight: '500' }}>Verificando chaves de segurança...</p>
       </div>
     );
   }
 
+  // --- TELA DE BLOQUEIO (AGUARDANDO APROVAÇÃO) ---
+  if (userStatus === 'Pendente') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif', padding: '2rem' }}>
+        <div className="glass-panel" style={{ padding: '3rem', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+          <ShieldAlert size={64} color="var(--saritur-orange)" style={{ marginBottom: '1.5rem' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>Aguardando Aprovação</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', lineHeight: '1.6' }}>
+            Sua conta foi conectada com sucesso! Porém, por medidas de segurança, um <strong>Administrador</strong> precisa aprovar seu acesso antes que você possa visualizar os dados do sistema.
+          </p>
+          <button onClick={handleLogout} className="btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+            <LogOut size={18} /> Sair e tentar novamente depois
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- CONTINUAÇÃO NORMAL DO SISTEMA SE ESTIVER APROVADO ---
   const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
 
   const isAllowed = allowedPaths.includes(pathname);
