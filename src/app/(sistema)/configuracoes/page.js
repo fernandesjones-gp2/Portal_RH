@@ -13,22 +13,17 @@ export default function ConfiguracoesPage() {
   const [usersList, setUsersList] = useState([]);
   const [permissions, setPermissions] = useState([]);
 
-  // Seleção dos Dropdowns (Muitos dados)
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
 
-  // Formulários de Criação
   const [newUnit, setNewUnit] = useState('');
   const [newRole, setNewRole] = useState('');
 
-  // Estados de Edição
   const [editingUnit, setEditingUnit] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
 
-  // Configurações do Dashboard (Metas)
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
-  // Configurações de Mensagens Automáticas
   const [templates, setTemplates] = useState([
     { id: 'agendamento', title: 'Convite / Agendamento de Entrevista', content: 'Olá {nome}, sua entrevista para a função de {funcao} na unidade {unidade} está agendada para o dia {data_hora}. Estamos te aguardando!', tags: ['{nome}', '{funcao}', '{unidade}', '{data_hora}'] },
     { id: 'aprovacao', title: 'Aprovação e Solicitação de Documentos (WhatsApp)', content: 'Olá {nome}, você foi aprovado(a) na nossa entrevista para a função de {funcao}! Por favor, envie seus documentos para darmos andamento à sua admissão corporativa.', tags: ['{nome}', '{funcao}'] },
@@ -37,10 +32,8 @@ export default function ConfiguracoesPage() {
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [editingTemplateContent, setEditingTemplateContent] = useState('');
 
-  // Lista oficial de Perfis de Acesso (ENUM do Banco)
   const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
   
-  // Lista de Menus para a Matriz de Permissões
   const menusAcessiveis = [
     { path: '/dashboard', label: 'Dashboard' },
     { path: '/agendamentos', label: 'Agendamentos' },
@@ -174,8 +167,15 @@ export default function ConfiguracoesPage() {
     else fetchAllData();
   }
 
+  // --- NOVA FUNÇÃO: APROVAR USUÁRIO ---
+  async function handleApproveUser(id) {
+    const { error } = await supabase.from('users').update({ status: 'Aprovado' }).eq('id', id);
+    if (error) alert('Erro ao aprovar usuário: ' + error.message);
+    else fetchAllData();
+  }
+
   async function handleDeleteUser(id) {
-    if (!confirm('Remover este usuário do sistema?')) return;
+    if (!confirm('Deseja remover e bloquear este usuário do sistema?')) return;
     const { error } = await supabase.from('users').delete().eq('id', id);
     if (error) alert('Erro ao remover: ' + error.message);
     else fetchAllData();
@@ -282,17 +282,16 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 2: GESTÃO DE USUÁRIOS LIMPA */}
+      {/* BLOCO 2: GESTÃO DE USUÁRIOS */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Users size={20} color="var(--saritur-orange)" /> Controle de Acesso e Perfis de Usuários
         </h2>
 
-        {/* CAIXA DE INFORMAÇÃO SOBRE O CADASTRO AUTOMÁTICO */}
         <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
           <Info size={24} color="var(--saritur-orange)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            <strong>Como adicionar alguém?</strong> Por segurança e integração corporativa, o sistema exige que o novo colaborador faça o <strong>primeiro login com a conta Google</strong> dele no site. No momento em que ele acessar a tela inicial, a conta será gerada e o nome dele aparecerá automaticamente na tabela abaixo. Basta você selecionar qual será o nível de permissão dele.
+            <strong>Fluxo de Cadastro Seguro:</strong> Peça para o novo colaborador fazer o login no site. Ao entrar, a conta dele aparecerá aqui automaticamente como <strong>"Pendente"</strong>. Avalie, defina o perfil dele e clique no botão verde (<Check size={14} style={{ display: 'inline' }} />) para liberar o acesso ao sistema.
           </p>
         </div>
 
@@ -301,8 +300,8 @@ export default function ConfiguracoesPage() {
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
                 <th style={{ padding: '0.75rem' }}>Colaborador</th>
-                <th style={{ padding: '0.75rem' }}>E-mail Google</th>
-                <th style={{ padding: '0.75rem' }}>Perfil de Acesso (Nível)</th>
+                <th style={{ padding: '0.75rem' }}>Status</th>
+                <th style={{ padding: '0.75rem' }}>Perfil de Acesso</th>
                 <th style={{ padding: '0.75rem' }}>Restrição de Unidade</th>
                 <th style={{ padding: '0.75rem', textAlign: 'right' }}>Ações</th>
               </tr>
@@ -310,8 +309,17 @@ export default function ConfiguracoesPage() {
             <tbody>
               {usersList.map(user => (
                 <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '0.75rem', fontWeight: '600' }}>{user.name || 'Sem nome'}</td>
-                  <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</td>
+                  <td style={{ padding: '0.75rem' }}>
+                    <div style={{ fontWeight: '600' }}>{user.name || 'Sem nome'}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</div>
+                  </td>
+                  <td style={{ padding: '0.75rem' }}>
+                    {user.status === 'Pendente' ? (
+                      <span style={{ backgroundColor: 'var(--saritur-yellow)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Pendente</span>
+                    ) : (
+                      <span style={{ backgroundColor: 'var(--success-color)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Aprovado</span>
+                    )}
+                  </td>
                   <td style={{ padding: '0.75rem' }}>
                     <select style={{ padding: '0.25rem', fontSize: '0.85rem' }} value={user.role} onChange={e => handleUpdateUserRoleAndUnit(user.id, e.target.value, user.unit_id)}>
                       {availableRoles.map(role => <option key={role} value={role}>{role}</option>)}
@@ -324,7 +332,13 @@ export default function ConfiguracoesPage() {
                     </select>
                   </td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button>
+                    {/* BOTÃO DE APROVAÇÃO SE ESTIVER PENDENTE */}
+                    {user.status === 'Pendente' && (
+                      <button onClick={() => handleApproveUser(user.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem', marginRight: '0.5rem' }} title="Aprovar e Liberar Acesso">
+                        <Check size={14} />
+                      </button>
+                    )}
+                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }} title="Excluir/Bloquear Usuário"><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
