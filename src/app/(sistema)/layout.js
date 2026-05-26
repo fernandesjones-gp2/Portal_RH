@@ -31,28 +31,31 @@ export default function SistemaLayout({ children }) {
           return;
         }
 
-        // Busca as informações do usuário logado na tabela pública
-        const { data: user } = await supabase
-          .from('users')
-          .select('name, role')
-          .eq('id', session.user.id)
-          .single();
+        // Busca as informações do usuário logado
+        let { data: user } = await supabase.from('users').select('name, role').eq('id', session.user.id).single();
+
+        // SE O USUÁRIO NÃO EXISTIR NA TABELA, CADASTRA ELE AUTOMATICAMENTE COM OS DADOS DO GOOGLE
+        if (!user) {
+          const { data: newUser, error } = await supabase.from('users').insert([{
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.user_metadata?.full_name || session.user.email,
+            role: 'RECRUITER' // Dá o acesso mais baixo por padrão
+          }]).select('name, role').single();
+          
+          if (!error) user = newUser;
+        }
 
         if (user) {
           setUserName(user.name || session.user.email);
           setUserRole(user.role);
 
-          // Puxa as permissões dinâmicas da tabela que configuramos
-          const { data: perms } = await supabase
-            .from('role_permissions')
-            .select('menu_path')
-            .eq('role', user.role);
+          const { data: perms } = await supabase.from('role_permissions').select('menu_path').eq('role', user.role);
 
           if (perms) {
             setAllowedPaths(perms.map(p => p.menu_path));
           }
         } else {
-          // Fallback seguro caso o usuário acesse antes do pré-cadastro
           setUserName(session.user.email);
           setUserRole('RECRUITER');
           setAllowedPaths(['/dashboard', '/agendamentos']);
@@ -67,6 +70,11 @@ export default function SistemaLayout({ children }) {
     loadPermissions();
   }, [router]);
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/'); 
+  };
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif' }}>
@@ -75,17 +83,14 @@ export default function SistemaLayout({ children }) {
     );
   }
 
-  // Filtra as opções do menu com base nas caixinhas marcadas pelo ADMIN
   const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
 
-  // Segurança de URL (Bloqueio se tentar forçar o caminho digitando na barra do navegador)
   const isAllowed = allowedPaths.includes(pathname);
   if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
     router.push(allowedPaths[0]);
     return null;
   }
 
-  // Iniciais do Usuário para o Avatar no Topo
   const initials = userName ? userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'RH';
 
   return (
@@ -105,18 +110,7 @@ export default function SistemaLayout({ children }) {
               const isActive = pathname === item.path;
               return (
                 <li key={item.path}>
-                  <Link href={item.path} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.75rem 1rem',
-                    borderRadius: 'var(--radius-md)',
-                    color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
-                    backgroundColor: isActive ? 'var(--bg-color)' : 'transparent',
-                    fontWeight: isActive ? '500' : '400',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.1s ease'
-                  }}>
+                  <Link href={item.path} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', color: isActive ? 'var(--text-main)' : 'var(--text-muted)', backgroundColor: isActive ? 'var(--bg-color)' : 'transparent', fontWeight: isActive ? '500' : '400', fontSize: '0.9rem', transition: 'all 0.1s ease' }}>
                     {item.icon}
                     {item.name}
                   </Link>
@@ -127,10 +121,10 @@ export default function SistemaLayout({ children }) {
         </nav>
 
         <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger-color)', padding: '0.5rem 1rem', fontWeight: '500' }}>
+          <button onClick={handleLogout} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.75rem', color: 'var(--danger-color)', padding: '0.75rem 1rem', fontWeight: '500', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.9rem', borderRadius: 'var(--radius-md)' }}>
             <LogOut size={20} />
             Sair do Sistema
-          </Link>
+          </button>
         </div>
       </aside>
 
