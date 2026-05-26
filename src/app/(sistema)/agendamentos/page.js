@@ -60,7 +60,7 @@ export default function AgendamentosPage() {
     }
   }
 
- // --- FUNÇÕES DE CADASTRO E EDIÇÃO ---
+  // --- FUNÇÕES DE CADASTRO E EDIÇÃO ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
@@ -73,26 +73,24 @@ export default function AgendamentosPage() {
     const { error } = await supabase.from('candidates').insert([{ ...formData, responsible_id }]);
     if (error) return alert('Erro ao salvar candidato: ' + error.message);
 
-    // --- GATILHO DO GOOGLE AGENDA (RESTAURADO) ---
-    const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
-    const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
-    const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
-    
-    // Converte a data para o formato do Google Agenda e adiciona 1 hora de duração
-    const d = new Date(formData.interview_date);
-    const dateStr = d.toISOString().replace(/-|:|\.\d\d\d/g, "");
-    const dEnd = new Date(d.getTime() + 60 * 60 * 1000); 
-    const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
-    
-    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
-    window.open(calUrl, '_blank');
-    // ----------------------------------------------
+    // --- GATILHO DO GOOGLE AGENDA REINTEGRADO ---
+    try {
+      const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
+      const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
+      const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
+      
+      const d = new Date(formData.interview_date);
+      const dateStr = d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+      const dEnd = new Date(d.getTime() + 60 * 60 * 1000); 
+      const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
+      
+      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
+      window.open(calUrl, '_blank');
+    } catch (agendaError) {
+      console.error('Erro ao abrir Google Agenda:', agendaError);
+    }
 
     setIsModalOpen(false);
-    
-    // Limpa o formulário para o próximo cadastro
-    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: roles[0]?.id || '', unit_id: units[0]?.id || '', interview_date: '' });
-    
     fetchData(); 
   }
 
@@ -312,7 +310,8 @@ export default function AgendamentosPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Telefone (WhatsApp)</label><input required type="text" style={{ width: '100%' }} value={data.phone} onChange={e => setData({...data, phone: e.target.value})} /></div>
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%' }} value={data.cpf} onChange={e => setData({...data, cpf: e.target.value})} /></div>
-                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label><input required type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} /></div>
+                      {/* OBRIGATORIEDADE DO RG REMOVIDA AQUI (Abaixo) */}
+                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} /></div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -350,7 +349,7 @@ export default function AgendamentosPage() {
       {/* --- MODAL: PARECER (FEEDBACK) --- */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px' }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Parecer: {feedbackCandidate.name}</h2>
               <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
@@ -371,7 +370,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: REPROVAR CANDIDATO --- */}
+      {/* --- MODAL: REPROVAÇÃO --- */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
