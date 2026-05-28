@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -40,14 +40,12 @@ export default function PipelineAdmissaoPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // 1. Descobre quem é o usuário logado e qual o seu perfil (Role)
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).single();
         setCurrentUserRole(user?.role || '');
       }
 
-      // 2. Busca os dados gerais da tela
       const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
         supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)']).order('created_at', { ascending: false }),
         supabase.from('units').select('*'),
@@ -81,10 +79,23 @@ export default function PipelineAdmissaoPage() {
   // BLOCO 3: Prontos para Admitir
   const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
 
+  // --- MODELAGEM DO BLOCO 3 COM SEÇÃO DE DESTAQUE VERMELHO ---
   const groupedBloco3 = [];
-  bloco3.forEach(c => {
+  
+  // 1. Isola e injeta os chamados de Cancelamento Solicitado no topo da pilha
+  const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
+  if (cancelamentosSolicitados.length > 0) {
+    groupedBloco3.push({
+      date: '🚨 CANCELAMENTO SOLICITADO (AGUARDANDO DP)',
+      candidates: cancelamentosSolicitados,
+      isCancellationSection: true
+    });
+  }
+
+  // 2. Agrupa o restante normalmente pelas datas cronológicas de admissão
+  bloco3.filter(c => c.analysis_status !== 'Cancelamento Pendente').forEach(c => {
     const dateStr = new Date(c.admission_date).toLocaleDateString('pt-BR');
-    let group = groupedBloco3.find(g => g.date === dateStr);
+    let group = groupedBloco3.find(g => g.date === dateStr && !g.isCancellationSection);
     if (!group) {
       group = { date: dateStr, candidates: [] };
       groupedBloco3.push(group);
@@ -164,7 +175,7 @@ export default function PipelineAdmissaoPage() {
     link.click();
     document.body.removeChild(link);
 
-    alert(`O arquivo Excel (${fileName}) contendo todos os dados dos candidatos foi baixado. O status deles será atualizado para "Solicitada" agora.`);
+    alert(`O arquivo Excel (${fileName}) contendo todos os dados dos candidatos foi baixado. O status deles será updated para "Solicitada" agora.`);
     
     for (const c of listToRequest) {
       await supabase.from('candidates').update({ 
@@ -272,6 +283,21 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
+  // --- NOVA FUNÇÃO: HOMOLOGAÇÃO DE CANCELAMENTO PELO DP ---
+  async function handleConfirmCancellationDP(c) {
+    if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}? Os dados serão enviados para a lista de Reprovados/Cancelados.`)) {
+      const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
+      const { error } = await supabase.from('candidates').update({
+        status: 'Reprovado',
+        analysis_status: 'Cancelado',
+        feedback: (c.feedback || '') + finalNote
+      }).eq('id', c.id);
+
+      if (!error) fetchData();
+      else alert('Erro ao registrar cancelamento: ' + error.message);
+    }
+  }
+
   function openFeedbackModal(c) {
     setFeedbackCandidate(c);
     setFeedbackText('');
@@ -308,91 +334,111 @@ export default function PipelineAdmissaoPage() {
     }
   };
 
-  const renderCard = (c, isBloco3 = false) => (
-    <div key={c.id} className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderLeft: isBloco3 ? '3px solid var(--success-color)' : 'none' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          
-          {/* Botão de Ver Mensagens (Liberado para Todos) */}
-          <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico/Observações">
-            <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
-          </button>
-          
-          {/* Botão de Adicionar Mensagem */}
-          {(currentUserRole !== 'DP' || isBloco3) && (
-            <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem/Observação">
-              <MessageSquare size={14} color="var(--text-main)" />
-            </button>
-          )}
+  const renderCard = (c, isBloco3 = false) => {
+    const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
 
-          {/* Botão de Editar (Oculto para o DP) */}
-          {currentUserRole !== 'DP' && !isBloco3 && (
-            <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.3rem 0.5rem', fontSize: '0.7rem' }}>
-              <Settings2 size={12} /> Editar
+    return (
+      <div 
+        key={c.id} 
+        className="glass-panel" 
+        style={{ 
+          padding: '1rem', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '0.75rem', 
+          // DESTACADO NA COR VERMELHA SE FOR CANCELAMENTO SOLICITADO
+          borderLeft: isPendingCancellation ? '4px solid var(--danger-color)' : (isBloco3 ? '3px solid var(--success-color)' : 'none'),
+          backgroundColor: isPendingCancellation ? 'rgba(224, 36, 36, 0.03)' : 'var(--surface-color)'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            
+            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico/Observações">
+              <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
             </button>
-          )}
+            
+            {(currentUserRole !== 'DP' || isBloco3) && (
+              <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem/Observação">
+                <MessageSquare size={14} color="var(--text-main)" />
+              </button>
+            )}
 
-          {/* NOVO: Botão de Cancelar/Interromper Processo 
-              Regra: 
-              - No bloco 1 e 2: Liberado para todos exceto o DP.
-              - No bloco 3: Exclusivo para ADMIN ou RECRUITER_ANALYST.
-          */}
-          {((!isBloco3 && currentUserRole !== 'DP') || (isBloco3 && ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole))) && (
-            <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Cancelar Admissão / Interromper Processo">
-              <ThumbsDown size={12} />
-            </button>
-          )}
+            {currentUserRole !== 'DP' && !isBloco3 && (
+              <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.3rem 0.5rem', fontSize: '0.7rem' }}>
+                <Settings2 size={12} /> Editar
+              </button>
+            )}
+
+            {/* Trava do botão Excluir/Cancelar Padrão do Fluxo */}
+            {!isPendingCancellation && ((!isBloco3 && currentUserRole !== 'DP') || (isBloco3 && ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole))) && (
+              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo">
+                <ThumbsDown size={12} />
+              </button>
+            )}
+          </div>
         </div>
+
+        {expandedNotes.includes(c.id) && (
+          <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
+            <p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Histórico:</p>
+            <p style={{ color: 'var(--text-muted)' }}>{c.feedback || 'Nenhuma observação registrada.'}</p>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Circle size={8} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} />
+            <span style={{ fontWeight: '500' }}>Análise:</span>
+            <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Circle size={8} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} />
+            <span style={{ fontWeight: '500' }}>Médico:</span>
+            <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Circle size={8} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} />
+            <span style={{ fontWeight: '500' }}>Doc:</span>
+            <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span>
+          </div>
+        </div>
+
+        {/* Botoes de Ação do Bloco 3 condicionados ao Chamado de Cancelamento */}
+        {isBloco3 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+            {isPendingCancellation ? (
+              // EXCLUSIVO PARA O DP HOMOLOGAR O PEDIDO DE CANCELAMENTO
+              ['ADMIN', 'DP'].includes(currentUserRole) && (
+                <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--danger-color)', color: 'white' }}>
+                  <ShieldAlert size={14} style={{ marginRight: '4px' }} /> Confirmar Cancelamento
+                </button>
+              )
+            ) : (
+              // Fluxo normal de efetivação do DP
+              ['ADMIN', 'DP'].includes(currentUserRole) && (
+                <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--success-color)' }}>
+                  <FileCheck size={14} /> Concluir Admissão
+                </button>
+              )
+            )}
+          </div>
+        )}
+
+        {currentUserRole !== 'DP' && !isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
+          <div style={{ marginTop: '0.5rem' }}>
+            <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
+              Definir Data Admissão <ArrowRight size={14} style={{ marginLeft: '4px' }}/>
+            </button>
+          </div>
+        )}
       </div>
-
-      {expandedNotes.includes(c.id) && (
-        <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
-          <p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Histórico:</p>
-          <p style={{ color: 'var(--text-muted)' }}>{c.feedback || 'Nenhuma observação registrada.'}</p>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Circle size={8} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} />
-          <span style={{ fontWeight: '500' }}>Análise:</span>
-          <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Circle size={8} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} />
-          <span style={{ fontWeight: '500' }}>Médico:</span>
-          <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Circle size={8} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} />
-          <span style={{ fontWeight: '500' }}>Doc:</span>
-          <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span>
-        </div>
-      </div>
-
-      {/* Botão Definir Data Admissão (Oculto para DP) */}
-      {currentUserRole !== 'DP' && !isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
-            Definir Data Admissão <ArrowRight size={14} style={{ marginLeft: '4px' }}/>
-          </button>
-        </div>
-      )}
-
-      {/* Botão Concluir Admissão (Apenas ADMIN e DP) */}
-      {isBloco3 && ['ADMIN', 'DP'].includes(currentUserRole) && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
-          <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--success-color)' }}>
-            <FileCheck size={14} /> Concluir Admissão
-          </button>
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   return (
     <div>
@@ -472,10 +518,21 @@ export default function PipelineAdmissaoPage() {
             <div style={{ display: 'grid', gap: '1rem' }}>
               {groupedBloco3.map(group => (
                 <div key={group.date}>
-                  <div style={{ padding: '0.3rem 0', borderBottom: '2px solid var(--border-color)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Calendar size={14} color="var(--saritur-orange)" />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                      Admissão {group.date}
+                  <div 
+                    style={{ 
+                      padding: '0.3rem 0.5rem', 
+                      borderBottom: '2px solid var(--border-color)', 
+                      marginBottom: '0.75rem', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.4rem',
+                      borderRadius: '4px',
+                      backgroundColor: group.isCancellationSection ? 'rgba(224, 36, 36, 0.1)' : 'transparent'
+                    }}
+                  >
+                    <Calendar size={14} color={group.isCancellationSection ? 'var(--danger-color)' : 'var(--saritur-orange)'} />
+                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>
+                      {group.date}
                     </span>
                   </div>
                   <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -583,7 +640,7 @@ export default function PipelineAdmissaoPage() {
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
                 <input required type="date" style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Confirmar e Mover</button>
               </div>
@@ -592,23 +649,23 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* REJECT/CANCEL MODAL */}
+      {/* REJECT MODAL */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Interromper Processo</h2>
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento/Reprovação *</label>
                 <select required style={{ width: '100%' }} value={rejectForm.reason} onChange={e => setRejectForm({...rejectForm, reason: e.target.value})}>
                   <option value="">-- Selecione um motivo --</option>
-                  <option value="Desistência do Candidato">Desistência do Candidato</option>
                   <option value="Reprovado na Análise Administrativa">Reprovado na Análise Administrativa</option>
                   <option value="Inapto no Exame Médico">Inapto no Exame Médico</option>
+                  <option value="Desistência do Candidato">Desistência do Candidato</option>
                   <option value="Documentação Pendente/Irregular">Documentação Pendente/Irregular</option>
                   <option value="Erro de Cadastro / Duplicidade">Erro de Cadastro / Duplicidade</option>
                   <option value="Outros">Outros</option>
@@ -619,8 +676,8 @@ export default function PipelineAdmissaoPage() {
                 <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Cancelamento</button>
+                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
               </div>
             </form>
           </div>
