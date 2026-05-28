@@ -18,6 +18,7 @@ export default function AgendamentosPage() {
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [feedbackCandidate, setFeedbackCandidate] = useState(null);
   const [rejectCandidate, setRejectCandidate] = useState(null);
+  const [detailsCandidate, setDetailsCandidate] = useState(null); // NOVO: Estado para ver detalhamento do cancelamento
   
   // Filtros
   const [filterProcessType, setFilterProcessType] = useState('');
@@ -44,14 +45,8 @@ export default function AgendamentosPage() {
       ]);
       
       if (candidatesRes.data) setCandidates(candidatesRes.data);
-      if (unitsRes.data) {
-        setUnits(unitsRes.data);
-        if (unitsRes.data.length > 0 && !formData.unit_id) setFormData(f => ({ ...f, unit_id: unitsRes.data[0].id }));
-      }
-      if (rolesRes.data) {
-        setRoles(rolesRes.data);
-        if (rolesRes.data.length > 0 && !formData.job_role_id) setFormData(f => ({ ...f, job_role_id: rolesRes.data[0].id }));
-      }
+      if (unitsRes.data) setUnits(unitsRes.data);
+      if (rolesRes.data) setRoles(rolesRes.data);
       if (usersRes.data) setResponsibles(usersRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -151,12 +146,28 @@ export default function AgendamentosPage() {
     }
   }
 
+  // --- NOVA FUNÇÃO ATUALIZADA: GRAVAÇÃO E LOG DE AUDITORIA COMPLETO ---
   async function handleConfirmReject(e) {
     e.preventDefault();
     if (!rejectForm.reason) return alert('Selecione o motivo principal.');
 
-    const rejectionText = `\n[REPROVADO] Motivo: ${rejectForm.reason}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
-    const newFeedback = (rejectCandidate.feedback || '') + rejectionText;
+    // 1. Captura o usuário responsável pela ação
+    let userDisplay = 'N/A';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: u } = await supabase.from('users').select('name').eq('id', session.user.id).single();
+        userDisplay = u?.name || session.user.email;
+      }
+    } catch (err) { console.error(err); }
+
+    // 2. Registra o timestamp local absoluto de Brasília
+    const cancellationDate = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+    // 3. Monta o bloco estruturado de auditoria com os 4 dados fundamentais solicitados
+    const auditingBlock = `\n--- AUDITORIA DE CANCELAMENTO ---\n• Data e Hora: ${cancellationDate}\n• Usuário Executor: ${userDisplay}\n• Motivo Principal: ${rejectForm.reason}\n• Fase/Status no momento: ${rejectCandidate.status} (Análise ADM: ${rejectCandidate.analysis_status || 'Pendente'}, Exame Médico: ${rejectCandidate.medical_status || 'Pendente'}, Documentação: ${rejectCandidate.docs_status || 'Pendente'})\n${rejectForm.notes ? `• Observações Adicionais: ${rejectForm.notes}\n` : ''}---------------------------------`;
+    
+    const newFeedback = (rejectCandidate.feedback || '') + auditingBlock;
 
     const { error } = await supabase.from('candidates').update({ 
       status: 'Reprovado',
@@ -167,6 +178,8 @@ export default function AgendamentosPage() {
       setRejectCandidate(null);
       setRejectForm({ reason: '', notes: '' });
       fetchData();
+    } else {
+      alert('Erro ao arquivar processo: ' + error.message);
     }
   }
 
@@ -175,32 +188,23 @@ export default function AgendamentosPage() {
     if (!error) fetchData();
   }
 
-  // --- APROVAÇÃO COM TEMPLATE DO WHATSAPP ---
   async function handleApprove(candidate) {
     if (confirm('Deseja solicitar a documentação para o candidato no WhatsApp?')) {
-      
-      // Mensagem padrão caso não encontre no banco local
       let textMsg = `Olá ${candidate.name}, você foi aprovado na entrevista! Por favor, envie sua documentação.`;
-
-      // Busca os templates customizados salvos em Configurações
       const savedTemplates = localStorage.getItem('portal_rh_templates');
       if (savedTemplates) {
         const templates = JSON.parse(savedTemplates);
         const approveTemplate = templates.find(t => t.id === 'aprovacao');
-        
         if (approveTemplate) {
-          // Substitui as tags pelas informações reais do candidato
           textMsg = approveTemplate.content
             .replace(/\{nome\}/g, candidate.name || '')
             .replace(/\{funcao\}/g, candidate.job_roles?.name || '');
         }
       }
-
       const msg = encodeURIComponent(textMsg);
       const phone = candidate.phone.replace(/\D/g, '');
       window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank');
     }
-    
     await supabase.from('candidates').update({ status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() }).eq('id', candidate.id);
     fetchData();
   }
@@ -219,7 +223,6 @@ export default function AgendamentosPage() {
     } else if (filterDate && !c.interview_date) {
       return false; 
     }
-    
     return true;
   }).sort((a, b) => {
     if (currentTab === 'Agendado') {
@@ -276,13 +279,7 @@ export default function AgendamentosPage() {
           <option value="">Todos Responsáveis</option>
           {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
         </select>
-        <input 
-          type="date" 
-          title="Filtrar por data"
-          style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} 
-          value={filterDate} 
-          onChange={e => setFilterDate(e.target.value)} 
-        />
+        <input type="date" title="Filtrar por data" style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
       </div>
 
       {loading ? (
@@ -306,17 +303,19 @@ export default function AgendamentosPage() {
                 <p style={{ color: 'var(--text-main)', fontSize: '0.875rem', fontWeight: '500', marginTop: '0.5rem' }}>
                   Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
                 </p>
-                
-                {currentTab === 'Reprovado' && c.feedback && (
-                   <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--danger-color)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                     <strong>Histórico / Reprovação:</strong> {c.feedback}
-                   </div>
-                )}
               </div>
 
+              {/* LINHA DE BOTÕES ATUALIZADA */}
               <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button className="btn-secondary" onClick={() => openFeedbackModal(c)} title="Parecer / Histórico"><MessageSquare size={16} /></button>
                 
+                {/* NOVO: Botão Detalhes visível apenas na aba de Reprovados/Cancelados */}
+                {currentTab === 'Reprovado' && (
+                  <button className="btn-secondary" onClick={() => setDetailsCandidate(c)} style={{ fontWeight: '600', borderColor: 'var(--danger-color)', color: 'var(--danger-color)' }} title="Ver Detalhamento do Cancelamento">
+                    Ver Detalhes
+                  </button>
+                )}
+
                 {currentTab === 'Agendado' && (
                   <>
                     <button className="btn-secondary" onClick={() => setEditingCandidate(c)} title="Editar Cadastro"><Edit2 size={16} /></button>
@@ -334,6 +333,37 @@ export default function AgendamentosPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* --- NOVO MODAL: DETALHAMENTO DO CANCELAMENTO --- */}
+      {detailsCandidate && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px', maxHeight: '85vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Detalhamento do Processo</h2>
+              <button onClick={() => setDetailsCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Candidato</span>
+                <p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>{detailsCandidate.name}</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{detailsCandidate.job_roles?.name} • {detailsCandidate.units?.name}</p>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Histórico e Motivações Registradas</span>
+                <div style={{ marginTop: '0.5rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.6' }}>
+                  {detailsCandidate.feedback || 'Nenhum histórico detalhado registrado para este cancelamento.'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Detalhes</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -419,7 +449,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: PARECER (FEEDBACK) --- */}
+      {/* --- MODAIS DE PARECER E REPROVAÇÃO --- */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px' }}>
@@ -427,14 +457,7 @@ export default function AgendamentosPage() {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Parecer: {feedbackCandidate.name}</h2>
               <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
-            
-            <textarea 
-              style={{ width: '100%', minHeight: '150px', padding: '0.75rem' }} 
-              placeholder="Digite o parecer, notas da entrevista ou histórico do candidato..."
-              value={feedbackText} 
-              onChange={(e) => setFeedbackText(e.target.value)}
-            />
-
+            <textarea style={{ width: '100%', minHeight: '150px', padding: '0.75rem' }} placeholder="Digite o parecer, notas da entrevista ou histórico do candidato..." value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
               <button className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button>
               <button className="btn-primary" onClick={handleSaveFeedback}>Salvar Parecer</button>
@@ -443,7 +466,6 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: REPROVAR CANDIDATO --- */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -452,7 +474,6 @@ export default function AgendamentosPage() {
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será movido para o histórico de reprovados.</p>
-            
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo da Reprovação *</label>
@@ -467,17 +488,10 @@ export default function AgendamentosPage() {
                   <option value="Outros">Outros</option>
                 </select>
               </div>
-
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
-                <textarea 
-                  style={{ width: '100%', minHeight: '80px' }} 
-                  placeholder="Detalhes adicionais sobre a reprovação..."
-                  value={rejectForm.notes} 
-                  onChange={e => setRejectForm({...rejectForm, notes: e.target.value})}
-                />
+                <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a reprovação..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Reprovação</button>
