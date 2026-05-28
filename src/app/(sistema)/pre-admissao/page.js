@@ -322,7 +322,7 @@ export default function PipelineAdmissaoPage() {
             <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
           </button>
           
-          {/* Botão de Adicionar Mensagem (Liberado para Recrutadores, ou para o DP caso esteja no Bloco 3) */}
+          {/* Botão de Adicionar Mensagem */}
           {(currentUserRole !== 'DP' || isBloco3) && (
             <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem/Observação">
               <MessageSquare size={14} color="var(--text-main)" />
@@ -336,9 +336,13 @@ export default function PipelineAdmissaoPage() {
             </button>
           )}
 
-          {/* Botão de Interromper Processo (Oculto para o DP) */}
-          {currentUserRole !== 'DP' && (
-            <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper/Cancelar Processo">
+          {/* NOVO: Botão de Cancelar/Interromper Processo 
+              Regra: 
+              - No bloco 1 e 2: Liberado para todos exceto o DP.
+              - No bloco 3: Exclusivo para ADMIN ou RECRUITER_ANALYST.
+          */}
+          {((!isBloco3 && currentUserRole !== 'DP') || (isBloco3 && ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole))) && (
+            <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Cancelar Admissão / Interromper Processo">
               <ThumbsDown size={12} />
             </button>
           )}
@@ -588,23 +592,23 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* REJECT MODAL */}
+      {/* REJECT/CANCEL MODAL */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Interromper Processo</h2>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2>
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento/Reprovação *</label>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
                 <select required style={{ width: '100%' }} value={rejectForm.reason} onChange={e => setRejectForm({...rejectForm, reason: e.target.value})}>
                   <option value="">-- Selecione um motivo --</option>
+                  <option value="Desistência do Candidato">Desistência do Candidato</option>
                   <option value="Reprovado na Análise Administrativa">Reprovado na Análise Administrativa</option>
                   <option value="Inapto no Exame Médico">Inapto no Exame Médico</option>
-                  <option value="Desistência do Candidato">Desistência do Candidato</option>
                   <option value="Documentação Pendente/Irregular">Documentação Pendente/Irregular</option>
                   <option value="Erro de Cadastro / Duplicidade">Erro de Cadastro / Duplicidade</option>
                   <option value="Outros">Outros</option>
@@ -615,8 +619,8 @@ export default function PipelineAdmissaoPage() {
                 <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
+                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Cancelamento</button>
               </div>
             </form>
           </div>
