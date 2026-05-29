@@ -9,25 +9,22 @@ export default function PipelineAdmissaoPage() {
   const [candidates, setCandidates] = useState([]);
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [cancellationReasons, setCancellationReasons] = useState([]);
   const [responsibles, setResponsibles] = useState([]);
   
   const [loading, setLoading] = useState(true);
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [expandedNotes, setExpandedNotes] = useState([]);
 
-  // Modal de Transição Manual (Data de Admissão)
   const [admissionModalCandidate, setAdmissionModalCandidate] = useState(null);
   const [admissionDate, setAdmissionDate] = useState('');
 
-  // Modal de Interrupção Direta (Reprovar/Cancelar)
   const [rejectCandidate, setRejectCandidate] = useState(null);
-  const [rejectForm, setRejectForm] = useState({ reason: '', notes: '' });
+  const [rejectForm, setRejectForm] = useState({ reasonId: '', notes: '' });
 
-  // Modal de Mensagem / Feedback rápido
   const [feedbackCandidate, setFeedbackCandidate] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
 
-  // Filtros
   const [filterProcessType, setFilterProcessType] = useState('');
   const [filterUnit, setFilterUnit] = useState('');
   const [filterRole, setFilterRole] = useState('');
@@ -46,16 +43,18 @@ export default function PipelineAdmissaoPage() {
         setCurrentUserRole(user?.role || '');
       }
 
-      const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
+      const [candidatesRes, unitsRes, rolesRes, reasonsRes, usersRes] = await Promise.all([
         supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)']).order('created_at', { ascending: false }),
         supabase.from('units').select('*'),
         supabase.from('job_roles').select('*'),
+        supabase.from('cancellation_reasons').select('*').order('name'),
         supabase.from('users').select('*')
       ]);
       
       if (candidatesRes.data) setCandidates(candidatesRes.data);
       if (unitsRes.data) setUnits(unitsRes.data);
       if (rolesRes.data) setRoles(rolesRes.data);
+      if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
       if (usersRes.data) setResponsibles(usersRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -72,18 +71,13 @@ export default function PipelineAdmissaoPage() {
     return true;
   });
 
-  // BLOCO 1: Em Andamento
   const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
-  // BLOCO 2: Pré-Admissão (Aguardando Médico / Data)
   const bloco2 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida');
-  // BLOCO 3: Prontos para Admitir
   const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
 
-  // --- MODELAGEM DO BLOCO 3 COM SEÇÃO DE DESTAQUE VERMELHO ---
   const groupedBloco3 = [];
-  
-  // 1. Isola e injeta os chamados de Cancelamento Solicitado no topo da pilha
   const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
+  
   if (cancelamentosSolicitados.length > 0) {
     groupedBloco3.push({
       date: '🚨 CANCELAMENTO SOLICITADO (AGUARDANDO DP)',
@@ -92,7 +86,6 @@ export default function PipelineAdmissaoPage() {
     });
   }
 
-  // 2. Agrupa o restante normalmente pelas datas cronológicas de admissão
   bloco3.filter(c => c.analysis_status !== 'Cancelamento Pendente').forEach(c => {
     const dateStr = new Date(c.admission_date).toLocaleDateString('pt-BR');
     let group = groupedBloco3.find(g => g.date === dateStr && !g.isCancellationSection);
@@ -175,7 +168,7 @@ export default function PipelineAdmissaoPage() {
     link.click();
     document.body.removeChild(link);
 
-    alert(`O arquivo Excel (${fileName}) contendo todos os dados dos candidatos foi baixado. O status deles será updated para "Solicitada" agora.`);
+    alert(`O arquivo Excel (${fileName}) foi baixado. O status será alterado para "Solicitada".`);
     
     for (const c of listToRequest) {
       await supabase.from('candidates').update({ 
@@ -231,30 +224,43 @@ export default function PipelineAdmissaoPage() {
 
   async function handleConfirmReject(e) {
     e.preventDefault();
-    if (!rejectForm.reason) return alert('Selecione o motivo principal.');
+    if (!rejectForm.reasonId) return alert('Selecione o motivo principal.');
 
-    const rejectionText = `\n[CANCELADO NO PIPELINE] Motivo: ${rejectForm.reason}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
-    const newFeedback = (rejectCandidate.feedback || '') + rejectionText;
+    const selectedReasonObj = cancellationReasons.find(r => r.id === rejectForm.reasonId);
+    const reasonText = selectedReasonObj ? selectedReasonObj.name : 'Outros';
+
+    const cancellationText = `\n[CANCELADO NO PIPELINE] Motivo: ${reasonText}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
+    const newFeedback = (rejectCandidate.feedback || '') + cancellationText;
 
     const { error } = await supabase.from('candidates').update({ 
       status: 'Reprovado',
+      cancellation_reason_id: rejectForm.reasonId,
       feedback: newFeedback
     }).eq('id', rejectCandidate.id);
 
     if (!error) {
       setRejectCandidate(null);
-      setRejectForm({ reason: '', notes: '' });
+      setRejectForm({ reasonId: '', notes: '' });
       fetchData();
     } else {
       alert('Erro ao interromper processo: ' + error.message);
     }
   }
 
-  const handleOpenAdmissionModal = (c) => {
-    if (c.medical_status !== 'Apto') {
-      alert('O Exame Médico precisa estar marcado como "Apto" para prosseguir com a admissão.');
-      return;
+  async function handleConfirmCancellationDP(c) {
+    if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}?`)) {
+      const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
+      const { error } = await supabase.from('candidates').update({
+        status: 'Reprovado',
+        analysis_status: 'Cancelado',
+        feedback: (c.feedback || '') + finalNote
+      }).eq('id', c.id);
+      if (!error) fetchData();
     }
+  }
+
+  const handleOpenAdmissionModal = (c) => {
+    if (c.medical_status !== 'Apto') return alert('Exame precisa estar Apto para definir a data de admissão.');
     setAdmissionModalCandidate(c);
     setAdmissionDate('');
   };
@@ -262,15 +268,14 @@ export default function PipelineAdmissaoPage() {
   const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
-
     const { error } = await supabase.from('candidates').update({ 
-      status: 'Pré-Admissão (Pronto)',
-      admission_date: new Date(admissionDate + 'T12:00:00').toISOString()
+      status: 'Pré-Admissão (Pronto)', 
+      admission_date: new Date(admissionDate + 'T12:00:00').toISOString() 
     }).eq('id', admissionModalCandidate.id);
-
-    if (!error) {
-      setAdmissionModalCandidate(null);
-      fetchData();
+    
+    if (!error) { 
+      setAdmissionModalCandidate(null); 
+      fetchData(); 
     } else {
       alert('Erro ao confirmar data de admissão: ' + error.message);
     }
@@ -283,146 +288,101 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  // --- NOVA FUNÇÃO: HOMOLOGAÇÃO DE CANCELAMENTO PELO DP ---
-  async function handleConfirmCancellationDP(c) {
-    if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}? Os dados serão enviados para a lista de Reprovados/Cancelados.`)) {
-      const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
-      const { error } = await supabase.from('candidates').update({
-        status: 'Reprovado',
-        analysis_status: 'Cancelado',
-        feedback: (c.feedback || '') + finalNote
-      }).eq('id', c.id);
-
-      if (!error) fetchData();
-      else alert('Erro ao registrar cancelamento: ' + error.message);
-    }
+  function openFeedbackModal(c) { 
+    setFeedbackCandidate(c); 
+    setFeedbackText(''); 
   }
-
-  function openFeedbackModal(c) {
-    setFeedbackCandidate(c);
-    setFeedbackText('');
-  }
-
+  
   async function handleSaveFeedback(e) {
     e.preventDefault();
     if(!feedbackText) return;
-    
     const newNote = `\n[${currentUserRole}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
-    const updatedFeedback = (feedbackCandidate.feedback || '') + newNote;
-
-    const { error } = await supabase.from('candidates').update({ feedback: updatedFeedback }).eq('id', feedbackCandidate.id);
-    
-    if (!error) {
-      setFeedbackCandidate(null);
-      setFeedbackText('');
-      fetchData();
-    } else {
-      alert('Erro ao salvar mensagem: ' + error.message);
-    }
+    await supabase.from('candidates').update({ feedback: (feedbackCandidate.feedback || '') + newNote }).eq('id', feedbackCandidate.id);
+    setFeedbackCandidate(null); 
+    fetchData();
   }
 
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'Aprovado': 
-      case 'Apto': 
-      case 'Recebida': return '#057a55';
-      case 'Reprovado': 
-      case 'Inapto': return '#e02424';
-      case 'Solicitada': return '#F6D317';
-      case 'Pendente': return '#888888';
-      default: return '#cccccc';
+    switch(status) { 
+      case 'Aprovado': case 'Apto': case 'Recebida': return '#057a55'; 
+      case 'Reprovado': case 'Inapto': return '#e02424'; 
+      case 'Solicitada': return '#F6D317'; 
+      default: return '#888888'; 
     }
   };
 
   const renderCard = (c, isBloco3 = false) => {
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
-
+    
     return (
-      <div 
-        key={c.id} 
-        className="glass-panel" 
-        style={{ 
-          padding: '1rem', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: '0.75rem', 
-          // DESTACADO NA COR VERMELHA SE FOR CANCELAMENTO SOLICITADO
-          borderLeft: isPendingCancellation ? '4px solid var(--danger-color)' : (isBloco3 ? '3px solid var(--success-color)' : 'none'),
-          backgroundColor: isPendingCancellation ? 'rgba(224, 36, 36, 0.03)' : 'var(--surface-color)'
-        }}
-      >
+      <div key={c.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: isPendingCancellation ? '4px solid var(--danger-color)' : (isBloco3 ? '4px solid var(--success-color)' : 'none'), backgroundColor: isPendingCancellation ? 'rgba(224, 36, 36, 0.03)' : 'var(--surface-color)' }}>
+        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
+            <h3 style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
           </div>
+          
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            
-            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico/Observações">
-              <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
+            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico">
+              <MessageSquareText size={16} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
             </button>
             
             {(currentUserRole !== 'DP' || isBloco3) && (
-              <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem/Observação">
-                <MessageSquare size={14} color="var(--text-main)" />
+              <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem">
+                <MessageSquare size={16} color="var(--text-main)" />
               </button>
             )}
 
+            {/* BOTÃO EDITAR VOLTOU AQUI */}
             {currentUserRole !== 'DP' && !isBloco3 && (
-              <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.3rem 0.5rem', fontSize: '0.7rem' }}>
-                <Settings2 size={12} /> Editar
+              <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Preencher Etapas e Editar">
+                <Settings2 size={14} /> Editar
               </button>
             )}
 
-            {/* Trava do botão Excluir/Cancelar Padrão do Fluxo */}
             {!isPendingCancellation && ((!isBloco3 && currentUserRole !== 'DP') || (isBloco3 && ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole))) && (
-              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo">
-                <ThumbsDown size={12} />
+              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo">
+                <ThumbsDown size={14} />
               </button>
             )}
           </div>
         </div>
 
         {expandedNotes.includes(c.id) && (
-          <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
-            <p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Histórico:</p>
+          <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
+            <p style={{ fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.3rem' }}>Histórico / Observações:</p>
             <p style={{ color: 'var(--text-muted)' }}>{c.feedback || 'Nenhuma observação registrada.'}</p>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Circle size={8} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} />
-            <span style={{ fontWeight: '500' }}>Análise:</span>
-            <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span>
+            <Circle size={10} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} />
+            <span style={{ fontWeight: '600' }}>Análise:</span> <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Circle size={8} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} />
-            <span style={{ fontWeight: '500' }}>Médico:</span>
-            <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span>
+            <Circle size={10} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} />
+            <span style={{ fontWeight: '600' }}>Médico:</span> <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Circle size={8} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} />
-            <span style={{ fontWeight: '500' }}>Doc:</span>
-            <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span>
+            <Circle size={10} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} />
+            <span style={{ fontWeight: '600' }}>Doc:</span> <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span>
           </div>
         </div>
 
-        {/* Botoes de Ação do Bloco 3 condicionados ao Chamado de Cancelamento */}
         {isBloco3 && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem' }}>
             {isPendingCancellation ? (
-              // EXCLUSIVO PARA O DP HOMOLOGAR O PEDIDO DE CANCELAMENTO
               ['ADMIN', 'DP'].includes(currentUserRole) && (
-                <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--danger-color)', color: 'white' }}>
-                  <ShieldAlert size={14} style={{ marginRight: '4px' }} /> Confirmar Cancelamento
+                <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--danger-color)' }}>
+                  <ShieldAlert size={16} style={{ marginRight: '6px' }} /> Confirmar Cancelamento
                 </button>
               )
             ) : (
-              // Fluxo normal de efetivação do DP
               ['ADMIN', 'DP'].includes(currentUserRole) && (
-                <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--success-color)' }}>
-                  <FileCheck size={14} /> Concluir Admissão
+                <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--success-color)' }}>
+                  <FileCheck size={16} /> Concluir Admissão
                 </button>
               )
             )}
@@ -430,9 +390,9 @@ export default function PipelineAdmissaoPage() {
         )}
 
         {currentUserRole !== 'DP' && !isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
-          <div style={{ marginTop: '0.5rem' }}>
-            <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
-              Definir Data Admissão <ArrowRight size={14} style={{ marginLeft: '4px' }}/>
+          <div style={{ marginTop: '0.75rem' }}>
+            <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', justifyContent: 'center' }}>
+              Definir Data de Admissão <ArrowRight size={16} style={{ marginLeft: '6px' }}/>
             </button>
           </div>
         )}
@@ -442,105 +402,94 @@ export default function PipelineAdmissaoPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p>
         </div>
         
         {['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) && (
-          <button className="btn-primary" onClick={requestAnalysisBatch}>
-            <Send size={18} />
-            Solicitar Análises Pendentes (.XLS)
+          <button className="btn-primary" onClick={requestAnalysisBatch} style={{ padding: '0.75rem 1.5rem' }}>
+            <Send size={18} style={{ marginRight: '0.5rem' }} />
+            Solicitar Análises (.XLS)
           </button>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
-        <Filter size={20} color="var(--text-muted)" />
-        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
+      <div className="glass-panel" style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1.25rem', borderRadius: 'var(--radius-lg)', alignItems: 'center' }}>
+        <Filter size={20} color="var(--saritur-orange)" />
+        <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
         
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
+        <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
           <option value="">Todos os Processos</option>
           <option value="Admissão">Admissão</option>
           <option value="Readmissão">Readmissão</option>
           <option value="Promoção">Promoção</option>
         </select>
         
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+        <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
           <option value="">Todas as Unidades</option>
           {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
 
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+        <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
           <option value="">Todas as Funções</option>
           {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
 
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
+        <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
           <option value="">Todos os Responsáveis</option>
           {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
         </select>
       </div>
 
       {loading ? (
-        <p>Carregando dados...</p>
+        <p style={{ color: 'var(--text-muted)' }}>Carregando Pipeline...</p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', overflowX: 'auto', paddingBottom: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '2rem', alignItems: 'start' }}>
           
-          <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+          <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-              <AlertCircle size={20} color="var(--saritur-orange)" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 'bold' }}>1. Em Andamento ({bloco1.length})</h2>
-            </div>
-            <div style={{ display: 'grid', gap: '0.75rem' }}>
-              {bloco1.map(c => renderCard(c, false))}
-              {bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Vazio.</p>}
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-              <Check size={20} color="var(--saritur-yellow)" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 'bold' }}>2. Pré-Admissão ({bloco2.length})</h2>
-            </div>
-            <div style={{ display: 'grid', gap: '0.75rem' }}>
-              {bloco2.map(c => renderCard(c, false))}
-              {bloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Vazio.</p>}
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-              <CheckCircle2 size={20} color="var(--success-color)" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 'bold' }}>3. Prontos para Admitir ({bloco3.length})</h2>
+              <AlertCircle size={24} color="var(--saritur-orange)" />
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>1. Em Andamento ({bloco1.length})</h2>
             </div>
             <div style={{ display: 'grid', gap: '1rem' }}>
+              {bloco1.map(c => renderCard(c, false))}
+              {bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <Check size={24} color="var(--saritur-yellow)" />
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>2. Pré-Admissão ({bloco2.length})</h2>
+            </div>
+            <div style={{ display: 'grid', gap: '1rem' }}>
+              {bloco2.map(c => renderCard(c, false))}
+              {bloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <CheckCircle2 size={24} color="var(--success-color)" />
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>3. Prontos para Admitir ({bloco3.length})</h2>
+            </div>
+            <div style={{ display: 'grid', gap: '1.5rem' }}>
               {groupedBloco3.map(group => (
                 <div key={group.date}>
-                  <div 
-                    style={{ 
-                      padding: '0.3rem 0.5rem', 
-                      borderBottom: '2px solid var(--border-color)', 
-                      marginBottom: '0.75rem', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '0.4rem',
-                      borderRadius: '4px',
-                      backgroundColor: group.isCancellationSection ? 'rgba(224, 36, 36, 0.1)' : 'transparent'
-                    }}
-                  >
-                    <Calendar size={14} color={group.isCancellationSection ? 'var(--danger-color)' : 'var(--saritur-orange)'} />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>
+                  <div style={{ padding: '0.5rem 0.75rem', borderBottom: '2px solid var(--border-color)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)', backgroundColor: group.isCancellationSection ? 'rgba(224, 36, 36, 0.1)' : 'var(--surface-color)', boxShadow: 'var(--shadow-sm)' }}>
+                    <Calendar size={16} color={group.isCancellationSection ? 'var(--danger-color)' : 'var(--saritur-orange)'} />
+                    <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>
                       {group.date}
                     </span>
                   </div>
-                  <div style={{ display: 'grid', gap: '0.75rem' }}>
+                  <div style={{ display: 'grid', gap: '1rem' }}>
                     {group.candidates.map(c => renderCard(c, true))}
                   </div>
                 </div>
               ))}
-              {groupedBloco3.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Vazio.</p>}
+              {groupedBloco3.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
             </div>
           </div>
 
@@ -552,15 +501,16 @@ export default function PipelineAdmissaoPage() {
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Atualizar Etapas: {editingCandidate.name}</h2>
+              <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Atualizar Etapas: {editingCandidate.name}</h2>
               <button onClick={() => setEditingCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             
-            <form onSubmit={handleSaveEditing} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Análise Administrativa</label>
-                  <select style={{ width: '100%' }} value={editingCandidate.analysis_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, analysis_status: e.target.value})}>
+            <form onSubmit={handleSaveEditing} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                
+                <div style={{ padding: '1rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Análise Administrativa</label>
+                  <select style={{ width: '100%', padding: '0.6rem' }} value={editingCandidate.analysis_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, analysis_status: e.target.value})}>
                     <option value="Pendente">Pendente</option>
                     <option value="Solicitada">Solicitada</option>
                     <option value="Aprovado">Aprovado</option>
@@ -568,65 +518,67 @@ export default function PipelineAdmissaoPage() {
                   </select>
                 </div>
 
-                <div style={{ padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Exame Médico</label>
-                  <select style={{ width: '100%', marginBottom: '0.5rem' }} value={editingCandidate.medical_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, medical_status: e.target.value})}>
+                <div style={{ padding: '1rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Exame Médico</label>
+                  <select style={{ width: '100%', padding: '0.6rem', marginBottom: '0.75rem' }} value={editingCandidate.medical_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, medical_status: e.target.value})}>
                     <option value="Pendente">Pendente</option>
                     <option value="Solicitada">Solicitada</option>
                     <option value="Apto">Apto</option>
                     <option value="Inapto">Inapto</option>
                   </select>
                   {['Solicitada', 'Apto', 'Inapto'].includes(editingCandidate.medical_status) && (
-                    <div style={{ marginBottom: '0.5rem' }}>
+                    <div style={{ marginBottom: '0.75rem' }}>
                       <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
-                      <input type="date" style={{ width: '100%', fontSize: '0.8rem', padding: '0.3rem' }} value={formatInputDate(editingCandidate.medical_request_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_request_date: handleDateChange(e.target.value)})} />
+                      <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_request_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_request_date: handleDateChange(e.target.value)})} />
                     </div>
                   )}
                   {['Apto', 'Inapto'].includes(editingCandidate.medical_status) && (
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data do Resultado:</label>
-                      <input type="date" style={{ width: '100%', fontSize: '0.8rem', padding: '0.3rem' }} value={formatInputDate(editingCandidate.medical_result_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_result_date: handleDateChange(e.target.value)})} />
+                      <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_result_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_result_date: handleDateChange(e.target.value)})} />
                     </div>
                   )}
                 </div>
               </div>
 
-              <div style={{ padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Documentação</label>
-                <select style={{ width: '100%', marginBottom: '0.5rem' }} value={editingCandidate.docs_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, docs_status: e.target.value})}>
+              <div style={{ padding: '1rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Documentação</label>
+                <select style={{ width: '100%', padding: '0.6rem', marginBottom: '0.75rem' }} value={editingCandidate.docs_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, docs_status: e.target.value})}>
                   <option value="Pendente">Pendente</option>
                   <option value="Solicitada">Solicitada</option>
                   <option value="Recebida">Recebida</option>
                 </select>
                 {['Solicitada', 'Recebida'].includes(editingCandidate.docs_status) && (
-                  <div style={{ marginBottom: '0.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
-                    <input type="date" style={{ width: '100%', fontSize: '0.8rem', padding: '0.3rem' }} value={formatInputDate(editingCandidate.docs_request_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_request_date: handleDateChange(e.target.value)})} />
-                  </div>
-                )}
-                {['Recebida'].includes(editingCandidate.docs_status) && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data de Recebimento:</label>
-                    <input type="date" style={{ width: '100%', fontSize: '0.8rem', padding: '0.3rem' }} value={formatInputDate(editingCandidate.docs_receive_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_receive_date: handleDateChange(e.target.value)})} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
+                      <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_request_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_request_date: handleDateChange(e.target.value)})} />
+                    </div>
+                    {['Recebida'].includes(editingCandidate.docs_status) && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data de Recebimento:</label>
+                        <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_receive_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_receive_date: handleDateChange(e.target.value)})} />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações</label>
-                <textarea style={{ width: '100%', minHeight: '80px' }} value={editingCandidate.feedback || ''} onChange={e => setEditingCandidate({...editingCandidate, feedback: e.target.value})} placeholder="Digite as observações aqui..."></textarea>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Observações</label>
+                <textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem' }} value={editingCandidate.feedback || ''} onChange={e => setEditingCandidate({...editingCandidate, feedback: e.target.value})} placeholder="Digite as observações aqui..."></textarea>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setEditingCandidate(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary">Salvar Alterações</button>
+                <button type="submit" className="btn-primary" style={{ padding: '0.6rem 1.25rem' }}>Salvar Alterações</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ADMISSION MODAL */}
+      {/* ADMISSION MODAL E REJECT MODAL */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -640,7 +592,7 @@ export default function PipelineAdmissaoPage() {
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
                 <input required type="date" style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Confirmar e Mover</button>
               </div>
@@ -649,35 +601,29 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* REJECT MODAL */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Interromper Processo</h2>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2>
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento/Reprovação *</label>
-                <select required style={{ width: '100%' }} value={rejectForm.reason} onChange={e => setRejectForm({...rejectForm, reason: e.target.value})}>
-                  <option value="">-- Selecione um motivo --</option>
-                  <option value="Reprovado na Análise Administrativa">Reprovado na Análise Administrativa</option>
-                  <option value="Inapto no Exame Médico">Inapto no Exame Médico</option>
-                  <option value="Desistência do Candidato">Desistência do Candidato</option>
-                  <option value="Documentação Pendente/Irregular">Documentação Pendente/Irregular</option>
-                  <option value="Erro de Cadastro / Duplicidade">Erro de Cadastro / Duplicidade</option>
-                  <option value="Outros">Outros</option>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
+                <select required style={{ width: '100%', padding: '0.6rem' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}>
+                  <option value="">-- Selecione o motivo do banco --</option>
+                  {cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
-                <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
+                <textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
+                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Cancelamento</button>
               </div>
             </form>
           </div>
@@ -713,7 +659,6 @@ export default function PipelineAdmissaoPage() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
