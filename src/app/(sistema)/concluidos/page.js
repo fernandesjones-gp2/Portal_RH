@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api-client';
 import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X } from 'lucide-react';
 
 export default function ConcluidosPage() {
@@ -31,24 +31,23 @@ export default function ConcluidosPage() {
     setLoading(true);
     try {
       // 1. Descobre o perfil do usuário logado
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).single();
-        setCurrentUserRole(user?.role || '');
+      const me = await api.me();
+      if (me) {
+        setCurrentUserRole(me.role || '');
       }
 
       // 2. Busca o histórico de concluídos e tabelas base
-      const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
-        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).eq('status', 'Concluído').order('admission_date', { ascending: false }),
-        supabase.from('units').select('*').order('name'),
-        supabase.from('job_roles').select('*').order('name'),
-        supabase.from('users').select('*').order('name')
+      const [candidatesData, unitsData, rolesData, usersData] = await Promise.all([
+        api.candidates.list({ status: 'Concluído', orderBy: 'admission_date', order: 'desc' }),
+        api.units.list(),
+        api.jobRoles.list(),
+        api.users.list()
       ]);
 
-      if (candidatesRes.data) setCandidates(candidatesRes.data);
-      if (unitsRes.data) setUnits(unitsRes.data);
-      if (rolesRes.data) setRoles(rolesRes.data);
-      if (usersRes.data) setResponsibles(usersRes.data);
+      if (candidatesData) setCandidates(candidatesData);
+      if (unitsData) setUnits(unitsData);
+      if (rolesData) setRoles(rolesData);
+      if (usersData) setResponsibles(usersData);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -65,18 +64,18 @@ export default function ConcluidosPage() {
     const newFeedback = (cancelCandidate.feedback || '') + cancellationText;
 
     // Altera o status para voltar ao 3º Bloco e joga a flag de "Cancelamento Pendente"
-    const { error } = await supabase.from('candidates').update({
-      status: 'Pré-Admissão (Pronto)',
-      analysis_status: 'Cancelamento Pendente',
-      feedback: newFeedback
-    }).eq('id', cancelCandidate.id);
+    try {
+      await api.candidates.update(cancelCandidate.id, {
+        status: 'Pré-Admissão (Pronto)',
+        analysis_status: 'Cancelamento Pendente',
+        feedback: newFeedback
+      });
 
-    if (!error) {
       alert(`A solicitação de cancelamento de ${cancelCandidate.name} foi enviada para o Bloco 3 do Pipeline para homologação do DP.`);
       setCancelCandidate(null);
       setCancelForm({ reason: '', notes: '' });
       fetchData();
-    } else {
+    } catch (error) {
       alert('Erro ao processar solicitação: ' + error.message);
     }
   }

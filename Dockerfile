@@ -32,18 +32,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # -----------------------------------------------------------------
-# IMPORTANTE: variáveis NEXT_PUBLIC_* são embutidas no bundle do
-# cliente DURANTE O BUILD. Por isso elas precisam chegar como ARG
-# (build args), e não apenas como env de runtime.
-#
-# No EasyPanel: configure-as em "Build Arguments" (ou marque as env
-# vars para também serem usadas no build).
+# Arquitetura atual: Postgres próprio + Auth.js. Não há mais variáveis
+# NEXT_PUBLIC_* embutidas no build. DATABASE_URL e AUTH_* são lidas em
+# RUNTIME (server-only) — configure-as nas Environment Variables do EasyPanel.
 # -----------------------------------------------------------------
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 ENV NODE_ENV=production
 # Telemetria do Next desligada no build
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -78,11 +70,11 @@ USER nextjs
 
 EXPOSE 3000
 
-# Healthcheck: a rota "/" (tela de login) responde 200.
+# Healthcheck: /api/health valida app + conexão com o Postgres.
 # Usa ${PORT} para seguir a porta definida em runtime (o EasyPanel costuma
 # injetar PORT=80, sobrescrevendo o default 3000). Assim funciona em qualquer porta.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null 2>&1 || exit 1
+  CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/api/health" >/dev/null 2>&1 || exit 1
 
 STOPSIGNAL SIGTERM
 

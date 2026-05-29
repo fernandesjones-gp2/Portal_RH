@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api-client';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Users, UserCheck, Clock, TrendingUp } from 'lucide-react';
 
@@ -18,19 +18,14 @@ export default function DashboardPage() {
     async function fetchDashboardData() {
       try {
         // 1. Busca o nome do usuário logado
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const { data: user } = await supabase.from('users').select('name').eq('id', session.user.id).single();
-          const fullName = user?.name || session.user.user_metadata?.full_name || 'Colaborador';
+        const me = await api.me();
+        if (me) {
+          const fullName = me.name || 'Colaborador';
           setUserName(fullName.split(' ')[0]); // Pega apenas o primeiro nome
         }
 
         // 2. Busca o status e a data de criação de todos os candidatos
-        const { data: candidates, error } = await supabase
-          .from('candidates')
-          .select('status, created_at');
-
-        if (error) throw error;
+        const candidates = await api.candidates.list();
 
         if (candidates) {
           const total = candidates.length;

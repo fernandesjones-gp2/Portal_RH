@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api-client';
 import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw } from 'lucide-react';
 
 export default function AgendamentosPage() {
@@ -37,16 +37,16 @@ export default function AgendamentosPage() {
     setLoading(true);
     try {
       const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
-        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos', 'Reprovado']),
-        supabase.from('units').select('*'),
-        supabase.from('job_roles').select('*'),
-        supabase.from('users').select('*')
+        api.candidates.list({ statusIn: ['Agendado', 'Banco de Talentos', 'Reprovado'].join(',') }),
+        api.units.list(),
+        api.jobRoles.list(),
+        api.users.list()
       ]);
-      
-      if (candidatesRes.data) setCandidates(candidatesRes.data);
-      if (unitsRes.data) setUnits(unitsRes.data);
-      if (rolesRes.data) setRoles(rolesRes.data);
-      if (usersRes.data) setResponsibles(usersRes.data);
+
+      if (candidatesRes) setCandidates(candidatesRes);
+      if (unitsRes) setUnits(unitsRes);
+      if (rolesRes) setRoles(rolesRes);
+      if (usersRes) setResponsibles(usersRes);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -80,18 +80,17 @@ export default function AgendamentosPage() {
   // --- FUNÇÕES DE CADASTRO E EDIÇÃO ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
-    const { data: { session } } = await supabase.auth.getSession();
-    const responsible_id = session?.user?.id || null; 
-
-    if (responsible_id) {
-      await supabase.from('users').upsert({ id: responsible_id, email: session.user.email, name: session.user.user_metadata?.full_name || session.user.email });
-    }
+    const me = await api.me();
+    const responsible_id = me?.id || null;
 
     const interviewIso = getBrazilIsoDate(formData.interview_date);
     const dataToSave = { ...formData, interview_date: interviewIso, responsible_id };
 
-    const { error } = await supabase.from('candidates').insert([dataToSave]);
-    if (error) return alert('Erro ao salvar candidato: ' + error.message);
+    try {
+      await api.candidates.create(dataToSave);
+    } catch (e) {
+      return alert('Erro ao salvar candidato: ' + e.message);
+    }
 
     if (interviewIso) {
       try {
@@ -123,11 +122,13 @@ export default function AgendamentosPage() {
     
     const interviewIso = getBrazilIsoDate(interview_date);
 
-    const { error } = await supabase.from('candidates').update({
-      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id
-    }).eq('id', id);
-
-    if (error) return alert('Erro ao atualizar: ' + error.message);
+    try {
+      await api.candidates.update(id, {
+        process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id
+      });
+    } catch (e) {
+      return alert('Erro ao atualizar: ' + e.message);
+    }
     setEditingCandidate(null);
     fetchData();
   }
@@ -139,10 +140,12 @@ export default function AgendamentosPage() {
   }
 
   async function handleSaveFeedback() {
-    const { error } = await supabase.from('candidates').update({ feedback: feedbackText }).eq('id', feedbackCandidate.id);
-    if (!error) {
+    try {
+      await api.candidates.update(feedbackCandidate.id, { feedback: feedbackText });
       setFeedbackCandidate(null);
       fetchData();
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -153,21 +156,26 @@ export default function AgendamentosPage() {
     const rejectionText = `\n[REPROVADO] Motivo: ${rejectForm.reason}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
     const newFeedback = (rejectCandidate.feedback || '') + rejectionText;
 
-    const { error } = await supabase.from('candidates').update({ 
-      status: 'Reprovado',
-      feedback: newFeedback
-    }).eq('id', rejectCandidate.id);
-
-    if (!error) {
+    try {
+      await api.candidates.update(rejectCandidate.id, {
+        status: 'Reprovado',
+        feedback: newFeedback
+      });
       setRejectCandidate(null);
       setRejectForm({ reason: '', notes: '' });
       fetchData();
+    } catch (e) {
+      console.error(e);
     }
   }
 
   async function changeStatus(id, newStatus) {
-    const { error } = await supabase.from('candidates').update({ status: newStatus }).eq('id', id);
-    if (!error) fetchData();
+    try {
+      await api.candidates.update(id, { status: newStatus });
+      fetchData();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   async function handleApprove(candidate) {
@@ -176,7 +184,7 @@ export default function AgendamentosPage() {
       const phone = candidate.phone.replace(/\D/g, '');
       window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank');
     }
-    await supabase.from('candidates').update({ status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() }).eq('id', candidate.id);
+    await api.candidates.update(candidate.id, { status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() });
     fetchData();
   }
 

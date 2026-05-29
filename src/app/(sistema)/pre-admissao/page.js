@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api-client';
 import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
@@ -37,25 +37,24 @@ export default function PipelineAdmissaoPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).single();
-        setCurrentUserRole(user?.role || '');
+      const me = await api.me();
+      if (me) {
+        setCurrentUserRole(me.role || '');
       }
 
       const [candidatesRes, unitsRes, rolesRes, reasonsRes, usersRes] = await Promise.all([
-        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)']).order('created_at', { ascending: false }),
-        supabase.from('units').select('*'),
-        supabase.from('job_roles').select('*'),
-        supabase.from('cancellation_reasons').select('*').order('name'),
-        supabase.from('users').select('*')
+        api.candidates.list({ statusIn: ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].join(','), orderBy: 'created_at', order: 'desc' }),
+        api.units.list(),
+        api.jobRoles.list(),
+        api.cancellationReasons.list(),
+        api.users.list()
       ]);
-      
-      if (candidatesRes.data) setCandidates(candidatesRes.data);
-      if (unitsRes.data) setUnits(unitsRes.data);
-      if (rolesRes.data) setRoles(rolesRes.data);
-      if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
-      if (usersRes.data) setResponsibles(usersRes.data);
+
+      if (candidatesRes) setCandidates(candidatesRes);
+      if (unitsRes) setUnits(unitsRes);
+      if (rolesRes) setRoles(rolesRes);
+      if (reasonsRes) setCancellationReasons(reasonsRes);
+      if (usersRes) setResponsibles(usersRes);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -171,12 +170,12 @@ export default function PipelineAdmissaoPage() {
     alert(`O arquivo Excel (${fileName}) foi baixado. O status será alterado para "Solicitada".`);
     
     for (const c of listToRequest) {
-      await supabase.from('candidates').update({ 
+      await api.candidates.update(c.id, {
         analysis_status: 'Solicitada',
         analysis_request_date: new Date().toISOString()
-      }).eq('id', c.id);
+      });
     }
-    
+
     fetchData();
   }
 
@@ -213,12 +212,13 @@ export default function PipelineAdmissaoPage() {
       }
     }
 
-    const { error } = await supabase.from('candidates').update(updates).eq('id', c.id);
-    if (!error) {
+    try {
+      await api.candidates.update(c.id, updates);
       setEditingCandidate(null);
       fetchData();
-    } else {
+    } catch (error) {
       alert('Erro ao atualizar: ' + error.message);
+      console.error(error);
     }
   }
 
@@ -232,30 +232,34 @@ export default function PipelineAdmissaoPage() {
     const cancellationText = `\n[CANCELADO NO PIPELINE] Motivo: ${reasonText}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
     const newFeedback = (rejectCandidate.feedback || '') + cancellationText;
 
-    const { error } = await supabase.from('candidates').update({ 
-      status: 'Reprovado',
-      cancellation_reason_id: rejectForm.reasonId,
-      feedback: newFeedback
-    }).eq('id', rejectCandidate.id);
-
-    if (!error) {
+    try {
+      await api.candidates.update(rejectCandidate.id, {
+        status: 'Reprovado',
+        cancellation_reason_id: rejectForm.reasonId,
+        feedback: newFeedback
+      });
       setRejectCandidate(null);
       setRejectForm({ reasonId: '', notes: '' });
       fetchData();
-    } else {
+    } catch (error) {
       alert('Erro ao interromper processo: ' + error.message);
+      console.error(error);
     }
   }
 
   async function handleConfirmCancellationDP(c) {
     if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}?`)) {
       const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
-      const { error } = await supabase.from('candidates').update({
-        status: 'Reprovado',
-        analysis_status: 'Cancelado',
-        feedback: (c.feedback || '') + finalNote
-      }).eq('id', c.id);
-      if (!error) fetchData();
+      try {
+        await api.candidates.update(c.id, {
+          status: 'Reprovado',
+          analysis_status: 'Cancelado',
+          feedback: (c.feedback || '') + finalNote
+        });
+        fetchData();
+      } catch (error) {
+        console.error(error);
+      }
     }
   }
 
@@ -268,23 +272,27 @@ export default function PipelineAdmissaoPage() {
   const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
-    const { error } = await supabase.from('candidates').update({ 
-      status: 'Pré-Admissão (Pronto)', 
-      admission_date: new Date(admissionDate + 'T12:00:00').toISOString() 
-    }).eq('id', admissionModalCandidate.id);
-    
-    if (!error) { 
-      setAdmissionModalCandidate(null); 
-      fetchData(); 
-    } else {
+    try {
+      await api.candidates.update(admissionModalCandidate.id, {
+        status: 'Pré-Admissão (Pronto)',
+        admission_date: new Date(admissionDate + 'T12:00:00').toISOString()
+      });
+      setAdmissionModalCandidate(null);
+      fetchData();
+    } catch (error) {
       alert('Erro ao confirmar data de admissão: ' + error.message);
+      console.error(error);
     }
   };
 
   async function handleConcluirFinal(id) {
     if (confirm('Deseja concluir todo o processo e mover este candidato para a lista de Concluídos?')) {
-      const { error } = await supabase.from('candidates').update({ status: 'Concluído' }).eq('id', id);
-      if (!error) fetchData();
+      try {
+        await api.candidates.update(id, { status: 'Concluído' });
+        fetchData();
+      } catch (error) {
+        console.error(error);
+      }
     }
   }
 
@@ -297,8 +305,8 @@ export default function PipelineAdmissaoPage() {
     e.preventDefault();
     if(!feedbackText) return;
     const newNote = `\n[${currentUserRole}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
-    await supabase.from('candidates').update({ feedback: (feedbackCandidate.feedback || '') + newNote }).eq('id', feedbackCandidate.id);
-    setFeedbackCandidate(null); 
+    await api.candidates.update(feedbackCandidate.id, { feedback: (feedbackCandidate.feedback || '') + newNote });
+    setFeedbackCandidate(null);
     fetchData();
   }
 

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api-client';
 import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, Key, MessageSquareText, Info } from 'lucide-react';
 
 export default function ConfiguracoesPage() {
@@ -58,14 +58,13 @@ export default function ConfiguracoesPage() {
   async function checkAccessAndFetchData() {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const me = await api.me();
+      if (!me) {
         setIsAdmin(false);
         return;
       }
-      const { data: user } = await supabase.from('users').select('role').eq('id', session.user.id).single();
 
-      if (user?.role === 'ADMIN') {
+      if (me?.role === 'ADMIN') {
         setIsAdmin(true);
         await fetchAllData();
       } else {
@@ -81,24 +80,24 @@ export default function ConfiguracoesPage() {
 
   async function fetchAllData() {
     const [unitsRes, rolesRes, reasonsRes, usersRes, permsRes] = await Promise.all([
-      supabase.from('units').select('*').order('name'),
-      supabase.from('job_roles').select('*').order('name'),
-      supabase.from('cancellation_reasons').select('*').order('name'),
-      supabase.from('users').select(`*, units(name)`).order('name'),
-      supabase.from('role_permissions').select('*')
+      api.units.list(),
+      api.jobRoles.list(),
+      api.cancellationReasons.list(),
+      api.users.list(),
+      api.rolePermissions.list()
     ]);
-    if (unitsRes.data) setUnits(unitsRes.data);
-    if (rolesRes.data) setRoles(rolesRes.data);
-    if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
-    if (usersRes.data) setUsersList(usersRes.data);
-    if (permsRes.data) setPermissions(permsRes.data);
+    if (unitsRes) setUnits(unitsRes);
+    if (rolesRes) setRoles(rolesRes);
+    if (reasonsRes) setCancellationReasons(reasonsRes);
+    if (usersRes) setUsersList(usersRes);
+    if (permsRes) setPermissions(permsRes);
   }
 
   async function togglePermission(role, menu_path, hasPermission) {
     if (hasPermission) {
-      await supabase.from('role_permissions').delete().match({ role, menu_path });
+      await api.rolePermissions.remove(role, menu_path);
     } else {
-      await supabase.from('role_permissions').insert([{ role, menu_path }]);
+      await api.rolePermissions.add(role, menu_path);
     }
     fetchAllData();
   }
@@ -119,96 +118,132 @@ export default function ConfiguracoesPage() {
   async function handleAddUnit(e) {
     e.preventDefault();
     if (!newUnit) return;
-    const { error } = await supabase.from('units').insert([{ name: newUnit.toUpperCase() }]);
-    if (error) return alert('Erro: ' + error.message);
+    try {
+      await api.units.create(newUnit.toUpperCase());
+    } catch (error) {
+      return alert('Erro: ' + error.message);
+    }
     setNewUnit('');
     await fetchAllData();
   }
 
   async function handleUpdateUnit() {
     if (!editingUnit.name) return;
-    const { error } = await supabase.from('units').update({ name: editingUnit.name.toUpperCase() }).eq('id', editingUnit.id);
-    if (error) return alert('Erro: ' + error.message);
+    try {
+      await api.units.update(editingUnit.id, editingUnit.name.toUpperCase());
+    } catch (error) {
+      return alert('Erro: ' + error.message);
+    }
     setEditingUnit(null);
     await fetchAllData();
   }
 
   async function handleDeleteUnit(id) {
     if (!confirm('Deseja excluir permanentemente esta unidade?')) return;
-    const { error } = await supabase.from('units').delete().eq('id', id);
-    if (error) alert('Bloqueado: Existem candidatos vinculados a esta unidade.');
-    else { setSelectedUnitId(''); await fetchAllData(); }
+    try {
+      await api.units.remove(id);
+      setSelectedUnitId(''); await fetchAllData();
+    } catch (error) {
+      alert('Bloqueado: Existem candidatos vinculados a esta unidade.');
+    }
   }
 
   async function handleAddRole(e) {
     e.preventDefault();
     if (!newRole) return;
-    const { error } = await supabase.from('job_roles').insert([{ name: newRole.toUpperCase() }]);
-    if (error) return alert('Erro: ' + error.message);
+    try {
+      await api.jobRoles.create(newRole.toUpperCase());
+    } catch (error) {
+      return alert('Erro: ' + error.message);
+    }
     setNewRole('');
     await fetchAllData();
   }
 
   async function handleUpdateRole() {
     if (!editingRole.name) return;
-    const { error } = await supabase.from('job_roles').update({ name: editingRole.name.toUpperCase() }).eq('id', editingRole.id);
-    if (error) return alert('Erro: ' + error.message);
+    try {
+      await api.jobRoles.update(editingRole.id, editingRole.name.toUpperCase());
+    } catch (error) {
+      return alert('Erro: ' + error.message);
+    }
     setEditingRole(null);
     await fetchAllData();
   }
 
   async function handleDeleteRole(id) {
     if (!confirm('Deseja excluir permanentemente esta função?')) return;
-    const { error } = await supabase.from('job_roles').delete().eq('id', id);
-    if (error) alert('Bloqueado: Existem candidatos vinculados a esta função.');
-    else { setSelectedRoleId(''); await fetchAllData(); }
+    try {
+      await api.jobRoles.remove(id);
+      setSelectedRoleId(''); await fetchAllData();
+    } catch (error) {
+      alert('Bloqueado: Existem candidatos vinculados a esta função.');
+    }
   }
 
   // --- CONTROLE DE MOTIVOS DE CANCELAMENTO ---
   async function handleAddReason(e) {
     e.preventDefault();
     if (!newReason) return;
-    const { error } = await supabase.from('cancellation_reasons').insert([{ name: newReason.toUpperCase() }]);
-    if (error) return alert('Erro: ' + error.message);
+    try {
+      await api.cancellationReasons.create(newReason.toUpperCase());
+    } catch (error) {
+      return alert('Erro: ' + error.message);
+    }
     setNewReason('');
     await fetchAllData();
   }
 
   async function handleUpdateReason() {
     if (!editingReason.name) return;
-    const { error } = await supabase.from('cancellation_reasons').update({ name: editingReason.name.toUpperCase() }).eq('id', editingReason.id);
-    if (error) return alert('Erro: ' + error.message);
+    try {
+      await api.cancellationReasons.update(editingReason.id, editingReason.name.toUpperCase());
+    } catch (error) {
+      return alert('Erro: ' + error.message);
+    }
     setEditingReason(null);
     await fetchAllData();
   }
 
   async function handleDeleteReason(id) {
     if (!confirm('Deseja excluir este motivo de cancelamento?')) return;
-    const { error } = await supabase.from('cancellation_reasons').delete().eq('id', id);
-    if (error) alert('Bloqueado: Existem históricos vinculados a este motivo.');
-    else { setSelectedReasonId(''); await fetchAllData(); }
+    try {
+      await api.cancellationReasons.remove(id);
+      setSelectedReasonId(''); await fetchAllData();
+    } catch (error) {
+      alert('Bloqueado: Existem históricos vinculados a este motivo.');
+    }
   }
 
   async function handleUpdateUserRoleAndUnit(userId, updatedRole, updatedUnitId) {
-    const { error } = await supabase.from('users').update({
-      role: updatedRole,
-      unit_id: updatedUnitId || null
-    }).eq('id', userId);
-    if (error) alert('Erro ao atualizar acessos: ' + error.message);
-    else fetchAllData();
+    try {
+      await api.users.update(userId, {
+        role: updatedRole,
+        unit_id: updatedUnitId || null
+      });
+      fetchAllData();
+    } catch (error) {
+      alert('Erro ao atualizar acessos: ' + error.message);
+    }
   }
 
   async function handleApproveUser(id) {
-    const { error } = await supabase.from('users').update({ status: 'Aprovado' }).eq('id', id);
-    if (error) alert('Erro ao aprovar usuário: ' + error.message);
-    else fetchAllData();
+    try {
+      await api.users.update(id, { status: 'Aprovado' });
+      fetchAllData();
+    } catch (error) {
+      alert('Erro ao aprovar usuário: ' + error.message);
+    }
   }
 
   async function handleDeleteUser(id) {
     if (!confirm('Deseja remover e bloquear este usuário do sistema?')) return;
-    const { error } = await supabase.from('users').delete().eq('id', id);
-    if (error) alert('Erro ao remover: ' + error.message);
-    else fetchAllData();
+    try {
+      await api.users.remove(id);
+      fetchAllData();
+    } catch (error) {
+      alert('Erro ao remover: ' + error.message);
+    }
   }
 
   function handleSaveTargets(e) {

@@ -2,12 +2,14 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api-client';
+import { useSession, signOut } from 'next-auth/react';
 import { LayoutDashboard, Users, UserCheck, CheckCircle, Settings, LogOut, ShieldAlert } from 'lucide-react';
 
 export default function SistemaLayout({ children }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { status: sessionStatus } = useSession();
   const [allowedPaths, setAllowedPaths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('Carregando...');
@@ -23,43 +25,37 @@ export default function SistemaLayout({ children }) {
     { name: 'Configurações', icon: <Settings size={20} />, path: '/configuracoes' },
   ];
 
+  // Reage a logout: quando a sessão deixar de estar autenticada, volta para "/"
+  useEffect(() => {
+    if (sessionStatus === 'unauthenticated') {
+      router.push('/');
+    }
+  }, [sessionStatus, router]);
+
   useEffect(() => {
     async function loadPermissions() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const me = await api.me();
+        if (!me) {
           router.push('/');
           return;
         }
 
         // Busca as informações do usuário logado (agora incluindo o STATUS)
-        let { data: user } = await supabase.from('users').select('name, role, status').eq('id', session.user.id).single();
-
-        // SE O USUÁRIO FOR NOVO, CADASTRA COMO "PENDENTE"
-        if (!user) {
-          const { data: newUser, error } = await supabase.from('users').insert([{
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.user_metadata?.full_name || session.user.email,
-            role: 'RECRUITER',
-            status: 'Pendente' // <-- Conta nasce bloqueada
-          }]).select('name, role, status').single();
-          
-          if (!error) user = newUser;
-        }
+        const user = { name: me.name, role: me.role, status: me.status };
 
         if (user) {
-          setUserName(user.name || session.user.email);
+          setUserName(user.name || me.email);
           setUserRole(user.role);
           setUserStatus(user.status);
 
-          const { data: perms } = await supabase.from('role_permissions').select('menu_path').eq('role', user.role);
+          const perms = await api.rolePermissions.list(user.role);
 
           if (perms) {
             setAllowedPaths(perms.map(p => p.menu_path));
           }
         } else {
-          setUserName(session.user.email);
+          setUserName(me.email);
           setUserRole('RECRUITER');
           setUserStatus('Pendente');
         }
@@ -74,8 +70,7 @@ export default function SistemaLayout({ children }) {
   }, [router]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/'); 
+    await signOut({ callbackUrl: '/' });
   };
 
   if (loading) {
@@ -125,7 +120,7 @@ export default function SistemaLayout({ children }) {
             {userRole}
           </span>
         </div>
-        
+
         <nav style={{ padding: '1rem', flex: 1 }}>
           <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {filteredMenuItems.map((item) => {
