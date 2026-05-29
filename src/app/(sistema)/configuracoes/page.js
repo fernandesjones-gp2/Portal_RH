@@ -10,21 +10,21 @@ export default function ConfiguracoesPage() {
   // Dados do banco
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [cancellationReasons, setCancellationReasons] = useState([]); // NOVO: Estado para os motivos
+  const [cancellationReasons, setCancellationReasons] = useState([]); // Estado para os motivos
   const [usersList, setUsersList] = useState([]);
   const [permissions, setPermissions] = useState([]);
 
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
-  const [selectedReasonId, setSelectedReasonId] = useState(''); // NOVO
+  const [selectedReasonId, setSelectedReasonId] = useState('');
 
   const [newUnit, setNewUnit] = useState('');
   const [newRole, setNewRole] = useState('');
-  const [newReason, setNewReason] = useState(''); // NOVO
+  const [newReason, setNewReason] = useState('');
 
   const [editingUnit, setEditingUnit] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
-  const [editingReason, setEditingReason] = useState(null); // NOVO
+  const [editingReason, setEditingReason] = useState(null);
 
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
@@ -74,22 +74,22 @@ export default function ConfiguracoesPage() {
     } catch (error) {
       console.error(error);
       setIsAdmin(false);
-    } fillly(
-      setLoading(false)
-    );
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchAllData() {
     const [unitsRes, rolesRes, reasonsRes, usersRes, permsRes] = await Promise.all([
       supabase.from('units').select('*').order('name'),
       supabase.from('job_roles').select('*').order('name'),
-      supabase.from('cancellation_reasons').select('*').order('name'), // NOVO
+      supabase.from('cancellation_reasons').select('*').order('name'),
       supabase.from('users').select(`*, units(name)`).order('name'),
       supabase.from('role_permissions').select('*')
     ]);
     if (unitsRes.data) setUnits(unitsRes.data);
     if (rolesRes.data) setRoles(rolesRes.data);
-    if (reasonsRes.data) setCancellationReasons(reasonsRes.data); // NOVO
+    if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
     if (permsRes.data) setPermissions(permsRes.data);
   }
@@ -116,7 +116,6 @@ export default function ConfiguracoesPage() {
     setEditingTemplateContent(template.content);
   }
 
-  // --- CONTROLE DE UNIDADES ---
   async function handleAddUnit(e) {
     e.preventDefault();
     if (!newUnit) return;
@@ -141,7 +140,6 @@ export default function ConfiguracoesPage() {
     else { setSelectedUnitId(''); await fetchAllData(); }
   }
 
-  // --- CONTROLE DE FUNÇÕES ---
   async function handleAddRole(e) {
     e.preventDefault();
     if (!newRole) return;
@@ -166,7 +164,6 @@ export default function ConfiguracoesPage() {
     else { setSelectedRoleId(''); await fetchAllData(); }
   }
 
-  // --- NOVO: GESTÃO DE MOTIVOS DE CANCELAMENTO ---
   async function handleAddReason(e) {
     e.preventDefault();
     if (!newReason) return;
@@ -216,14 +213,14 @@ export default function ConfiguracoesPage() {
   function handleSaveTargets(e) {
     e.preventDefault();
     localStorage.setItem('portal_rh_targets', JSON.stringify(dashTargets));
-    alert('Metas do Dashboard updated com sucesso!');
+    alert('Metas do Dashboard salvas com sucesso!');
   }
 
   if (loading) return <p style={{ padding: '2rem' }}>Validando credenciais de Administrador...</p>;
 
   if (isAdmin === false) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', de maneira geral: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
         <ShieldAlert size={64} color="var(--danger-color)" style={{ marginBottom: '1rem' }} />
         <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Acesso Restrito</h2>
       </div>
@@ -241,7 +238,7 @@ export default function ConfiguracoesPage() {
         <p style={{ color: 'var(--text-muted)' }}>Controle de acessos, tabelas institucionais e chaves do sistema.</p>
       </div>
 
-      {/* BLOCO 1: DROPDOWNS DE DADOS BASE DINÂMICOS (ATUALIZADO PARA 3 COLUNAS) */}
+      {/* BLOCO 1: DROPDOWNS DE DADOS BASE DINÂMICOS */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Settings2 size={20} color="var(--saritur-orange)" /> Tabelas de Dados Estruturais (Dropdowns)
@@ -294,12 +291,12 @@ export default function ConfiguracoesPage() {
               </div>
             )}
             <form onSubmit={handleAddRole} style={{ display: 'flex', gap: '0.5rem' }}>
-              <input type="text" placeholder="Nova função..." style={{ flex: 1 }} value={newRole} onChange={e => setNewRole(e.target.value)} />
-              <button type="submit" className="btn-primary" style={{ padding: '0.5rem' }}><Plus size={16} /></button>
+                  <input type="text" placeholder="Nova função..." style={{ flex: 1 }} value={newRole} onChange={e => setNewRole(e.target.value)} />
+                  <button type="submit" className="btn-primary" style={{ padding: '0.5rem' }}><Plus size={16} /></button>
             </form>
           </div>
 
-          {/* NOVO: SEÇÃO MOTIVOS DE CANCELAMENTO */}
+          {/* SEÇÃO MOTIVOS DE CANCELAMENTO */}
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivos de Cancelamento</label>
             <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedReasonId} onChange={e => { setSelectedReasonId(e.target.value); setEditingReason(null); }}>
@@ -332,12 +329,14 @@ export default function ConfiguracoesPage() {
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Users size={20} color="var(--saritur-orange)" /> Controle de Acesso e Perfis de Usuários
         </h2>
+
         <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
           <Info size={24} color="var(--saritur-orange)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
             <strong>Fluxo de Cadastro Seguro:</strong> Peça para o novo colaborador fazer o login no site. Ao entrar, a conta dele aparecerá aqui automaticamente como <strong>"Pendente"</strong>. Avalie, defina o perfil dele e clique no botão verde para liberar o acesso ao sistema.
           </p>
         </div>
+
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
@@ -374,7 +373,7 @@ export default function ConfiguracoesPage() {
                     {user.status === 'Pendente' && (
                       <button onClick={() => handleApproveUser(user.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem', marginRight: '0.5rem' }}><Check size={14} /></button>
                     )}
-                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button>
+                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }} title="Excluir/Bloquear Usuário"><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
