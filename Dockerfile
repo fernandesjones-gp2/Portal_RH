@@ -78,9 +78,11 @@ USER nextjs
 
 EXPOSE 3000
 
-# Healthcheck: a rota "/" (tela de login) responde 200
+# Healthcheck: a rota "/" (tela de login) responde 200.
+# Usa ${PORT} para seguir a porta definida em runtime (o EasyPanel costuma
+# injetar PORT=80, sobrescrevendo o default 3000). Assim funciona em qualquer porta.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1
+  CMD wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null 2>&1 || exit 1
 
 STOPSIGNAL SIGTERM
 
