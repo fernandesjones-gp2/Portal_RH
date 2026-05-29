@@ -1,0 +1,53 @@
+{
+  "skill_name": "code-reviewer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Revisa esse endpoint de login:\n\n```javascript\napp.post('/login', async (req, res) => {\n  const { email, password } = req.body;\n  const user = await db.query(`SELECT * FROM users WHERE email = '${email}'`);\n  if (user && user.password === password) {\n    const token = jwt.sign({ id: user.id, role: user.role }, 'secret123');\n    res.json({ token });\n  } else {\n    res.status(401).json({ error: 'Invalid credentials' });\n  }\n});\n```",
+      "expected_output": "Relatório com findings CRITICAL e HIGH: SQL injection (string interpolation), senha armazenada em texto plano (comparação direta), JWT sem expiração, secret hardcoded. Relatório segue formato com severidade, impacto e código corrigido usando parameterized query, bcrypt.compare, JWT com expiração e secret de env var. Sugere rate limiting no endpoint de login.",
+      "files": [],
+      "assertions": [
+        "Identifica SQL injection como CRITICAL (string interpolation na query)",
+        "Identifica senha em texto plano como CRITICAL (comparação direta sem bcrypt)",
+        "Identifica JWT secret hardcoded como HIGH",
+        "Identifica JWT sem expiração como HIGH",
+        "Cada finding tem código corrigido (não só descrição)",
+        "Sugere rate limiting no endpoint de login",
+        "Formato segue o padrão: severidade, categoria, problema, impacto, fix",
+        "Veredicto é BLOQUEIA merge"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Olha esse service e me diz se está bom:\n\n```typescript\nclass ReportService {\n  async generateMonthlyReport(month: number, year: number) {\n    const orders = await db.query('SELECT * FROM orders WHERE EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2', [month, year]);\n    let totalRevenue = 0;\n    let totalOrders = 0;\n    let productCounts: any = {};\n    for (const order of orders) {\n      totalRevenue += order.total;\n      totalOrders++;\n      const items = await db.query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);\n      for (const item of items) {\n        if (productCounts[item.product_id]) {\n          productCounts[item.product_id] += item.quantity;\n        } else {\n          productCounts[item.product_id] = item.quantity;\n        }\n      }\n    }\n    const avgOrderValue = totalRevenue / totalOrders;\n    const topProducts = Object.entries(productCounts).sort((a: any, b: any) => b[1] - a[1]).slice(0, 10);\n    const pdf = new PDFDocument();\n    pdf.text('Monthly Report');\n    pdf.text('Revenue: ' + totalRevenue);\n    pdf.text('Orders: ' + totalOrders);\n    pdf.text('AOV: ' + avgOrderValue);\n    pdf.text('Top Products: ' + JSON.stringify(topProducts));\n    await sendEmail('admin@company.com', 'Monthly Report', pdf);\n    return { totalRevenue, totalOrders, avgOrderValue, topProducts };\n  }\n}\n```",
+      "expected_output": "Identifica N+1 query (query dentro de loop), violação de SRP (classe faz query + cálculo + PDF + email), uso de any em TypeScript, division by zero (totalOrders pode ser 0), SELECT * quando não precisa de todos campos, email hardcoded. Sugere separar em ReportRepository, ReportCalculator, ReportGenerator, NotificationService. Mostra como fazer JOIN em vez de N+1.",
+      "files": [],
+      "assertions": [
+        "Identifica N+1 query como HIGH (query dentro de loop)",
+        "Identifica violação de SRP como MEDIUM (4 responsabilidades em 1 classe)",
+        "Identifica uso de 'any' como MEDIUM",
+        "Identifica division by zero (totalOrders = 0) como HIGH",
+        "Identifica SELECT * como LOW/MEDIUM",
+        "Sugere JOIN ou batch query em vez de loop",
+        "Sugere separação de responsabilidades",
+        "Inclui ao menos 1 ponto positivo"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Faz um review focado em segurança desse middleware de upload de arquivo:\n\n```javascript\nconst multer = require('multer');\nconst path = require('path');\n\nconst storage = multer.diskStorage({\n  destination: './uploads',\n  filename: (req, file, cb) => {\n    cb(null, file.originalname);\n  }\n});\n\nconst upload = multer({ storage });\n\napp.post('/api/upload', upload.single('file'), async (req, res) => {\n  const filePath = path.join('./uploads', req.body.customPath || '', req.file.filename);\n  await fs.rename(req.file.path, filePath);\n  await db.query(`INSERT INTO files (name, path, user_id) VALUES ('${req.file.originalname}', '${filePath}', ${req.user.id})`);\n  res.json({ url: '/uploads/' + req.file.filename });\n});\n```",
+      "expected_output": "Relatório focado em segurança: path traversal via originalname e customPath (CRITICAL), SQL injection na query de INSERT (CRITICAL), sem validação de tipo de arquivo (HIGH), sem limite de tamanho (HIGH), sem autenticação no endpoint (HIGH), filename previsível (usando originalname). Código corrigido com: nome aleatório, validação de MIME type, tamanho máximo, sanitização de path, parameterized query, middleware de auth.",
+      "files": [],
+      "assertions": [
+        "Identifica path traversal via originalname como CRITICAL",
+        "Identifica path traversal via req.body.customPath como CRITICAL",
+        "Identifica SQL injection no INSERT como CRITICAL",
+        "Identifica falta de validação de tipo de arquivo como HIGH",
+        "Identifica falta de limite de tamanho como HIGH",
+        "Sugere nome aleatório (UUID) em vez de originalname",
+        "Sugere parameterized query",
+        "Todos findings tem código corrigido"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "skill_name": "debugger",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Me ajuda com esse erro? Meu endpoint de criar pedido funciona normal em dev, mas em produção dá esse erro intermitente:\n\n```\nTypeError: Cannot read properties of null (reading 'street')\n    at OrderService.calculateShipping (/app/dist/services/order-service.js:87:42)\n    at OrderService.create (/app/dist/services/order-service.js:34:28)\n    at OrderController.handle (/app/dist/controllers/order-controller.js:18:35)\n```\n\nAcontece tipo 5% das vezes. Os outros 95% funciona normal.",
+      "expected_output": "Ler o stack trace corretamente: TypeError indica que algo é null na linha 87 do order-service, no método calculateShipping, tentando acessar .street. O objeto que deveria ter .street é null. Causa provável: o endereço do user é null para alguns users (5% não tem endereço cadastrado). Em dev funciona porque os dados de seed sempre têm endereço. Investigação: verificar quais users causam o erro (logs com requestId/userId), query SELECT users WHERE address IS NULL, verificar se o fluxo de cadastro exige endereço. Fix: null check antes de acessar address.street (optional chaining ou validação explícita). Sugerir teste de regressão.",
+      "files": [],
+      "assertions": [
+        "Lê o stack trace corretamente (identifica linha 87, calculateShipping)",
+        "Identifica que algo é null (endereço do user)",
+        "Explica por que é intermitente (nem todos os users têm endereço)",
+        "Explica por que funciona em dev (dados de seed completos)",
+        "Sugere investigação: verificar users sem endereço",
+        "Propõe fix concreto (null check, optional chaining, ou validação)",
+        "Sugere teste de regressão para o cenário",
+        "Não sugere apenas try/catch — foca na causa raiz"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Minha API de listagem de pedidos está demorando 8 segundos em produção. Em dev com poucos dados, retorna em 200ms. O endpoint é GET /api/orders que lista pedidos do user logado com informações do produto e endereço de entrega. Uso Prisma com PostgreSQL. Como descubro o que está causando a lentidão?",
+      "expected_output": "Metodologia de diagnóstico: 1) Adicionar timing por camada para localizar o gargalo (middleware, auth, query, serialização). 2) Suspeitar de N+1 como causa #1 com ORMs — verificar quantas queries o Prisma está gerando (habilitar log de queries). 3) Suspeitar de falta de índice como causa #2 — rodar EXPLAIN ANALYZE na query principal. 4) Verificar se está retornando dados demais (sem paginação = retorna TODOS os pedidos). Propor fixes: include/eager loading para N+1, índice em orders.user_id e created_at, paginação com cursor, SELECT apenas campos necessários. Incluir exemplos de código concretos.",
+      "files": [],
+      "assertions": [
+        "Propõe adicionar timing por camada para localizar gargalo",
+        "Identifica N+1 como suspeito principal com ORM",
+        "Sugere habilitar log de queries do Prisma",
+        "Sugere EXPLAIN ANALYZE",
+        "Identifica falta de paginação como possível causa",
+        "Propõe fix para N+1 (include/eager loading) com código",
+        "Propõe criação de índice com SQL",
+        "Propõe paginação",
+        "Menciona que volume de dados em prod vs dev explica a diferença"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Tenho um problema de dados inconsistentes. Meu e-commerce permite compra e o estoque é decrementado. Porém em dias de promoção, o estoque fica NEGATIVO (ex: -3) quando deveria parar em 0. O código verifica if (product.stock >= quantity) antes de decrementar. Mas mesmo assim fica negativo. O que está acontecendo e como resolvo?",
+      "expected_output": "Diagnosticar como RACE CONDITION clássica (read-check-write sem atomicidade). Dois requests simultâneos: ambos leem stock=1, ambos passam no check (1 >= 1), ambos decrementam → stock fica -1. Explicar o padrão read-modify-write e por que falha sob concorrência. Propor 3 soluções rankeadas: 1) Atomic update (MELHOR): UPDATE SET stock = stock - 1 WHERE stock >= 1 + verificar affected rows. 2) SELECT FOR UPDATE (pessimistic lock). 3) Optimistic lock com version field. Incluir código concreto para cada solução. Mencionar idempotency key para prevenir double-submit do frontend.",
+      "files": [],
+      "assertions": [
+        "Identifica como race condition (não bug de lógica simples)",
+        "Explica o cenário de reads concorrentes (read-check-write)",
+        "Explica por que acontece em dias de promoção (mais concorrência)",
+        "Propõe atomic update como solução principal com SQL",
+        "Propõe pelo menos uma alternativa (FOR UPDATE ou optimistic lock)",
+        "Inclui código concreto para o fix",
+        "Menciona idempotency key para double-submit",
+        "Sugere teste de concorrência para validar o fix"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "skill_name": "devops-architect",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Preciso dockerizar uma API Node.js com Express que usa PostgreSQL e Redis. Quero rodar tudo local com docker-compose.",
+      "expected_output": "Dockerfile multi-stage (deps → build → runtime) com node:22-alpine, non-root user, healthcheck. docker-compose.yml com app, postgres, redis, todos com healthchecks e depends_on condition. .dockerignore completo. .env.example com todas as variáveis.",
+      "files": [],
+      "assertions": [
+        "Dockerfile usa multi-stage build (pelo menos 2 stages)",
+        "Imagem base é alpine ou slim (não full)",
+        "Container roda como non-root user",
+        "Dockerfile tem HEALTHCHECK",
+        "docker-compose tem healthcheck em todos os serviços",
+        "docker-compose usa depends_on com condition: service_healthy",
+        "PostgreSQL e Redis NÃO expõem portas externamente",
+        "Existe .env.example commitável sem secrets reais",
+        "Existe .dockerignore otimizado",
+        "Network backend é internal"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Monta uma pipeline de CI/CD com GitHub Actions para meu projeto. Staging deploy automático quando merge na main, produção com aprovação manual.",
+      "expected_output": "Dois workflow files: ci.yml (lint → test → build com Docker e push para registry) e deploy.yml (staging automático com healthcheck, produção com environment protection e rollback automático se healthcheck falhar). Secrets documentados.",
+      "files": [],
+      "assertions": [
+        "CI tem stages separados: lint, test, build",
+        "Testes rodam com services (postgres, redis) no GitHub Actions",
+        "Docker image é taggeada com SHA do commit (não :latest apenas)",
+        "Deploy staging é automático após CI passar",
+        "Deploy produção usa environment com required reviewers",
+        "Healthcheck após deploy (curl /health)",
+        "Rollback automático se healthcheck falhar em produção",
+        "Secrets são referenciados via ${{ secrets.X }}, nunca hardcoded"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Meu sistema está em produção numa VPS mas não tem monitoramento nenhum. Quero saber quando cai, quando está lento, e receber alerta no Slack.",
+      "expected_output": "Setup de Prometheus + Grafana + Alertmanager via docker-compose. prometheus.yml scraping a app e node-exporter. Alert rules para: service down, error rate > 5%, latência p95 > 2s, disco > 85%. alertmanager.yml com Slack webhook. Código de middleware /metrics na app.",
+      "files": [],
+      "assertions": [
+        "docker-compose inclui prometheus, grafana, alertmanager, node-exporter",
+        "prometheus.yml tem scrape configs para app e node-exporter",
+        "Alert rules cobrem: service down, error rate, latência, disco",
+        "alertmanager.yml tem configuração de Slack",
+        "Alertas críticos têm canal separado dos warnings",
+        "Inclui código de middleware /metrics para a app",
+        "Grafana tem datasource provisionado automaticamente",
+        "Métricas RED mencionadas (Rate, Errors, Duration)"
+      ]
+    }
+  ]
+}

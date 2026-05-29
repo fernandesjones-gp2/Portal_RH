@@ -1,0 +1,58 @@
+{
+  "skill_name": "security-auditor",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Revisa esse código Node.js/Express do meu endpoint de login:\n\n```javascript\napp.post('/login', async (req, res) => {\n  const { email, password } = req.body;\n  const user = await db.query(`SELECT * FROM users WHERE email = '${email}'`);\n  if (!user) return res.status(401).json({ message: 'User not found' });\n  if (user.password !== password) return res.status(401).json({ message: 'Wrong password' });\n  const token = jwt.sign({ ...user }, 'mysecret');\n  res.json({ token, user });\n});\n```",
+      "expected_output": "Identificar MÚLTIPLAS vulnerabilidades CRITICAL/HIGH: 1) SQL Injection (string interpolation na query), 2) Passwords em plain text (comparação direta, sem hash), 3) Mensagens de erro diferenciadas (email enumeration), 4) JWT secret fraco ('mysecret'), 5) Dados sensíveis no token JWT (spread do user inteiro — inclui password!), 6) Retorna user completo no response (expõe todos os campos), 7) Sem rate limiting (brute force), 8) JWT sem expiração. Para cada finding: severidade, código vulnerável e código corrigido.",
+      "files": [],
+      "assertions": [
+        "Identifica SQL Injection como CRITICAL",
+        "Identifica password em plain text como CRITICAL",
+        "Identifica email enumeration (mensagens diferentes para user/password)",
+        "Identifica JWT secret fraco",
+        "Identifica dados sensíveis no JWT payload (spread do user)",
+        "Identifica user completo retornado no response",
+        "Sugere rate limiting no login",
+        "Para cada finding fornece código CORRIGIDO (não só descrição)",
+        "Sugere bcrypt ou Argon2 para passwords",
+        "Sugere parameterized query"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Estou lançando um SaaS que coleta nome, email, CPF e dados de pagamento de usuários brasileiros. Preciso garantir compliance com LGPD e segurança dos dados. O que devo implementar tecnicamente? Quais são os riscos?",
+      "expected_output": "Análise completa de LGPD + segurança de dados: 1) Classificação dos dados (CPF = restrito, email/nome = confidencial, pagamento = restrito — nunca armazenar cartão, usar tokenização Stripe). 2) Criptografia: at rest para PII sensível (AES-256-GCM), at transit (TLS 1.2+), passwords com bcrypt/Argon2. 3) Direitos do titular: endpoints de acesso, correção, exclusão, portabilidade. 4) Data retention policy por tipo de dado. 5) Logging seguro (sem PII nos logs). 6) Princípio da necessidade (coletar apenas o mínimo). 7) Threat model: quais dados, onde armazenados, quem acessa, como proteger. Incluir código quando possível.",
+      "files": [],
+      "assertions": [
+        "Classifica dados por sensibilidade (CPF = restrito)",
+        "Recomenda NUNCA armazenar dados de cartão (tokenização)",
+        "Criptografia at rest para PII sensível com código",
+        "Criptografia in transit (TLS/HTTPS)",
+        "Direitos do titular implementáveis (export, delete)",
+        "Data retention policy",
+        "Princípio da necessidade (coletar mínimo)",
+        "Mascaramento de PII em logs",
+        "Menciona consentimento e base legal"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Quero fazer um threat model do meu e-commerce antes de lançar. Tem: API REST (Node.js), frontend React, PostgreSQL, Redis, integração com Stripe para pagamentos e SendGrid para emails. Usuários podem criar conta, fazer pedidos, pagar com cartão e receber emails de confirmação. Tem painel admin. Me ajuda?",
+      "expected_output": "Threat model completo usando STRIDE: 1) Data Flow Diagram mostrando Browser→API→DB, API→Stripe, API→SendGrid, Admin→API. 2) Trust boundaries identificadas (Internet/DMZ, DMZ/App, App/DB). 3) Attack surface mapping (endpoints públicos, autenticados, admin). 4) STRIDE aplicado por componente (API, DB, Stripe integration, upload, admin panel). 5) Lista de ameaças priorizadas por DREAD ou impacto. 6) Mitigações específicas para cada ameaça. Deve incluir ameaças de: injection, IDOR, brute force login, webhook spoofing (Stripe), admin privilege escalation, data leak via error messages.",
+      "files": [],
+      "assertions": [
+        "Inclui Data Flow Diagram (texto ou ASCII)",
+        "Identifica trust boundaries",
+        "Aplica STRIDE por componente",
+        "Identifica risco de SQL injection",
+        "Identifica risco de IDOR nos endpoints de orders",
+        "Identifica risco de Stripe webhook spoofing",
+        "Identifica risco de brute force no login",
+        "Identifica risco de privilege escalation no admin",
+        "Prioriza ameaças por severidade",
+        "Propõe mitigações concretas para cada ameaça"
+      ]
+    }
+  ]
+}

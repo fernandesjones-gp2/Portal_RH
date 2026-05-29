@@ -1,0 +1,54 @@
+{
+  "skill_name": "data-pipeline-engineer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Preciso criar um pipeline que extrai dados de 3 fontes: banco PostgreSQL de produção (orders, users — ~500K rows/dia), API do Stripe (pagamentos) e arquivos CSV que o time de marketing deposita num bucket S3 todo dia. Precisa juntar tudo num data warehouse (BigQuery) para o time de analytics consumir via dbt. Qual a arquitetura e como estruturo?",
+      "expected_output": "Arquitetura completa ELT: 1) Extraction: PostgreSQL via incremental (updated_at) ou CDC (Debezium) para volume alto; Stripe via API com pagination e checkpoint; S3 via list+compare ou event notification. 2) Load: bronze layer no BigQuery (raw, append-only, com metadata _extracted_at). 3) Transform: dbt para Silver (cleaning, dedup, typing) e Gold (joins, agregações). 4) Orquestração: Airflow DAG com tasks extract_pg → extract_stripe → extract_s3 → dbt_run. 5) Data quality: dbt tests (unique, not_null, accepted_values, relationships) + volume checks. 6) Idempotência: UPSERT ou partition replace no BQ. 7) Observability: logging por step, freshness alerts, quality dashboard.",
+      "files": [],
+      "assertions": [
+        "Propõe ELT (load raw primeiro, transformar no warehouse com dbt)",
+        "PostgreSQL: propõe incremental ou CDC (não full dump para 500K/dia)",
+        "Stripe: propõe API com pagination e checkpoint",
+        "S3: propõe detecção de arquivos novos",
+        "Propõe Medallion (bronze/silver/gold) ou equivalente",
+        "Propõe orquestração (Airflow ou similar) com dependências",
+        "Propõe dbt para transformações SQL",
+        "Inclui data quality checks",
+        "Menciona idempotência na carga",
+        "Inclui observability (logs, alerts, freshness)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Meu pipeline ETL roda todo dia às 6h no Airflow. Ontem ele falhou com erro de timeout no step de extração do PostgreSQL. Hoje, quando rerodei manualmente, ele rodou mas agora tenho dados DUPLICADOS na tabela de destino — parece que o dia anterior foi parcialmente carregado e a reexecução adicionou tudo de novo. Como resolvo os dados duplicados e como previno isso no futuro?",
+      "expected_output": "Diagnóstico e fix em duas partes: AGORA: 1) Identificar duplicatas (GROUP BY pk HAVING COUNT > 1), 2) Deduplificar com ROW_NUMBER ou DISTINCT ON, mantendo registro mais recente. FUTURO: 1) Pipeline DEVE ser idempotente — mudar de INSERT para UPSERT (INSERT ON CONFLICT UPDATE) ou partition replace (DELETE partition + INSERT). 2) Adicionar timeout mais generoso ou incremental extraction ao invés de full. 3) Adicionar check pós-carga de uniqueness (dbt test unique). 4) Se usa Airflow: catchup=True com execution_date para processar apenas a janela correta. Incluir código SQL para dedup e código de carga idempotente.",
+      "files": [],
+      "assertions": [
+        "Diagnostica a causa: pipeline não é idempotente (INSERT sem dedup)",
+        "Propõe fix imediato para remover duplicatas existentes (SQL)",
+        "Propõe UPSERT ou partition replace como solução definitiva",
+        "Propõe teste de uniqueness pós-carga (dbt test ou SQL check)",
+        "Menciona que pipeline DEVE ser idempotente (rerodável sem duplicatas)",
+        "Inclui código SQL concreto para dedup e para carga idempotente",
+        "Aborda o timeout original (incremental ao invés de full, ou timeout maior)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Nosso e-commerce precisa detectar fraude em tempo quase-real. Quando um pedido é criado, precisamos: 1) analisar o risco (chamando um modelo de ML), 2) atualizar um dashboard de fraude em near real-time, e 3) se for high-risk, bloquear o pedido automaticamente. Hoje tudo é batch (ETL diário) e não conseguimos reagir rápido. Como monto essa arquitetura de streaming?",
+      "expected_output": "Arquitetura event-driven: 1) Produtor: app de orders publica evento 'order.created' no Kafka ao criar pedido. 2) Consumer de fraude: lê evento, chama modelo de ML (API ou embedded), se high-risk → publica 'order.blocked' → app bloqueia pedido. 3) Consumer de analytics: lê eventos, agrega em janela de tempo (tumbling window 5min), escreve métricas no destino (BigQuery ou Redis). 4) Dashboard: consome métricas do Redis/BQ para mostrar em near real-time. 5) Delivery guarantee: at-least-once com dedup por order_id (exactly-once efetivo). 6) Fallback: se consumer de fraude está lento, timeout + permitir pedido (false negative melhor que bloquear todos). 7) Incluir DLQ para eventos que falham no processamento.",
+      "files": [],
+      "assertions": [
+        "Propõe Kafka (ou equivalente) como backbone de eventos",
+        "Separa produção de evento (app) de consumo (fraud, analytics)",
+        "Consumer de fraude chama modelo de ML em near real-time",
+        "Consumer de analytics agrega para dashboard",
+        "Menciona delivery guarantee (at-least-once com dedup)",
+        "Propõe fallback se consumer está lento/down",
+        "Propõe DLQ para eventos que falham",
+        "NÃO propõe batch diário (claramente insuficiente para fraude)"
+      ]
+    }
+  ]
+}

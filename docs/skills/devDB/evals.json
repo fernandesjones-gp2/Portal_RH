@@ -1,0 +1,50 @@
+{
+  "skill_name": "database-specialist",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Minha query de listagem de pedidos está levando 3 segundos. A tabela orders tem 5 milhões de rows. A query é: SELECT o.*, u.name FROM orders o JOIN users u ON u.id = o.user_id WHERE o.status = 'pending' AND o.created_at > NOW() - INTERVAL '7 days' ORDER BY o.created_at DESC LIMIT 20;",
+      "expected_output": "Pede EXPLAIN ANALYZE antes de assumir. Sugere índice composto (status, created_at DESC) como provável solução. Explica por que a ordem dos campos importa (equality antes de range). Mostra como validar com EXPLAIN antes e depois. Usa CONCURRENTLY para criar índice em produção.",
+      "files": [],
+      "assertions": [
+        "Pede ou roda EXPLAIN (ANALYZE, BUFFERS) antes de qualquer sugestão",
+        "Sugere índice composto com status primeiro e created_at DESC depois",
+        "Explica a regra equality → range → sort para índices compostos",
+        "Usa CREATE INDEX CONCURRENTLY (não bloqueia writes)",
+        "Menciona ANALYZE após criar o índice",
+        "Mostra comparação de EXPLAIN antes vs depois",
+        "Não sugere cache/replica/sharding para um problema de índice faltando"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Preciso adicionar uma coluna NOT NULL em uma tabela com 20 milhões de registros em produção sem downtime. A coluna é 'tenant_id' do tipo UUID e precisa ser preenchida com um valor calculado baseado no user_id de cada registro.",
+      "expected_output": "Explica que ALTER TABLE SET NOT NULL faz full table scan + lock exclusivo. Propõe o padrão seguro: ADD COLUMN nullable → backfill em batches (10K-50K) com pg_sleep entre batches → ADD CONSTRAINT CHECK NOT VALID → VALIDATE CONSTRAINT. Mostra script de backfill em batches. Alerta para fazer backup antes.",
+      "files": [],
+      "assertions": [
+        "Explica que SET NOT NULL direto é perigoso em tabela grande",
+        "Propõe ADD COLUMN nullable primeiro",
+        "Backfill em batches (não UPDATE em 20M rows de uma vez)",
+        "Usa CHECK NOT VALID + VALIDATE como alternativa a SET NOT NULL",
+        "Inclui rollback strategy",
+        "Menciona backup antes da operação",
+        "Sugere rodar em horário de baixo tráfego"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Nosso PostgreSQL está com 200 conexões ativas, CPU a 90%, e várias queries com timeout. O max_connections é 200. O app é um Node.js com Prisma conectando direto no banco.",
+      "expected_output": "Diagnóstico: connection storm, sem pooling. Solução imediata: identificar e matar queries longas. Solução definitiva: PgBouncer entre app e banco (mode=transaction, pool_size=20-30). Menciona que Prisma tem connection pool interno mas não substitui PgBouncer para múltiplas instâncias. Sugere tuning de shared_buffers e work_mem.",
+      "files": [],
+      "assertions": [
+        "Identifica falta de connection pooling como causa raiz",
+        "Sugere PgBouncer (não apenas pool do ORM)",
+        "Mostra queries de diagnóstico (pg_stat_activity, connection count)",
+        "Sugere matar queries longas como ação imediata",
+        "Configura PgBouncer com pool_mode=transaction",
+        "Explica por que pool do Prisma não é suficiente sozinho",
+        "Sugere revisão de shared_buffers e work_mem"
+      ]
+    }
+  ]
+}

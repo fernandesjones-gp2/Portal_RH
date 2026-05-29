@@ -1,0 +1,50 @@
+{
+  "skill_name": "system-architect",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Quero criar um sistema de agendamento online para uma barbearia. Os clientes vão poder ver horários disponíveis e marcar pelo celular.",
+      "expected_output": "Inicia Fase 1 (Discovery) fazendo perguntas exploratórias: quantos barbeiros, quais serviços, se tem sistema atual, se precisa de pagamento online, volume de clientes. NÃO sugere tecnologias nem escreve código. Produz docs/01-discovery.md após coletar respostas.",
+      "files": [],
+      "assertions": [
+        "Faz perguntas de discovery ANTES de qualquer sugestão técnica",
+        "Não sugere stack, banco ou framework nessa fase",
+        "Não escreve nenhum código",
+        "Adapta as perguntas ao contexto de barbearia (barbeiros, serviços, horários)",
+        "Pergunta sobre escala (quantos clientes, barbeiros, unidades)",
+        "Pergunta sobre integrações (WhatsApp? Pagamento?)",
+        "Tom de conversa, não de interrogatório"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Já fiz a discovery, aqui estão os requisitos: sistema de gestão de estoque para e-commerce com 500 SKUs, 3 armazéns, integração com Shopify. Pode pular direto pra arquitetura e task map. Depois disso pode começar a desenvolver.",
+      "expected_output": "Respeita pedido de pular fases, mas registra no index. Gera docs/03-architecture.md com diagrama Mermaid (monolito modular ou similar), e docs/08-task-map.md com épicos e tasks estimadas. Mesmo com 'pode começar a desenvolver' no final, pergunta se quer revisar os docs antes de abrir o portão.",
+      "files": [],
+      "assertions": [
+        "Respeita pular fases mas documenta quais foram puladas no 00-index.md",
+        "Gera architecture.md com diagrama Mermaid renderizável",
+        "Justifica o padrão arquitetural escolhido",
+        "Gera task-map.md com tarefas de no máximo 4h cada",
+        "Tasks têm prioridade (P0/P1/P2) e estimativa",
+        "Salva os docs como arquivos .md reais, não apenas na conversa",
+        "Mesmo com menção a 'começar a desenvolver', confirma se o plano está aprovado antes"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Preciso de uma API de pagamentos que processe cartão de crédito e PIX, com split de pagamento entre vendedor e marketplace. Precisa ser PCI-DSS compliant.",
+      "expected_output": "Reconhece a complexidade do domínio (fintech, compliance, segurança). Discovery focada em: volume de transações, valores, parceiros de gateway (Stripe, PagSeguro, etc.), se é processamento direto ou via gateway, requisitos de PCI-DSS scope, auditoria. Documenta riscos de compliance como P0 no risk analysis.",
+      "files": [],
+      "assertions": [
+        "Identifica complexidade do domínio financeiro",
+        "Pergunta sobre gateway vs processamento direto (PCI scope)",
+        "Levanta riscos de compliance como prioridade máxima",
+        "Sugere padrão de split com modelo de dados para comissões",
+        "Documenta ADRs sobre decisões de segurança",
+        "Não escreve código, apenas docs de planejamento",
+        "Menciona necessidade de auditoria e logging extensivo"
+      ]
+    }
+  ]
+}

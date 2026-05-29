@@ -1,0 +1,55 @@
+{
+  "skill_name": "technical-writer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Meu projeto é uma API REST em Node.js com Express, PostgreSQL e Redis. Usa JWT para auth, Docker para dev, e GitHub Actions para CI. Não tem README nenhum. Cria um README completo pra mim.",
+      "expected_output": "README.md completo com: título + descrição, badges de CI, seção About com features, Quick Start (pré-requisitos + instalação passo-a-passo com comandos copy-paste + Docker alternative), exemplos de uso, tabela de variáveis de ambiente, tabela de scripts npm, estrutura de diretórios, link para CONTRIBUTING. Todos os comandos devem ser copiáveis e funcionais.",
+      "files": [],
+      "assertions": [
+        "Tem título e descrição em 1-2 frases",
+        "Tem seção Quick Start com comandos passo-a-passo",
+        "Comandos incluem: git clone, npm install, cp .env.example, migrations, npm run dev",
+        "Tem alternativa com Docker (docker compose up)",
+        "Tem tabela de variáveis de ambiente com descrição e obrigatoriedade",
+        "Tem tabela de scripts (dev, build, test, lint, migrate)",
+        "Tem seção de API com pelo menos 3 endpoints exemplo",
+        "Todos os comandos são copy-paste (não genéricos)",
+        "Não é um wall of text — tem headers, tabelas, code blocks"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Escolhemos usar MongoDB em vez de PostgreSQL para o nosso novo microserviço de analytics. O time questionou a decisão. Escreve um ADR documentando essa escolha com as alternativas que consideramos.",
+      "expected_output": "ADR formatado com: número, título, data, status, contexto explicando o cenário de analytics (write-heavy, schema flexível, aggregation pipeline), pelo menos 2 opções (MongoDB e PostgreSQL) com tabela de prós/contras cada, decisão justificada com base nos prós, consequências positivas e negativas, e riscos com mitigação.",
+      "files": [],
+      "assertions": [
+        "Formato ADR correto (título, data, status, contexto, opções, decisão, consequências)",
+        "Contexto explica POR QUE a decisão foi necessária",
+        "Pelo menos 2 opções com prós e contras",
+        "Decisão é justificada (não apenas 'escolhemos X')",
+        "Consequências incluem positivas E negativas",
+        "Riscos identificados com mitigação",
+        "Tom analítico e neutro (não advocacy)",
+        "Não edita ADRs anteriores (menciona como imutáveis)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Estou criando a documentação da minha API de e-commerce. Preciso documentar o endpoint POST /api/orders que cria um pedido. Ele recebe items (array com productId e quantity), shippingAddressId, e opcionalmente couponCode. Retorna o pedido criado com total calculado. Pode dar erro 400 (validação), 401 (sem auth), 422 (estoque insuficiente).",
+      "expected_output": "Documentação do endpoint em formato OpenAPI YAML ou Markdown estruturado com: método + path, descrição, autenticação requerida, request body com schema e exemplo completo, responses de sucesso (201) com exemplo JSON, e pelo menos 3 responses de erro (400, 401, 422) cada com exemplo JSON real mostrando o formato de erro.",
+      "files": [],
+      "assertions": [
+        "Endpoint claramente identificado (POST /api/orders)",
+        "Autenticação documentada (Bearer token)",
+        "Request body com todos os campos, tipos e obrigatoriedade",
+        "Exemplo de request body completo e realista (não placeholder)",
+        "Response 201 com exemplo JSON completo do pedido criado",
+        "Response 400 com exemplo de erro de validação",
+        "Response 401 documentado",
+        "Response 422 com exemplo de estoque insuficiente",
+        "Formato de erro consistente (code + message)"
+      ]
+    }
+  ]
+}

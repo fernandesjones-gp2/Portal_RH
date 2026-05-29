@@ -1,0 +1,53 @@
+{
+  "skill_name": "api-engineer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Preciso projetar uma API REST para um e-commerce. Os recursos principais são: usuários, produtos, pedidos e pagamentos. Preciso de autenticação JWT, paginação, filtros e uma estrutura de erros padronizada. Me ajuda a desenhar os endpoints e o contrato da API?",
+      "expected_output": "Design completo da API com: endpoints por recurso seguindo REST naming conventions (plural, substantivos), métodos HTTP corretos (GET/POST/PUT/PATCH/DELETE), paginação cursor-based para listagens, query params para filtros com whitelist, formato padronizado de response ({data} e {error}), classe de erros com códigos de domínio, autenticação JWT com middleware, e tabela de status codes por cenário. Deve incluir exemplos concretos de request/response.",
+      "files": [],
+      "assertions": [
+        "Recursos usam substantivos no plural (/users, /orders, /products)",
+        "Métodos HTTP corretos (POST para criar, GET para ler, etc.)",
+        "Paginação definida (cursor-based ou offset com justificativa)",
+        "Formato de erro padronizado com code + message",
+        "Exemplos concretos de request body e response",
+        "JWT authentication com Bearer token",
+        "Versionamento sugerido (/api/v1/)",
+        "Status codes corretos por cenário (201 para criação, 404, 422, etc.)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Nosso app precisa integrar com a API do Stripe para pagamentos e a API do SendGrid para emails. Atualmente chamamos diretamente com fetch no service. Às vezes o Stripe demora e trava o response pro usuário, e quando o SendGrid cai, nosso checkout inteiro falha. Como resolver?",
+      "expected_output": "Diagnóstico dos problemas: acoplamento direto (sem wrapper), sem timeout, sem retry, sem fallback. Propõe: 1) Criar SDK wrappers para cada provider (StripeClient, EmailClient), 2) Adicionar timeout em toda chamada (10-30s), 3) Retry com backoff exponencial para erros transientes, 4) Circuit breaker para evitar bater em API fora, 5) Fallback para email (enfileirar para retry), 6) Desacoplar email do checkout (fila async). Inclui código para o wrapper e o pattern de resiliência.",
+      "files": [],
+      "assertions": [
+        "Identifica falta de wrapper/abstração como problema",
+        "Propõe SDK wrapper para Stripe e SendGrid",
+        "Implementa timeout em chamadas externas",
+        "Implementa retry com backoff exponencial + jitter",
+        "Sugere circuit breaker para Stripe",
+        "Sugere desacoplar email do fluxo de checkout (async/queue)",
+        "Código de implementação concreto (não só descrição)",
+        "Error mapping de erros do terceiro para erros do domínio"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Preciso implementar um webhook receiver para a Stripe. Quando um pagamento é confirmado, preciso atualizar o status do pedido. Também preciso lidar com o caso de o mesmo webhook ser enviado mais de uma vez. Como implemento isso de forma segura?",
+      "expected_output": "Implementação completa de webhook receiver com: 1) Endpoint que recebe raw body, 2) Validação de assinatura HMAC (stripe-signature header), 3) Responder 200 imediatamente, 4) Processar via fila assíncrona, 5) Idempotência via eventId no Redis, 6) Handler por tipo de evento (switch/map), 7) Logging de todos eventos recebidos. Inclui código de validação de signature e padrão de idempotência.",
+      "files": [],
+      "assertions": [
+        "Valida assinatura do webhook (stripe-signature header)",
+        "Responde 200 ANTES de processar (não bloquear)",
+        "Processa assincronamente (queue ou background)",
+        "Implementa idempotência (verifica se evento já foi processado)",
+        "Handler por tipo de evento",
+        "Logging de eventos recebidos",
+        "Usa raw body para validação de signature (não parsed JSON)",
+        "Inclui tratamento de erro e retry para processamento falhado"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "skill_name": "ai-architect",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Quero criar um chatbot de suporte ao cliente para meu SaaS. O chatbot precisa responder perguntas sobre nosso produto usando nossa documentação (200 páginas de docs, FAQs e tutoriais). Precisa entender perguntas em português e inglês. Esperamos uns 1.000 conversas por dia, com média de 5 turnos. Qual a arquitetura e como estruturo?",
+      "expected_output": "Propor arquitetura completa de RAG chatbot: 1) Escolha de modelo: Sonnet para conversação, Haiku para triagem/classificação opcional. 2) Pipeline de RAG: ingestion (chunking dos 200 docs, embedding, pgvector ou Pinecone), retrieval (hybrid search + reranking), generation (system prompt robusto com grounding). 3) Chunking strategy para documentação (por seção/header, ~500 tokens, com metadata). 4) System prompt com role, regras de grounding, formato, edge cases. 5) Guardrails: output validation, hallucination check (forçar citação), content moderation, confidence gate com escalação para humano. 6) Estimativa de custo (~1000 conversas × 5 turns × tokens). 7) Fallback se API cair. 8) Feedback loop (thumbs up/down).",
+      "files": [],
+      "assertions": [
+        "Propõe RAG como padrão arquitetural principal",
+        "Escolhe modelo adequado com justificativa (Sonnet para conversação)",
+        "Descreve pipeline de ingestion (chunking, embedding, vector DB)",
+        "Descreve pipeline de retrieval (search + rerank + prompt)",
+        "Propõe chunking strategy para documentação (por seção/header)",
+        "Inclui system prompt com regras de grounding e citação",
+        "Inclui guardrails (validation, hallucination, escalation)",
+        "Estima custo (tokens × volume × preço)",
+        "Propõe fallback e error handling",
+        "Menciona feedback loop (thumbs up/down ou similar)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Preciso processar 50.000 reviews de produto por dia para extrair: sentimento (positivo/negativo/neutro), categoria do problema mencionado (qualidade, preço, entrega, atendimento), e um resumo de 1 frase. Precisa ser confiável e o mais barato possível. Como faço?",
+      "expected_output": "Propor pipeline otimizado para alto volume: 1) Modelo: Haiku (task simples, volume alto — Sonnet seria 5-10x mais caro sem ganho proporcional). 2) Structured output com tool use / JSON schema para garantir formato. 3) Batch API para processar offline com 50% de desconto. 4) Estimativa de custo: ~50K reviews × ~200 tokens input × ~100 tokens output × preço Haiku batch. 5) Validação com Zod/schema em cada resposta. 6) Fallback para reviews que falham (retry, depois classificar como 'other'). 7) Eval: testar 200+ reviews manualmente para medir accuracy antes de produção. 8) Response caching para reviews idênticos/muito similares. Deve mencionar que 50K/dia = viável com batch, e dar número de custo concreto.",
+      "files": [],
+      "assertions": [
+        "Escolhe modelo barato (Haiku) para task simples de alto volume",
+        "Propõe Batch API para desconto em processamento offline",
+        "Define structured output com schema (JSON, tool use)",
+        "Estima custo concreto (tokens × volume × preço)",
+        "Propõe validação de schema em cada resposta",
+        "Propõe eval com amostra manual antes de produção",
+        "Menciona fallback para items que falham",
+        "NÃO sugere Opus/Sonnet como primary (seria desperdício)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Meu time está debatendo se devemos fazer fine-tuning de um modelo para nosso caso de uso: temos um chatbot jurídico que responde perguntas sobre direito trabalhista brasileiro. Já temos RAG com 500 documentos da legislação e jurisprudência. A qualidade das respostas com RAG + Sonnet é boa (~80% satisfação), mas queremos chegar em 90%+. Temos 3.000 exemplos de pergunta-resposta revisados por advogados. Vale fine-tuning?",
+      "expected_output": "Análise criteriosa da decisão fine-tuning vs otimizar RAG+prompt: 1) Antes de fine-tuning, otimizar o que tem: melhorar chunking (documentos jurídicos têm estrutura específica — artigos, incisos), melhorar retrieval (reranking, hybrid search), melhorar prompt (exemplos jurídicos no few-shot, instruções mais específicas). 2) Analisar ONDE os 20% de insatisfação estão: retrieval ruim (doc certo não foi encontrado)? generation ruim (doc certo mas resposta errada)? 3) Fine-tuning provavelmente NÃO é a resposta porque: conhecimento jurídico muda (leis novas) e fine-tuning não é atualizável (RAG é). 4) Se otimizar RAG+prompt e ainda não atingir 90%: considerar fine-tuning APENAS para tom/estilo jurídico, não para conhecimento. 5) 3.000 exemplos é suficiente para fine-tuning básico mas é borda inferior. 6) Custo e complexidade de fine-tuning vs benefício marginal.",
+      "files": [],
+      "assertions": [
+        "NÃO recomenda fine-tuning como primeira ação",
+        "Propõe otimizar RAG antes (chunking, retrieval, prompt)",
+        "Propõe analisar onde os 20% de erro estão (retrieval vs generation)",
+        "Explica que conhecimento jurídico muda e fine-tuning não é atualizável",
+        "Menciona que RAG é mais flexível para domínio em evolução",
+        "Se considerar fine-tuning, é para estilo/tom, não conhecimento",
+        "Avalia que 3.000 exemplos é borderline para fine-tuning",
+        "Propõe eval estruturado para medir melhoria"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "skill_name": "statistical-analyst",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Tenho um CSV de vendas com colunas: data, produto, quantidade, valor_unitario, cliente, regiao. Me ajuda a entender esses dados?",
+      "expected_output": "Diagnóstico completo com shape, tipos, missing, classificação de variáveis, estatísticas descritivas, e sugestões de análise incluindo correlação, tendência temporal, e segmentação por região/produto.",
+      "files": [],
+      "assertions": [
+        "Executa diagnóstico inicial com shape, tipos e missing values",
+        "Classifica variáveis automaticamente (data como datetime, produto/cliente/regiao como categóricas, quantidade/valor como numéricas)",
+        "Gera estatísticas descritivas (média, mediana, desvio padrão) para colunas numéricas",
+        "Sugere análises relevantes: tendência temporal, receita por produto/região, correlação",
+        "Propõe visualizações adequadas: line chart temporal, bar chart por categoria, heatmap de correlação"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Quero comparar as notas de dois grupos de alunos (turma A e turma B) para saber se a diferença é estatisticamente significativa.",
+      "expected_output": "Seleção automática do teste estatístico correto: verifica normalidade primeiro, depois aplica t-test ou Mann-Whitney, calcula tamanho do efeito (Cohen's d), e interpreta o resultado em linguagem acessível.",
+      "files": [],
+      "assertions": [
+        "Verifica pressupostos antes do teste (normalidade, homocedasticidade)",
+        "Seleciona o teste correto baseado nos pressupostos",
+        "Reporta estatística do teste, p-valor, e intervalo de confiança",
+        "Calcula e interpreta tamanho do efeito (Cohen's d)",
+        "Traduz o resultado em linguagem não-técnica"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Cria um dashboard interativo para meus dados de e-commerce mostrando KPIs de vendas, tendência mensal, top produtos e distribuição por categoria.",
+      "expected_output": "Dashboard React com Recharts contendo: KPI cards (receita, ticket médio, nº pedidos, conversão), line/area chart de tendência, bar chart de top produtos, donut de categorias, com filtros e formatação pt-BR.",
+      "files": [],
+      "assertions": [
+        "Gera arquivo React (.jsx) funcional com Recharts",
+        "Inclui KPI cards com valores e variação percentual",
+        "Contém pelo menos 3 tipos diferentes de gráfico",
+        "Usa formatação pt-BR para moeda e números",
+        "Layout responsivo com grid Tailwind",
+        "Inclui Tooltip e interatividade nos gráficos"
+      ]
+    }
+  ]
+}

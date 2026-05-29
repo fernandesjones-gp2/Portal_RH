@@ -1,0 +1,56 @@
+{
+  "skill_name": "performance-engineer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Meu site Next.js tem Lighthouse performance score de 42. O LCP está em 5.2 segundos e o bundle JS total é 680KB gzipped. O site é um e-commerce com imagens de produtos, listagem com filtros, e checkout. Preciso chegar em score 85+ e LCP < 2.5s. Por onde começo?",
+      "expected_output": "Diagnóstico completo com plano de ação priorizado: 1) Analisar bundle com webpack-bundle-analyzer para identificar libs pesadas (680KB é 3x o budget ideal). 2) Code splitting por rota (lazy load de checkout, filtros, product detail). 3) Substituir libs pesadas (moment→dayjs, lodash→lodash-es com tree shaking). 4) Imagens: WebP/AVIF, responsive srcset, lazy loading below-fold, preload hero image. 5) SSG/ISR para páginas de produto (reduz TTFB). 6) Critical CSS inline + defer do resto. 7) Cache-Control para assets estáticos (immutable). Incluir budgets concretos e métricas para monitorar.",
+      "files": [],
+      "assertions": [
+        "Propõe analisar bundle size com ferramenta visual",
+        "Identifica 680KB como ~3x acima do budget ideal",
+        "Propõe code splitting por rota com lazy/dynamic import",
+        "Propõe substituição de libs pesadas por alternativas leves",
+        "Propõe otimização de imagens (formato, srcset, lazy loading)",
+        "Propõe preload da hero image para LCP",
+        "Propõe SSG ou ISR para páginas estáticas/semi-estáticas",
+        "Define budgets concretos (ex: JS < 200KB)",
+        "Prioriza ações por impacto (quick wins primeiro)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Minha API Node.js/Express com Prisma e PostgreSQL está lenta. O endpoint GET /api/orders retorna em 200ms com 100 orders no dev, mas em produção com 500K orders no banco demora 3-4 segundos. O endpoint lista orders do user logado com dados do produto e endereço. Quero que fique abaixo de 500ms. Me ajuda a diagnosticar e resolver?",
+      "expected_output": "Metodologia de diagnóstico: 1) Adicionar timing por camada (middleware, auth, query, serialization) para localizar gargalo. 2) Habilitar Prisma query logging para contar queries (suspeitar N+1). 3) EXPLAIN ANALYZE na query principal para ver se usa índice. Causas prováveis: a) N+1: Prisma fazendo 1 query por order para buscar product e address. Fix: include + select. b) Falta de índice em orders.user_id e/ou orders.created_at. Fix: CREATE INDEX. c) Sem paginação (retorna TODOS os orders). Fix: cursor pagination com LIMIT 20. d) SELECT * trazendo dados desnecessários. Fix: select apenas campos usados. Incluir código concreto de cada fix + EXPLAIN ANALYZE esperado.",
+      "files": [],
+      "assertions": [
+        "Propõe timing por camada para localizar gargalo",
+        "Habilitar Prisma query logging",
+        "EXPLAIN ANALYZE para verificar query plan",
+        "Identifica N+1 como suspeito principal com ORM",
+        "Propõe include/select para resolver N+1 com código",
+        "Propõe criação de índice com SQL concreto",
+        "Propõe paginação (cursor-based, não offset)",
+        "Explica por que funciona em dev mas não em prod (volume de dados)",
+        "Define meta de performance (p95 < 500ms)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Quero implementar caching no meu SaaS. Tenho: listagem de produtos (muda poucas vezes por dia, acessado 10K vezes/dia), dashboard do user com métricas (muda a cada minuto, acessado 500 vezes/dia por user), e checkout (dados em tempo real, não pode ter stale). Tenho Redis disponível. Qual estratégia de cache para cada um? E como invalido?",
+      "expected_output": "Estratégia por cenário com justificativa: 1) Listagem de produtos: Cache-aside com Redis TTL 5-15min + HTTP Cache-Control public s-maxage=300 stale-while-revalidate=600. Invalidar no evento de update/create de produto. CDN para cobertura geográfica. 2) Dashboard com métricas: Cache Redis TTL 60s (acceptable staleness). NÃO cachear no CDN (personalizado). Cache-Control: private, max-age=30. Considerar materialized view no banco para queries de agregação pesadas. 3) Checkout: NÃO cachear (dados de estoque e preço devem ser real-time). Cache-Control: no-store. Incluir cache stampede prevention para produtos e código de invalidação.",
+      "files": [],
+      "assertions": [
+        "Classifica cada cenário por criticidade de freshness",
+        "Produtos: cache longo com invalidação event-based",
+        "Dashboard: cache curto (30-60s) respeitando personalização",
+        "Checkout: sem cache ou cache muito curto com revalidação",
+        "Propõe Cache-Control headers adequados para cada caso",
+        "Menciona CDN para dados públicos (produtos)",
+        "Menciona private/no-store para dados personalizados",
+        "Propõe estratégia de invalidação (event-based ou TTL)",
+        "Menciona cache stampede prevention"
+      ]
+    }
+  ]
+}

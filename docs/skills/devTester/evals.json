@@ -1,0 +1,54 @@
+{
+  "skill_name": "test-engineer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Tenho um OrderService em TypeScript com métodos create(), cancel() e calculateTotal(). O create() recebe items com productId e quantity, verifica estoque, calcula total, e salva no banco. O cancel() muda status para cancelled e restaura estoque. Não tenho nenhum teste. Me ajuda a escrever os unit tests com Jest?",
+      "expected_output": "Gerar suite completa de unit tests com Jest para os 3 métodos. Usar factories para gerar dados (buildOrder, buildProduct, buildOrderItem). Mockar dependências (OrderRepository, ProductRepository). Para create(): testar happy path, items vazio, estoque insuficiente, produto não encontrado, e que chamou updateStock e create. Para cancel(): testar happy path, order não encontrada, order já shipped (não pode cancelar), e que restaurou estoque. Para calculateTotal(): testar soma correta, desconto, frete, total zero quando negativo. Seguir padrão AAA, naming 'should X when Y'.",
+      "files": [],
+      "assertions": [
+        "Usa factories/builders (não hardcoda dados gigantes inline)",
+        "Mocka repositories e dependências externas",
+        "Testa happy path de cada método",
+        "Testa pelo menos 2 sad paths por método",
+        "Segue AAA (Arrange, Act, Assert)",
+        "Naming descritivo: 'should X when Y'",
+        "Testa exceções com expect().rejects.toThrow()",
+        "Verifica interação com mocks (toHaveBeenCalledWith)",
+        "Testes independentes (beforeEach reseta mocks)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Tenho uma API REST com endpoints POST /api/orders (criar pedido), GET /api/orders (listar), GET /api/orders/:id (detalhar). Usa Express, Prisma com PostgreSQL, e JWT auth. Preciso de integration tests. Já tenho o app rodando mas sem nenhum teste. Como estruturo e quais testes escrevo?",
+      "expected_output": "Propor setup completo: Supertest + Testcontainers (ou DB de teste), factories que persistem no banco, helper de login que retorna token, e cleanup entre testes. Para POST: testar 201 (sucesso), 400 (validação), 401 (sem token), 422 (estoque). Para GET lista: testar 200 com dados, 200 vazio, paginação, filtros. Para GET :id: testar 200 (encontrado), 404 (não existe), 404 (pertence a outro user — IDOR). Verificar estado do banco após cada operação.",
+      "files": [],
+      "assertions": [
+        "Propõe setup (Supertest, DB de teste ou Testcontainers)",
+        "Cria factories que persistem no banco",
+        "Cria helper de autenticação (login retorna token)",
+        "Cleanup entre testes (beforeEach ou afterEach)",
+        "POST: testa 201, 400, 401, e pelo menos um erro de negócio",
+        "GET lista: testa com dados e vazia, paginação",
+        "GET :id: testa 200, 404, e proteção IDOR",
+        "Verifica estado do DB após operações (não só response)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Nosso e-commerce está lançando uma Black Friday e esperamos 10x o tráfego normal. Hoje temos ~100 req/s no pico. Precisamos garantir que aguenta 1000 req/s. Nunca fizemos load test. Por onde começo? Quais cenários devo testar?",
+      "expected_output": "Propor estratégia completa de load testing: 1) Smoke test primeiro (1 VU, validar que funciona). 2) Baseline test (100 VUs = tráfego atual, registrar métricas). 3) Load test (ramp up até 1000 rps gradualmente). 4) Stress test (ir além de 1000 para descobrir o ponto de quebra). 5) Spike test (0→1000→0 repentino, simular abertura de vendas). Definir thresholds/SLOs (p95<500ms, error rate<1%). Propor cenários específicos: listagem de produtos (heavy read), checkout (heavy write), login simultâneo. Incluir código k6 ou Artillery. Mencionar diagnóstico de gargalos.",
+      "files": [],
+      "assertions": [
+        "Propõe sequência incremental (smoke → baseline → load → stress → spike)",
+        "Define thresholds/SLOs concretos (p95, error rate)",
+        "Cenários específicos para e-commerce (listagem, checkout, login)",
+        "Inclui código de load test (k6 ou Artillery)",
+        "Spike test para simular abertura de vendas",
+        "Menciona o que medir (latência p50/p95/p99, throughput, error rate)",
+        "Orientação sobre diagnóstico de gargalos quando encontrar",
+        "Sugere rodar em ambiente staging (não produção)"
+      ]
+    }
+  ]
+}

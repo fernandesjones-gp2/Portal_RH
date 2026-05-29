@@ -1,0 +1,53 @@
+{
+  "skill_name": "product-strategist",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Tenho uma ideia de app: um marketplace para conectar donos de pet com dog walkers na minha cidade. Tipo um Uber de passeio de cachorro. O que acha? Posso começar a codar?",
+      "expected_output": "NÃO validar cegamente. Reconhecer a ideia mas redirecionar para discovery antes de codar. Aplicar o Framework do Problema: QUEM (donos de pet em qual cidade, qual perfil), QUAL problema exatamente (falta de tempo? não confia em qualquer pessoa? preço alto de daycare?), COMO resolvem hoje (pedem para vizinho, daycare, dog walker informal), POR QUE as alternativas são ruins, e QUANTO custa não resolver. Sugerir 5-10 entrevistas de problema com donos de pet ANTES de qualquer código. Alertar sobre complexidade de marketplace de dois lados.",
+      "files": [],
+      "assertions": [
+        "NÃO diz 'ótima ideia, vamos começar' sem questionar",
+        "Pergunta QUEM especificamente (não 'donos de pet' genérico)",
+        "Pergunta QUAL problema exatamente (dor específica)",
+        "Pergunta COMO resolvem hoje (alternativas existentes)",
+        "Sugere entrevistas de problema antes de construir",
+        "Alerta sobre complexidade de marketplace (chicken-and-egg)",
+        "Menciona validação de hipóteses ou experimentos",
+        "Tom é encorajador mas ancorado na realidade (não mata a ideia)"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Já entrevistei 12 nutricionistas e confirmei que elas perdem muito tempo montando planos alimentares em planilhas. Quero construir uma ferramenta para isso. Me ajuda a definir o MVP e priorizar features? Pensei em: templates de planos, app do paciente, dashboard financeiro, integração com Pix, chat com paciente, prescrição de suplementos, calculadora de macros, marketplace de templates, relatórios de evolução, e agenda de consultas.",
+      "expected_output": "Aplicar framework de priorização (RICE ou MoSCoW) nas 10 features listadas. Separar em Must/Should/Could/Won't para o MVP. Must: templates de planos (core job), cadastro de pacientes (básico). Should: app do paciente, calculadora de macros. Could: dashboard financeiro, relatórios. Won't para MVP: marketplace, chat, agenda, integração Pix, suplementos. Gerar user stories para os Musts com critérios de aceitação. Definir que o MVP deve levar 4-8 semanas. Sugerir North Star Metric.",
+      "files": [],
+      "assertions": [
+        "Aplica framework de priorização (RICE, ICE ou MoSCoW)",
+        "Categoriza features em prioridades claras",
+        "Identifica 'templates de planos' como Must/core",
+        "Move pelo menos 3-4 features para Won't/Later no MVP",
+        "MVP scoped para 4-8 semanas (não 6 meses)",
+        "Inclui user stories ou job stories para features core",
+        "Sugere North Star Metric ou métricas de sucesso",
+        "Alerta sobre feature creep (10 features é muito para MVP)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Lancei meu SaaS há 3 meses. Tenho 200 signups mas só 15 pagantes. O trial é de 14 dias. Não sei se o produto está funcionando ou se preciso pivotar. Me ajuda a entender o que está acontecendo e o que medir?",
+      "expected_output": "Analisar o funil AARRR com os números fornecidos: 200 signups → ? ativados → ? retidos → 15 pagantes (7.5% conversão trial-to-paid, que é ok mas precisa de contexto). Pedir dados que faltam: taxa de ativação (quantos completaram o Aha moment?), retenção D7/D30, churn dos 15 pagantes, NPS. Sugerir cohort analysis para ver se está melhorando. Diagnosticar possíveis problemas: onboarding ruim (activation), falta de valor percebido (retention), ou pricing errado (revenue). Definir dashboard mínimo de métricas. Dar critérios claros de quando pivotar vs iterar.",
+      "files": [],
+      "assertions": [
+        "Analisa o funil (200 signups → 15 pagantes = 7.5%)",
+        "Identifica que faltam dados intermediários (ativação, retenção)",
+        "Pede ou sugere medir: activation rate, D7/D30 retention, NPS",
+        "Sugere cohort analysis para ver tendência",
+        "Dá diagnósticos possíveis (onboarding? valor? pricing?)",
+        "Define critérios claros de pivotar vs iterar",
+        "Sugere ações concretas (não só 'meça mais')",
+        "Tom é analítico, não alarmista nem complacente"
+      ]
+    }
+  ]
+}

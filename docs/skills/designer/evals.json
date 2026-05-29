@@ -1,0 +1,49 @@
+{
+  "skill_name": "clean-webdesigner",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Cria uma landing page para um app de meditação chamado 'Calma'. Quero algo clean e relaxante.",
+      "expected_output": "Landing page HTML ou React com: Navbar com blur, Hero Section com gradiente sutil, seção de features com ícones lineares, testimonials, CTA final, footer. Paleta relaxante (tons de verde/azul pastel). Micro-animações sutis. Todos os componentes vindo do UI Kit.",
+      "files": [],
+      "assertions": [
+        "Pergunta ou define paleta de cores e família tipográfica antes de criar",
+        "Usa design tokens (CSS variables) no :root, sem valores hardcoded",
+        "Todos os componentes seguem o padrão do UI Kit (Button, Card, Section, Navbar)",
+        "Inclui micro-animações (fade-in, hover states, scroll reveal)",
+        "Layout é responsivo (mobile-first)",
+        "Tipografia usa fontes do Google Fonts, não fontes genéricas do sistema",
+        "Espaçamento generoso entre seções (py-24 ou equivalente)",
+        "Navbar tem backdrop blur e se adapta ao scroll"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Preciso de uma seção de pricing com 3 planos para meu SaaS. Cores: primária azul escuro #1E3A5F, secundária laranja #F97316.",
+      "expected_output": "Seção de pricing com 3 PricingCards do UI Kit, plano do meio highlighted, toggle mensal/anual, usando as cores especificadas como design tokens, com hover animations e layout responsivo.",
+      "files": [],
+      "assertions": [
+        "Usa as cores fornecidas (#1E3A5F e #F97316) como tokens, não hardcoded nos componentes",
+        "Usa o componente PricingCard do UI Kit, não cria cards do zero",
+        "Plano do meio tem visual destacado (highlighted)",
+        "Inclui lista de features com checkmarks",
+        "Botões seguem o padrão Button do UI Kit",
+        "Layout responsivo: 3 colunas → 1 coluna no mobile"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Faz uma tela de login bonita e moderna.",
+      "expected_output": "Página de login com layout split (formulário à esquerda, branding à direita), inputs do UI Kit com labels e estados de foco, botão primário CTA, link para signup, Google Fonts importados.",
+      "files": [],
+      "assertions": [
+        "Layout split (formulário + visual/brand)",
+        "Usa componentes Input e Button do UI Kit",
+        "Inclui estados de foco nos inputs (border-color, ring)",
+        "Tipografia display para heading, body para texto",
+        "Design tokens definidos no :root",
+        "Responsivo: split colapsa em single column no mobile"
+      ]
+    }
+  ]
+}
