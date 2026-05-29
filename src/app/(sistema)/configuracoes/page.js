@@ -7,20 +7,23 @@ export default function ConfiguracoesPage() {
   const [isAdmin, setIsAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Dados do banco
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [cancellationReasons, setCancellationReasons] = useState([]); // NOVO ESTADO
   const [usersList, setUsersList] = useState([]);
   const [permissions, setPermissions] = useState([]);
 
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [selectedReasonId, setSelectedReasonId] = useState(''); // NOVO ESTADO
 
   const [newUnit, setNewUnit] = useState('');
   const [newRole, setNewRole] = useState('');
+  const [newReason, setNewReason] = useState(''); // NOVO ESTADO
 
   const [editingUnit, setEditingUnit] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
+  const [editingReason, setEditingReason] = useState(null); // NOVO ESTADO
 
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
@@ -76,14 +79,16 @@ export default function ConfiguracoesPage() {
   }
 
   async function fetchAllData() {
-    const [unitsRes, rolesRes, usersRes, permsRes] = await Promise.all([
+    const [unitsRes, rolesRes, reasonsRes, usersRes, permsRes] = await Promise.all([
       supabase.from('units').select('*').order('name'),
       supabase.from('job_roles').select('*').order('name'),
+      supabase.from('cancellation_reasons').select('*').order('name'),
       supabase.from('users').select(`*, units(name)`).order('name'),
       supabase.from('role_permissions').select('*')
     ]);
     if (unitsRes.data) setUnits(unitsRes.data);
     if (rolesRes.data) setRoles(rolesRes.data);
+    if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
     if (usersRes.data) setUsersList(usersRes.data);
     if (permsRes.data) setPermissions(permsRes.data);
   }
@@ -102,7 +107,7 @@ export default function ConfiguracoesPage() {
     setTemplates(updatedTemplates);
     localStorage.setItem('portal_rh_templates', JSON.stringify(updatedTemplates));
     setEditingTemplateId(null);
-    alert('Modelo de mensagem automatizada atualizado com sucesso para toda a equipe!');
+    alert('Modelo de mensagem automatizada atualizado com sucesso!');
   }
 
   function startEditingTemplate(template) {
@@ -158,6 +163,31 @@ export default function ConfiguracoesPage() {
     else { setSelectedRoleId(''); await fetchAllData(); }
   }
 
+  // --- CONTROLE DE MOTIVOS DE CANCELAMENTO ---
+  async function handleAddReason(e) {
+    e.preventDefault();
+    if (!newReason) return;
+    const { error } = await supabase.from('cancellation_reasons').insert([{ name: newReason.toUpperCase() }]);
+    if (error) return alert('Erro: ' + error.message);
+    setNewReason('');
+    await fetchAllData();
+  }
+
+  async function handleUpdateReason() {
+    if (!editingReason.name) return;
+    const { error } = await supabase.from('cancellation_reasons').update({ name: editingReason.name.toUpperCase() }).eq('id', editingReason.id);
+    if (error) return alert('Erro: ' + error.message);
+    setEditingReason(null);
+    await fetchAllData();
+  }
+
+  async function handleDeleteReason(id) {
+    if (!confirm('Deseja excluir este motivo de cancelamento?')) return;
+    const { error } = await supabase.from('cancellation_reasons').delete().eq('id', id);
+    if (error) alert('Bloqueado: Existem históricos vinculados a este motivo.');
+    else { setSelectedReasonId(''); await fetchAllData(); }
+  }
+
   async function handleUpdateUserRoleAndUnit(userId, updatedRole, updatedUnitId) {
     const { error } = await supabase.from('users').update({
       role: updatedRole,
@@ -167,7 +197,6 @@ export default function ConfiguracoesPage() {
     else fetchAllData();
   }
 
-  // --- NOVA FUNÇÃO: APROVAR USUÁRIO ---
   async function handleApproveUser(id) {
     const { error } = await supabase.from('users').update({ status: 'Aprovado' }).eq('id', id);
     if (error) alert('Erro ao aprovar usuário: ' + error.message);
@@ -201,6 +230,7 @@ export default function ConfiguracoesPage() {
 
   const currentUnitObj = units.find(u => u.id === selectedUnitId);
   const currentRoleObj = roles.find(r => r.id === selectedRoleId);
+  const currentReasonObj = cancellationReasons.find(r => r.id === selectedReasonId);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
@@ -209,76 +239,84 @@ export default function ConfiguracoesPage() {
         <p style={{ color: 'var(--text-muted)' }}>Controle de acessos, tabelas institucionais e chaves do sistema.</p>
       </div>
 
-      {/* BLOCO 1: DROPDOWNS DE DADOS BASE */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Settings2 size={20} color="var(--saritur-orange)" /> Tabelas de Dados Estruturais (Dropdowns)
         </h2>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-          <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '2rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Selecionar Unidade para Gestão</label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '2rem' }}>
+          <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Unidades</label>
             <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedUnitId} onChange={e => { setSelectedUnitId(e.target.value); setEditingUnit(null); }}>
-              <option value="">-- {units.length} Unidades Cadastradas --</option>
+              <option value="">-- {units.length} Unidades --</option>
               {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
-
             {selectedUnitId && currentUnitObj && (
-              <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                {editingUnit ? (
-                  <input style={{ flex: 1, marginRight: '0.5rem' }} value={editingUnit.name} onChange={e => setEditingUnit({...editingUnit, name: e.target.value})} />
-                ) : (
-                  <strong style={{ fontSize: '0.9rem' }}>{currentUnitObj.name}</strong>
-                )}
-                <div style={{ display: 'flex', gap: '0.3rem' }}>
+              <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                {editingUnit ? <input value={editingUnit.name} onChange={e => setEditingUnit({...editingUnit, name: e.target.value})} /> : <strong style={{ fontSize: '0.85rem' }}>{currentUnitObj.name}</strong>}
+                <div style={{ display: 'flex', gap: '0.2rem' }}>
                   {editingUnit ? (
-                    <><button onClick={handleUpdateUnit} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }}><Check size={14} /></button>
-                    <button onClick={() => setEditingUnit(null)} className="btn-secondary" style={{ padding: '0.3rem' }}><X size={14} /></button></>
+                    <><button onClick={handleUpdateUnit} style={{ color: 'var(--success-color)' }}><Check size={14} /></button><button onClick={() => setEditingUnit(null)}><X size={14} /></button></>
                   ) : (
-                    <><button onClick={() => setEditingUnit(currentUnitObj)} className="btn-secondary" style={{ padding: '0.3rem' }}><Edit2 size={14} /></button>
-                    <button onClick={() => handleDeleteUnit(selectedUnitId)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button></>
+                    <><button onClick={() => setEditingUnit(currentUnitObj)}><Edit2 size={14} /></button><button onClick={() => handleDeleteUnit(selectedUnitId)} style={{ color: 'var(--danger-color)' }}><Trash2 size={14} /></button></>
                   )}
                 </div>
               </div>
             )}
-
             <form onSubmit={handleAddUnit} style={{ display: 'flex', gap: '0.5rem' }}>
-              <input type="text" placeholder="Adicionar nova unidade..." style={{ flex: 1 }} value={newUnit} onChange={e => setNewUnit(e.target.value)} />
+              <input type="text" placeholder="Nova unidade..." style={{ flex: 1 }} value={newUnit} onChange={e => setNewUnit(e.target.value)} />
+              <button type="submit" className="btn-primary" style={{ padding: '0.5rem' }}><Plus size={16} /></button>
+            </form>
+          </div>
+
+          <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Funções (Cargos)</label>
+            <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedRoleId} onChange={e => { setSelectedRoleId(e.target.value); setEditingRole(null); }}>
+              <option value="">-- {roles.length} Funções --</option>
+              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            {selectedRoleId && currentRoleObj && (
+              <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                {editingRole ? <input value={editingRole.name} onChange={e => setEditingRole({...editingRole, name: e.target.value})} /> : <strong style={{ fontSize: '0.85rem' }}>{currentRoleObj.name}</strong>}
+                <div style={{ display: 'flex', gap: '0.2rem' }}>
+                  {editingRole ? (
+                    <><button onClick={handleUpdateRole} style={{ color: 'var(--success-color)' }}><Check size={14} /></button><button onClick={() => setEditingRole(null)}><X size={14} /></button></>
+                  ) : (
+                    <><button onClick={() => setEditingRole(currentRoleObj)}><Edit2 size={14} /></button><button onClick={() => handleDeleteRole(selectedRoleId)} style={{ color: 'var(--danger-color)' }}><Trash2 size={14} /></button></>
+                  )}
+                </div>
+              </div>
+            )}
+            <form onSubmit={handleAddRole} style={{ display: 'flex', gap: '0.5rem' }}>
+              <input type="text" placeholder="Nova função..." style={{ flex: 1 }} value={newRole} onChange={e => setNewRole(e.target.value)} />
               <button type="submit" className="btn-primary" style={{ padding: '0.5rem' }}><Plus size={16} /></button>
             </form>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Selecionar Função para Gestão</label>
-            <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedRoleId} onChange={e => { setSelectedRoleId(e.target.value); setEditingRole(null); }}>
-              <option value="">-- {roles.length} Funções Cadastradas --</option>
-              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivos de Cancelamento</label>
+            <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedReasonId} onChange={e => { setSelectedReasonId(e.target.value); setEditingReason(null); }}>
+              <option value="">-- {cancellationReasons.length} Motivos --</option>
+              {cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
-
-            {selectedRoleId && currentRoleObj && (
-              <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                {editingRole ? (
-                  <input style={{ flex: 1, marginRight: '0.5rem' }} value={editingRole.name} onChange={e => setEditingRole({...editingRole, name: e.target.value})} />
-                ) : (
-                  <strong style={{ fontSize: '0.9rem' }}>{currentRoleObj.name}</strong>
-                )}
-                <div style={{ display: 'flex', gap: '0.3rem' }}>
-                  {editingRole ? (
-                    <><button onClick={handleUpdateRole} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }}><Check size={14} /></button>
-                    <button onClick={() => setEditingRole(null)} className="btn-secondary" style={{ padding: '0.3rem' }}><X size={14} /></button></>
+            {selectedReasonId && currentReasonObj && (
+              <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                {editingReason ? <input value={editingReason.name} onChange={e => setEditingReason({...editingReason, name: e.target.value})} /> : <strong style={{ fontSize: '0.85rem' }}>{currentReasonObj.name}</strong>}
+                <div style={{ display: 'flex', gap: '0.2rem' }}>
+                  {editingReason ? (
+                    <><button onClick={handleUpdateReason} style={{ color: 'var(--success-color)' }}><Check size={14} /></button><button onClick={() => setEditingReason(null)}><X size={14} /></button></>
                   ) : (
-                    <><button onClick={() => setEditingRole(currentRoleObj)} className="btn-secondary" style={{ padding: '0.3rem' }}><Edit2 size={14} /></button>
-                    <button onClick={() => handleDeleteRole(selectedRoleId)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }}><Trash2 size={14} /></button></>
+                    <><button onClick={() => setEditingReason(currentReasonObj)}><Edit2 size={14} /></button><button onClick={() => handleDeleteReason(selectedReasonId)} style={{ color: 'var(--danger-color)' }}><Trash2 size={14} /></button></>
                   )}
                 </div>
               </div>
             )}
-
-            <form onSubmit={handleAddRole} style={{ display: 'flex', gap: '0.5rem' }}>
-              <input type="text" placeholder="Adicionar nova função..." style={{ flex: 1 }} value={newRole} onChange={e => setNewRole(e.target.value)} />
+            <form onSubmit={handleAddReason} style={{ display: 'flex', gap: '0.5rem' }}>
+              <input type="text" placeholder="Novo motivo..." style={{ flex: 1 }} value={newReason} onChange={e => setNewReason(e.target.value)} />
               <button type="submit" className="btn-primary" style={{ padding: '0.5rem' }}><Plus size={16} /></button>
             </form>
           </div>
+
         </div>
       </div>
 
@@ -332,7 +370,6 @@ export default function ConfiguracoesPage() {
                     </select>
                   </td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    {/* BOTÃO DE APROVAÇÃO SE ESTIVER PENDENTE */}
                     {user.status === 'Pendente' && (
                       <button onClick={() => handleApproveUser(user.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem', marginRight: '0.5rem' }} title="Aprovar e Liberar Acesso">
                         <Check size={14} />
@@ -352,8 +389,6 @@ export default function ConfiguracoesPage() {
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <ShieldAlert size={20} color="var(--saritur-orange)" /> Matriz de Permissões (Acesso a Menus)
         </h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Marque quais telas cada perfil de usuário tem permissão para acessar no menu lateral.</p>
-        
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
             <thead>
@@ -381,15 +416,11 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 4: CONFIGURAÇÃO DE MENSAGENS AUTOMÁTICAS (TEMPLATES) */}
+      {/* BLOCO 4: CONFIGURAÇÃO DE TEMPLATES */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de Mensagens Automáticas (Notificações)
+          <MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de Mensagens Automáticas
         </h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-          Personalize as mensagens disparadas pelo sistema para os candidatos. Use as tags indicadas para preencher dados dinâmicos.
-        </p>
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           {templates.map(template => (
             <div key={template.id} style={{ padding: '1.25rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
@@ -404,13 +435,9 @@ export default function ConfiguracoesPage() {
                   <button onClick={() => startEditingTemplate(template)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><Edit2 size={12} /> Alterar Texto</button>
                 )}
               </div>
-
               {editingTemplateId === template.id ? (
                 <div>
                   <textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem', fontFamily: 'inherit', fontSize: '0.9rem', marginBottom: '0.5rem' }} value={editingTemplateContent} onChange={e => setEditingTemplateContent(e.target.value)} />
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Tags disponíveis para este modelo: {template.tags.map(t => <span key={t} style={{ backgroundColor: 'var(--border-color)', padding: '0.1rem 0.3rem', borderRadius: '4px', marginRight: '0.3rem', fontFamily: 'monospace' }}>{t}</span>)}
-                  </div>
                 </div>
               ) : (
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>"{template.content}"</p>
@@ -425,7 +452,6 @@ export default function ConfiguracoesPage() {
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <BarChart3 size={20} color="var(--saritur-orange)" /> Parâmetros e Indicadores Estratégicos (Dashboard)
         </h2>
-        
         <form onSubmit={handleSaveTargets} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1.5rem', alignItems: 'end' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Meta de SLA de Admissão (Leadtime em Dias)</label>
@@ -437,22 +463,6 @@ export default function ConfiguracoesPage() {
           </div>
           <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem' }}><Save size={16} /> Salvar Parâmetros</button>
         </form>
-      </div>
-
-      {/* BLOCO 6: SEGURANÇA ADICIONAL */}
-      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)', borderLeft: '4px solid var(--saritur-orange)' }}>
-        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Key size={20} color="var(--saritur-orange)" /> Chaves de Integração (Recomendado para Produção)
-        </h2>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Configurações de chaves de API externas utilizadas pelos módulos automáticos.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '0.85rem' }}>
-          <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-            <strong>Módulo WhatsApp API:</strong> <span style={{ color: 'var(--success-color)', fontWeight: '600' }}>Ativo (Link Dinâmico Habilitado)</span>
-          </div>
-          <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-            <strong>Módulo Google Agenda:</strong> <span style={{ color: 'var(--success-color)', fontWeight: '600' }}>Ativo (OAuth Integrado)</span>
-          </div>
-        </div>
       </div>
     </div>
   );
