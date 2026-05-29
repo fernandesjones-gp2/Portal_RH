@@ -1,0 +1,49 @@
+# Dependências (reinstaladas dentro do build)
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build artifacts
+.next
+out
+build
+dist
+
+# Git
+.git
+.gitignore
+
+# Env (NUNCA enviar segredos para o build context)
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docs, specs e testes (não precisam na imagem)
+docs/
+tests/
+AUDIT_PROMPT.md
+*.md
+!README.md
+
+# Arquivos auxiliares do repo que não vão pra imagem
+*.zip
+unzip.js
+populate_db.js
+supabase_schema.sql
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Vercel
+.vercel
