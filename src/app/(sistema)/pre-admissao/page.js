@@ -9,28 +9,33 @@ export default function PipelineAdmissaoPage() {
   const [candidates, setCandidates] = useState([]);
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [cancellationReasons, setCancellationReasons] = useState([]); // Busca os motivos do banco
   const [responsibles, setResponsibles] = useState([]);
   
   const [loading, setLoading] = useState(true);
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [expandedNotes, setExpandedNotes] = useState([]);
 
+  // Modal de Transição Manual (Data de Admissão)
   const [admissionModalCandidate, setAdmissionModalCandidate] = useState(null);
   const [admissionDate, setAdmissionDate] = useState('');
 
+  // Modal de Interrupção Direta (Reprovar/Cancelar)
   const [rejectCandidate, setRejectCandidate] = useState(null);
-  const [rejectForm, setRejectForm] = useState({ reasonId: '', notes: '' });
+  const [rejectForm, setRejectForm] = useState({ reason: '', notes: '' });
 
+  // Modal de Mensagem / Feedback rápido
   const [feedbackCandidate, setFeedbackCandidate] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
 
+  // Filtros
   const [filterProcessType, setFilterProcessType] = useState('');
   const [filterUnit, setFilterUnit] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   async function fetchData() {
     setLoading(true);
@@ -41,18 +46,16 @@ export default function PipelineAdmissaoPage() {
         setCurrentUserRole(user?.role || '');
       }
 
-      const [candidatesRes, unitsRes, rolesRes, reasonsRes, usersRes] = await Promise.all([
+      const [candidatesRes, unitsRes, rolesRes, usersRes] = await Promise.all([
         supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)']).order('created_at', { ascending: false }),
         supabase.from('units').select('*'),
         supabase.from('job_roles').select('*'),
-        supabase.from('cancellation_reasons').select('*').order('name'),
         supabase.from('users').select('*')
       ]);
       
       if (candidatesRes.data) setCandidates(candidatesRes.data);
       if (unitsRes.data) setUnits(unitsRes.data);
       if (rolesRes.data) setRoles(rolesRes.data);
-      if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
       if (usersRes.data) setResponsibles(usersRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -69,11 +72,17 @@ export default function PipelineAdmissaoPage() {
     return true;
   });
 
+  // BLOCO 1: Em Andamento
   const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
+  // BLOCO 2: Pré-Admissão (Aguardando Médico / Data)
   const bloco2 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida');
+  // BLOCO 3: Prontos para Admitir
   const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
 
+  // --- MODELAGEM DO BLOCO 3 COM SEÇÃO DE DESTAQUE VERMELHO ---
   const groupedBloco3 = [];
+  
+  // 1. Isola e injeta os chamados de Cancelamento Solicitado no topo da pilha
   const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
   if (cancelamentosSolicitados.length > 0) {
     groupedBloco3.push({
@@ -83,6 +92,7 @@ export default function PipelineAdmissaoPage() {
     });
   }
 
+  // 2. Agrupa o restante normalmente pelas datas cronológicas de admissão
   bloco3.filter(c => c.analysis_status !== 'Cancelamento Pendente').forEach(c => {
     const dateStr = new Date(c.admission_date).toLocaleDateString('pt-BR');
     let group = groupedBloco3.find(g => g.date === dateStr && !g.isCancellationSection);
@@ -165,7 +175,7 @@ export default function PipelineAdmissaoPage() {
     link.click();
     document.body.removeChild(link);
 
-    alert(`O arquivo Excel (${fileName}) foi baixado. O status será alterado para "Solicitada".`);
+    alert(`O arquivo Excel (${fileName}) contendo todos os dados dos candidatos foi baixado. O status deles será updated para "Solicitada" agora.`);
     
     for (const c of listToRequest) {
       await supabase.from('candidates').update({ 
@@ -221,104 +231,210 @@ export default function PipelineAdmissaoPage() {
 
   async function handleConfirmReject(e) {
     e.preventDefault();
-    if (!rejectForm.reasonId) return alert('Selecione o motivo principal.');
+    if (!rejectForm.reason) return alert('Selecione o motivo principal.');
 
-    const selectedReasonObj = cancellationReasons.find(r => r.id === rejectForm.reasonId);
-    const reasonText = selectedReasonObj ? selectedReasonObj.name : 'Outros';
-
-    const cancellationText = `\n[CANCELADO NO PIPELINE] Motivo: ${reasonText}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
-    const newFeedback = (rejectCandidate.feedback || '') + cancellationText;
+    const rejectionText = `\n[CANCELADO NO PIPELINE] Motivo: ${rejectForm.reason}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
+    const newFeedback = (rejectCandidate.feedback || '') + rejectionText;
 
     const { error } = await supabase.from('candidates').update({ 
       status: 'Reprovado',
-      cancellation_reason_id: rejectForm.reasonId,
       feedback: newFeedback
     }).eq('id', rejectCandidate.id);
 
     if (!error) {
       setRejectCandidate(null);
-      setRejectForm({ reasonId: '', notes: '' });
+      setRejectForm({ reason: '', notes: '' });
       fetchData();
     } else {
       alert('Erro ao interromper processo: ' + error.message);
     }
   }
 
-  async function handleConfirmCancellationDP(c) {
-    if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}?`)) {
-      const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
-      const { error } = await supabase.from('candidates').update({
-        status: 'Reprovado',
-        feedback: (c.feedback || '') + finalNote
-      }).eq('id', c.id);
-      if (!error) fetchData();
-    }
-  }
-
   const handleOpenAdmissionModal = (c) => {
-    if (c.medical_status !== 'Apto') return alert('Exame precisa estar Apto.');
+    if (c.medical_status !== 'Apto') {
+      alert('O Exame Médico precisa estar marcado como "Apto" para prosseguir com a admissão.');
+      return;
+    }
     setAdmissionModalCandidate(c);
     setAdmissionDate('');
   };
 
   const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
-    const { error } = await supabase.from('candidates').update({ status: 'Pré-Admissão (Pronto)', admission_date: new Date(admissionDate + 'T12:00:00').toISOString() }).eq('id', admissionModalCandidate.id);
-    if (!error) { setAdmissionModalCandidate(null); fetchData(); }
+    if (!admissionDate) return;
+
+    const { error } = await supabase.from('candidates').update({ 
+      status: 'Pré-Admissão (Pronto)',
+      admission_date: new Date(admissionDate + 'T12:00:00').toISOString()
+    }).eq('id', admissionModalCandidate.id);
+
+    if (!error) {
+      setAdmissionModalCandidate(null);
+      fetchData();
+    } else {
+      alert('Erro ao confirmar data de admissão: ' + error.message);
+    }
   };
 
   async function handleConcluirFinal(id) {
-    if (confirm('Deseja concluir todo o processo?')) {
+    if (confirm('Deseja concluir todo o processo e mover este candidato para a lista de Concluídos?')) {
       const { error } = await supabase.from('candidates').update({ status: 'Concluído' }).eq('id', id);
       if (!error) fetchData();
     }
   }
 
-  function openFeedbackModal(c) { setFeedbackCandidate(c); setFeedbackText(''); }
-  
+  // --- NOVA FUNÇÃO: HOMOLOGAÇÃO DE CANCELAMENTO PELO DP ---
+  async function handleConfirmCancellationDP(c) {
+    if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}? Os dados serão enviados para a lista de Reprovados/Cancelados.`)) {
+      const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
+      const { error } = await supabase.from('candidates').update({
+        status: 'Reprovado',
+        analysis_status: 'Cancelado',
+        feedback: (c.feedback || '') + finalNote
+      }).eq('id', c.id);
+
+      if (!error) fetchData();
+      else alert('Erro ao registrar cancelamento: ' + error.message);
+    }
+  }
+
+  function openFeedbackModal(c) {
+    setFeedbackCandidate(c);
+    setFeedbackText('');
+  }
+
   async function handleSaveFeedback(e) {
     e.preventDefault();
     if(!feedbackText) return;
+    
     const newNote = `\n[${currentUserRole}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
-    await supabase.from('candidates').update({ feedback: (feedbackCandidate.feedback || '') + newNote }).eq('id', feedbackCandidate.id);
-    setFeedbackCandidate(null); fetchData();
+    const updatedFeedback = (feedbackCandidate.feedback || '') + newNote;
+
+    const { error } = await supabase.from('candidates').update({ feedback: updatedFeedback }).eq('id', feedbackCandidate.id);
+    
+    if (!error) {
+      setFeedbackCandidate(null);
+      setFeedbackText('');
+      fetchData();
+    } else {
+      alert('Erro ao salvar mensagem: ' + error.message);
+    }
   }
 
   const getStatusColor = (status) => {
-    switch(status) { case 'Aprovado': case 'Apto': case 'Recebida': return '#057a55'; case 'Reprovado': case 'Inapto': return '#e02424'; case 'Solicitada': return '#F6D317'; default: return '#888888'; }
+    switch(status) {
+      case 'Aprovado': 
+      case 'Apto': 
+      case 'Recebida': return '#057a55';
+      case 'Reprovado': 
+      case 'Inapto': return '#e02424';
+      case 'Solicitada': return '#F6D317';
+      case 'Pendente': return '#888888';
+      default: return '#cccccc';
+    }
   };
 
   const renderCard = (c, isBloco3 = false) => {
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
+
     return (
-      <div key={c.id} className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', borderLeft: isPendingCancellation ? '4px solid var(--danger-color)' : (isBloco3 ? '3px solid var(--success-color)' : 'none'), backgroundColor: isPendingCancellation ? 'rgba(224, 36, 36, 0.03)' : 'var(--surface-color)' }}>
+      <div 
+        key={c.id} 
+        className="glass-panel" 
+        style={{ 
+          padding: '1rem', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '0.75rem', 
+          // DESTACADO NA COR VERMELHA SE FOR CANCELAMENTO SOLICITADO
+          borderLeft: isPendingCancellation ? '4px solid var(--danger-color)' : (isBloco3 ? '3px solid var(--success-color)' : 'none'),
+          backgroundColor: isPendingCancellation ? 'rgba(224, 36, 36, 0.03)' : 'var(--surface-color)'
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div><h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3><p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name}</p></div>
+          <div>
+            <h3 style={{ fontWeight: '600', fontSize: '0.95rem' }}>{c.name}</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
+          </div>
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico"><MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} /></button>
-            {(currentUserRole !== 'DP' || isBloco3) && <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem"><MessageSquare size={14} color="var(--text-main)" /></button>}
+            
+            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico/Observações">
+              <MessageSquareText size={14} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
+            </button>
+            
+            {(currentUserRole !== 'DP' || isBloco3) && (
+              <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem/Observação">
+                <MessageSquare size={14} color="var(--text-main)" />
+              </button>
+            )}
+
+            {currentUserRole !== 'DP' && !isBloco3 && (
+              <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.3rem 0.5rem', fontSize: '0.7rem' }}>
+                <Settings2 size={12} /> Editar
+              </button>
+            )}
+
+            {/* Trava do botão Excluir/Cancelar Padrão do Fluxo */}
             {!isPendingCancellation && ((!isBloco3 && currentUserRole !== 'DP') || (isBloco3 && ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole))) && (
-              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper"><ThumbsDown size={12} /></button>
+              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.3rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo">
+                <ThumbsDown size={12} />
+              </button>
             )}
           </div>
         </div>
-        {expandedNotes.includes(c.id) && <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}><p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Histórico:</p><p style={{ color: 'var(--text-muted)' }}>{c.feedback || 'Nenhuma observação.'}</p></div>}
+
+        {expandedNotes.includes(c.id) && (
+          <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
+            <p style={{ fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.2rem' }}>Histórico:</p>
+            <p style={{ color: 'var(--text-muted)' }}>{c.feedback || 'Nenhuma observação registrada.'}</p>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.5rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Circle size={8} fill={getStatusColor(c.analysis_status)} /> <span style={{ fontWeight: '500' }}>Análise:</span> <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Circle size={8} fill={getStatusColor(c.medical_status)} /> <span style={{ fontWeight: '500' }}>Médico:</span> <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Circle size={8} fill={getStatusColor(c.docs_status)} /> <span style={{ fontWeight: '500' }}>Doc:</span> <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Circle size={8} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} />
+            <span style={{ fontWeight: '500' }}>Análise:</span>
+            <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Circle size={8} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} />
+            <span style={{ fontWeight: '500' }}>Médico:</span>
+            <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Circle size={8} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} />
+            <span style={{ fontWeight: '500' }}>Doc:</span>
+            <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span>
+          </div>
         </div>
+
+        {/* Botoes de Ação do Bloco 3 condicionados ao Chamado de Cancelamento */}
         {isBloco3 && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.5rem' }}>
             {isPendingCancellation ? (
-              ['ADMIN', 'DP'].includes(currentUserRole) && <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--danger-color)' }}><ShieldAlert size={14} style={{ marginRight: '4px' }} /> Confirmar Cancelamento</button>
+              // EXCLUSIVO PARA O DP HOMOLOGAR O PEDIDO DE CANCELAMENTO
+              ['ADMIN', 'DP'].includes(currentUserRole) && (
+                <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--danger-color)', color: 'white' }}>
+                  <ShieldAlert size={14} style={{ marginRight: '4px' }} /> Confirmar Cancelamento
+                </button>
+              )
             ) : (
-              ['ADMIN', 'DP'].includes(currentUserRole) && <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--success-color)' }}><FileCheck size={14} /> Concluir Admissão</button>
+              // Fluxo normal de efetivação do DP
+              ['ADMIN', 'DP'].includes(currentUserRole) && (
+                <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', backgroundColor: 'var(--success-color)' }}>
+                  <FileCheck size={14} /> Concluir Admissão
+                </button>
+              )
             )}
           </div>
         )}
+
         {currentUserRole !== 'DP' && !isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
-          <div style={{ marginTop: '0.5rem' }}><button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>Definir Data Admissão <ArrowRight size={14} style={{ marginLeft: '4px' }}/></button></div>
+          <div style={{ marginTop: '0.5rem' }}>
+            <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
+              Definir Data Admissão <ArrowRight size={14} style={{ marginLeft: '4px' }}/>
+            </button>
+          </div>
         )}
       </div>
     );
@@ -327,20 +443,49 @@ export default function PipelineAdmissaoPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div><h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1><p style={{ color: 'var(--text-muted)' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p></div>
-        {['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) && <button className="btn-primary" onClick={requestAnalysisBatch}><Send size={18} /> Solicitar Análises (.XLS)</button>}
+        <div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p>
+        </div>
+        
+        {['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) && (
+          <button className="btn-primary" onClick={requestAnalysisBatch}>
+            <Send size={18} />
+            Solicitar Análises Pendentes (.XLS)
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
         <Filter size={20} color="var(--text-muted)" />
         <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}><option value="">Todos Processos</option><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option></select>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Todas Unidades</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}><option value="">Todas Funções</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}><option value="">Todos Responsáveis</option>{responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}</select>
+        
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
+          <option value="">Todos os Processos</option>
+          <option value="Admissão">Admissão</option>
+          <option value="Readmissão">Readmissão</option>
+          <option value="Promoção">Promoção</option>
+        </select>
+        
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+          <option value="">Todas as Unidades</option>
+          {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+          <option value="">Todas as Funções</option>
+          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+
+        <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', minWidth: '140px' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
+          <option value="">Todos os Responsáveis</option>
+          {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
+        </select>
       </div>
 
-      {loading ? <p>Carregando dados...</p> : (
+      {loading ? (
+        <p>Carregando dados...</p>
+      ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', overflowX: 'auto', paddingBottom: '1rem' }}>
           
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
@@ -373,9 +518,22 @@ export default function PipelineAdmissaoPage() {
             <div style={{ display: 'grid', gap: '1rem' }}>
               {groupedBloco3.map(group => (
                 <div key={group.date}>
-                  <div style={{ padding: '0.3rem 0.5rem', borderBottom: '2px solid var(--border-color)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderRadius: '4px', backgroundColor: group.isCancellationSection ? 'rgba(224, 36, 36, 0.1)' : 'transparent' }}>
+                  <div 
+                    style={{ 
+                      padding: '0.3rem 0.5rem', 
+                      borderBottom: '2px solid var(--border-color)', 
+                      marginBottom: '0.75rem', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.4rem',
+                      borderRadius: '4px',
+                      backgroundColor: group.isCancellationSection ? 'rgba(224, 36, 36, 0.1)' : 'transparent'
+                    }}
+                  >
                     <Calendar size={14} color={group.isCancellationSection ? 'var(--danger-color)' : 'var(--saritur-orange)'} />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>{group.date}</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>
+                      {group.date}
+                    </span>
                   </div>
                   <div style={{ display: 'grid', gap: '0.75rem' }}>
                     {group.candidates.map(c => renderCard(c, true))}
@@ -468,7 +626,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* ADMISSION MODAL E REJECT MODAL MANTIDOS DO BANCO DINÂMICO */}
+      {/* ADMISSION MODAL */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -482,7 +640,7 @@ export default function PipelineAdmissaoPage() {
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
                 <input required type="date" style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Confirmar e Mover</button>
               </div>
@@ -491,20 +649,26 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
+      {/* REJECT MODAL */}
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Interromper Processo</h2>
               <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
-                <select required style={{ width: '100%' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}>
-                  <option value="">-- Selecione o motivo do banco --</option>
-                  {cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento/Reprovação *</label>
+                <select required style={{ width: '100%' }} value={rejectForm.reason} onChange={e => setRejectForm({...rejectForm, reason: e.target.value})}>
+                  <option value="">-- Selecione um motivo --</option>
+                  <option value="Reprovado na Análise Administrativa">Reprovado na Análise Administrativa</option>
+                  <option value="Inapto no Exame Médico">Inapto no Exame Médico</option>
+                  <option value="Desistência do Candidato">Desistência do Candidato</option>
+                  <option value="Documentação Pendente/Irregular">Documentação Pendente/Irregular</option>
+                  <option value="Erro de Cadastro / Duplicidade">Erro de Cadastro / Duplicidade</option>
+                  <option value="Outros">Outros</option>
                 </select>
               </div>
               <div>
@@ -512,13 +676,44 @@ export default function PipelineAdmissaoPage() {
                 <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Cancelamento</button>
+                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Interromper Processo</button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* FEEDBACK (MENSAGEM) MODAL */}
+      {feedbackCandidate && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Adicionar Mensagem</h2>
+              <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+            <form onSubmit={handleSaveFeedback} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                  Deixe uma observação no histórico de <strong>{feedbackCandidate.name}</strong> para o restante da equipe.
+                </p>
+                <textarea 
+                  required
+                  style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} 
+                  placeholder="Sua mensagem..."
+                  value={feedbackText} 
+                  onChange={e => setFeedbackText(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+                <button type="button" className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button>
+                <button type="submit" className="btn-primary">Salvar Mensagem</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
