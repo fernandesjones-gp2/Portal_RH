@@ -7,6 +7,7 @@ export default function ConfiguracoesPage() {
   const [isAdmin, setIsAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Dados do banco
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
   const [cancellationReasons, setCancellationReasons] = useState([]); // NOVO ESTADO
@@ -245,6 +246,7 @@ export default function ConfiguracoesPage() {
         </h2>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '2rem' }}>
+          
           <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '1rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Unidades</label>
             <select style={{ width: '100%', marginBottom: '1rem' }} value={selectedUnitId} onChange={e => { setSelectedUnitId(e.target.value); setEditingUnit(null); }}>
@@ -329,7 +331,7 @@ export default function ConfiguracoesPage() {
         <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
           <Info size={24} color="var(--saritur-orange)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            <strong>Fluxo de Cadastro Seguro:</strong> Peça para o novo colaborador fazer o login no site. Ao entrar, a conta dele aparecerá aqui automaticamente como <strong>"Pendente"</strong>. Avalie, defina o perfil dele e clique no botão verde (<Check size={14} style={{ display: 'inline' }} />) para liberar o acesso ao sistema.
+            <strong>Fluxo de Cadastro Seguro:</strong> Peça para o novo colaborador fazer o login no site. Ao entrar, a conta dele aparecerá aqui automaticamente como <strong>"Pendente"</strong>. Avalie, defina o perfil dele e clique no botão verde para liberar o acesso.
           </p>
         </div>
 
