@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw } from 'lucide-react';
 
 export default function AgendamentosPage() {
@@ -25,29 +24,44 @@ export default function AgendamentosPage() {
   const [filterResponsible, setFilterResponsible] = useState('');
   const [filterDate, setFilterDate] = useState('');
 
-  // ATUALIZADO: Novos campos gender e is_pcd no estado inicial
   const [formData, setFormData] = useState({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
   const [feedbackText, setFeedbackText] = useState('');
   const [rejectForm, setRejectForm] = useState({ reasonId: '', notes: '' });
 
   useEffect(() => { fetchData(); }, []);
 
+  // --- NOVA ESTRUTURA DE FETCH (SEM SUPABASE) ---
+  const fetchApi = async (url) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || json || [];
+    } catch (error) {
+      console.error(`Erro ao buscar ${url}:`, error);
+      return [];
+    }
+  };
+
   async function fetchData() {
     setLoading(true);
     try {
-      const [candidatesRes, unitsRes, rolesRes, reasonsRes, usersRes] = await Promise.all([
-        supabase.from('candidates').select(`*, job_roles(name), units(name), users(name)`).in('status', ['Agendado', 'Banco de Talentos', 'Reprovado']),
-        supabase.from('units').select('*'),
-        supabase.from('job_roles').select('*'),
-        supabase.from('cancellation_reasons').select('*').order('name'),
-        supabase.from('users').select('*')
+      const [candidatesData, unitsData, rolesData, reasonsData, usersData] = await Promise.all([
+        fetchApi('/api/candidates'),
+        fetchApi('/api/units'),
+        fetchApi('/api/job-roles'),
+        fetchApi('/api/cancellation-reasons'),
+        fetchApi('/api/users')
       ]);
       
-      if (candidatesRes.data) setCandidates(candidatesRes.data);
-      if (unitsRes.data) setUnits(unitsRes.data);
-      if (rolesRes.data) setRoles(rolesRes.data);
-      if (reasonsRes.data) setCancellationReasons(reasonsRes.data);
-      if (usersRes.data) setResponsibles(usersRes.data);
+      // Filtra localmente as abas ativas para a tela de Agendamentos
+      const filteredCands = candidatesData.filter(c => ['Agendado', 'Banco de Talentos', 'Reprovado'].includes(c.status));
+      
+      setCandidates(filteredCands);
+      setUnits(unitsData);
+      setRoles(rolesData);
+      setCancellationReasons(reasonsData);
+      setResponsibles(usersData);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -118,62 +132,74 @@ export default function AgendamentosPage() {
     }
   };
 
+  // --- REQUISIÇÕES REST API ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
-    const { data: { session } } = await supabase.auth.getSession();
-    const responsible_id = session?.user?.id || null; 
-
-    if (responsible_id) {
-      await supabase.from('users').upsert({ id: responsible_id, email: session.user.email, name: session.user.user_metadata?.full_name || session.user.email });
-    }
+    
+    let responsible_id = null; 
+    try {
+      // Puxa o usuário logado da nova API de Sessão
+      const sessionUser = await fetchApi('/api/users/me');
+      responsible_id = sessionUser?.id || null;
+    } catch (err) { console.error("Sessão não encontrada", err); }
 
     const interviewIso = getBrazilIsoDate(formData.interview_date);
     const dataToSave = { ...formData, interview_date: interviewIso, responsible_id };
 
-    const { error } = await supabase.from('candidates').insert([dataToSave]);
-    if (error) return alert('Erro ao salvar candidato: ' + error.message);
+    try {
+      const res = await fetch('/api/candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave)
+      });
+      if (!res.ok) throw new Error('Falha ao conectar com a API');
 
-    const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
-    const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
+      const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
+      const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
 
-    if (interviewIso) {
-      try {
-        const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
-        const dAgenda = new Date(interviewIso);
-        const dateStr = dAgenda.toISOString().replace(/-|:|\.\d\d\d/g, "");
-        const dEnd = new Date(dAgenda.getTime() + 60 * 60 * 1000); 
-        const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
-        
-        const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
-        window.open(calUrl, '_blank');
-      } catch (agendaError) {
-        console.error('Erro ao abrir Google Agenda:', agendaError);
+      if (interviewIso) {
+        try {
+          const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
+          const dAgenda = new Date(interviewIso);
+          const dateStr = dAgenda.toISOString().replace(/-|:|\.\d\d\d/g, "");
+          const dEnd = new Date(dAgenda.getTime() + 60 * 60 * 1000); 
+          const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
+          
+          const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
+          window.open(calUrl, '_blank');
+        } catch (agendaError) { console.error('Erro Google Agenda:', agendaError); }
       }
-    }
 
-    if (confirm('Deseja enviar o convite de agendamento para o WhatsApp do candidato?')) {
-      sendWhatsAppMessage(formData, 'agendamento', roleName, unitName, interviewIso);
-    }
+      if (confirm('Deseja enviar o convite de agendamento para o WhatsApp do candidato?')) {
+        sendWhatsAppMessage(formData, 'agendamento', roleName, unitName, interviewIso);
+      }
 
-    setIsModalOpen(false);
-    // ATUALIZADO: Reset do formulário com os novos campos
-    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
-    fetchData(); 
+      setIsModalOpen(false);
+      setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
+      fetchData(); 
+    } catch (error) {
+      alert('Erro ao salvar candidato: ' + error.message);
+    }
   }
 
   async function handleUpdateCandidate(e) {
     e.preventDefault();
-    // ATUALIZADO: Extraindo e atualizando gender e is_pcd
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date, responsible_id, gender, is_pcd } = editingCandidate;
     const interviewIso = getBrazilIsoDate(interview_date);
 
-    const { error } = await supabase.from('candidates').update({
-      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd
-    }).eq('id', id);
-
-    if (error) return alert('Erro ao atualizar: ' + error.message);
-    setEditingCandidate(null);
-    fetchData();
+    try {
+      const res = await fetch(`/api/candidates/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd })
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar na API');
+      
+      setEditingCandidate(null);
+      fetchData();
+    } catch (error) {
+      alert('Erro ao atualizar: ' + error.message);
+    }
   }
 
   function openFeedbackModal(c) {
@@ -186,24 +212,25 @@ export default function AgendamentosPage() {
 
     let userDisplay = 'N/A';
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: u } = await supabase.from('users').select('name').eq('id', session.user.id).single();
-        userDisplay = u?.name || session.user.email;
-      }
+      const sessionUser = await fetchApi('/api/users/me');
+      userDisplay = sessionUser?.name || sessionUser?.email || 'N/A';
     } catch (err) { console.error(err); }
 
     const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     const newNote = `\n--- Adicionado em ${timestamp} por ${userDisplay} ---\n${feedbackText}\n`;
     const updatedFeedback = (feedbackCandidate.feedback || '') + newNote;
 
-    const { error } = await supabase.from('candidates').update({ feedback: updatedFeedback }).eq('id', feedbackCandidate.id);
-    if (!error) {
+    try {
+      await fetch(`/api/candidates/${feedbackCandidate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback: updatedFeedback })
+      });
       setFeedbackCandidate(null);
       setFeedbackText('');
       fetchData();
-    } else {
-      alert('Erro ao salvar parecer: ' + error.message);
+    } catch (error) {
+      alert('Erro ao salvar parecer.');
     }
   }
 
@@ -216,11 +243,8 @@ export default function AgendamentosPage() {
 
     let userDisplay = 'N/A';
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: u } = await supabase.from('users').select('name').eq('id', session.user.id).single();
-        userDisplay = u?.name || session.user.email;
-      }
+      const sessionUser = await fetchApi('/api/users/me');
+      userDisplay = sessionUser?.name || sessionUser?.email || 'N/A';
     } catch (err) { console.error(err); }
 
     const cancellationDate = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -228,42 +252,59 @@ export default function AgendamentosPage() {
     
     const newFeedback = (rejectCandidate.feedback || '') + auditingBlock;
 
-    const { error } = await supabase.from('candidates').update({ 
-      status: 'Reprovado',
-      cancellation_reason_id: rejectForm.reasonId,
-      feedback: newFeedback
-    }).eq('id', rejectCandidate.id);
+    try {
+      await fetch(`/api/candidates/${rejectCandidate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status: 'Reprovado',
+          cancellation_reason_id: rejectForm.reasonId,
+          feedback: newFeedback
+        })
+      });
 
-    if (!error) {
       if (confirm('Deseja enviar a mensagem de aviso (Reprovação/Banco) no WhatsApp do candidato?')) {
         sendWhatsAppMessage(rejectCandidate, 'reprovacao', rejectCandidate.job_roles?.name, rejectCandidate.units?.name, rejectCandidate.interview_date);
       }
+      
       setRejectCandidate(null);
       setRejectForm({ reasonId: '', notes: '' });
       fetchData();
-    } else {
-      alert('Erro ao arquivar processo: ' + error.message);
+    } catch (error) {
+      alert('Erro ao arquivar processo.');
     }
   }
 
   async function changeStatus(candidate, newStatus) {
-    const { error } = await supabase.from('candidates').update({ status: newStatus }).eq('id', candidate.id);
-    if (!error) {
+    try {
+      await fetch(`/api/candidates/${candidate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      
       if (newStatus === 'Banco de Talentos') {
         if (confirm('Deseja avisar o candidato pelo WhatsApp que ele foi para o Banco de Talentos?')) {
           sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
         }
       }
       fetchData();
-    }
+    } catch(err) { console.error(err); }
   }
 
   async function handleApprove(candidate) {
     if (confirm('Deseja enviar a mensagem de Aprovação e solicitação de documentos no WhatsApp do candidato?')) {
       sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
     }
-    await supabase.from('candidates').update({ status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() }).eq('id', candidate.id);
-    fetchData();
+    
+    try {
+      await fetch(`/api/candidates/${candidate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() })
+      });
+      fetchData();
+    } catch(err) { console.error(err); }
   }
 
   const sortedFilteredCandidates = candidates.filter(c => {
@@ -358,7 +399,6 @@ export default function AgendamentosPage() {
                   <span style={{ backgroundColor: c.process_type === 'Promoção' ? 'var(--saritur-yellow)' : 'var(--saritur-orange)', color: c.process_type === 'Promoção' ? 'black' : 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
                     {c.process_type}
                   </span>
-                  {/* TAG VISUAL PCD */}
                   {c.is_pcd && (
                     <span style={{ backgroundColor: '#0284c7', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
                       PCD
@@ -366,9 +406,9 @@ export default function AgendamentosPage() {
                   )}
                   <h3 style={{ fontSize: '1.125rem', fontWeight: '600' }}>{c.name}</h3>
                 </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{c.job_roles?.name} • {c.units?.name} • CPF: {c.cpf}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{c.job_roles?.name || c.job_role_name} • {c.units?.name || c.unit_name} • CPF: {c.cpf}</p>
                 <p style={{ color: 'var(--text-main)', fontSize: '0.875rem', fontWeight: '500', marginTop: '0.5rem' }}>
-                  Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : 'N/A'} • Resp: {c.users?.name || 'N/A'}
+                  Entrevista: {c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : 'N/A'} • Resp: {c.users?.name || c.responsible_name || 'N/A'}
                 </p>
                 
                 {currentTab === 'Reprovado' && c.feedback && (
@@ -423,7 +463,7 @@ export default function AgendamentosPage() {
                   {detailsCandidate.name}
                   {detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}
                 </p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{detailsCandidate.job_roles?.name} • {detailsCandidate.units?.name} • Sexo: {detailsCandidate.gender || 'Não informado'}</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{detailsCandidate.job_roles?.name || detailsCandidate.job_role_name} • {detailsCandidate.units?.name || detailsCandidate.unit_name} • Sexo: {detailsCandidate.gender || 'Não informado'}</p>
               </div>
 
               <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
@@ -477,7 +517,6 @@ export default function AgendamentosPage() {
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} /></div>
                     </div>
 
-                    {/* ATUALIZADO: CAMPOS SEXO E PCD */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label>
