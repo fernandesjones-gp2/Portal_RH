@@ -27,16 +27,14 @@ export default function ConcluidosPage() {
     fetchData();
   }, []);
 
-  async function fetchData() {
+async function fetchData() {
     setLoading(true);
     try {
-      // 1. Descobre o perfil do usuário logado
       const me = await api.me();
       if (me) {
         setCurrentUserRole(me.role || '');
       }
 
-      // 2. Busca o histórico de concluídos e tabelas base
       const [candidatesData, unitsData, rolesData, usersData] = await Promise.all([
         api.candidates.list({ status: 'Concluído', orderBy: 'admission_date', order: 'desc' }),
         api.units.list(),
@@ -44,7 +42,12 @@ export default function ConcluidosPage() {
         api.users.list()
       ]);
 
-      if (candidatesData) setCandidates(candidatesData);
+      if (candidatesData) {
+        // TRAVA DE SEGURANÇA: Filtra forçadamente no frontend só os concluídos
+        const apenasConcluidos = candidatesData.filter(c => c.status === 'Concluído');
+        setCandidates(apenasConcluidos);
+      }
+      
       if (unitsData) setUnits(unitsData);
       if (rolesData) setRoles(rolesData);
       if (usersData) setResponsibles(usersData);
