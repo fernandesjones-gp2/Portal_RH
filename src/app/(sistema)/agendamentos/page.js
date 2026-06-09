@@ -36,16 +36,15 @@ export default function AgendamentosPage() {
     setLoading(true);
     try {
       const [allCandsData, unitsRes, rolesRes, usersRes, reasonsRes] = await Promise.all([
-        api.candidates.list(), // Puxa todos para validar CPF duplicado em todo o sistema
+        api.candidates.list(), // Puxa todos para validar CPF duplicado no motor
         api.units.list(),
         api.jobRoles.list(),
         api.users.list(),
-        fetch('/api/cancellation-reasons').then(r => r.ok ? r.json() : []).then(j => j.data || j || []).catch(() => [])
+        api.cancellationReasons.list().catch(() => []) // Evita erro se a tabela ainda estiver vazia
       ]);
 
       if (allCandsData) {
         setAllCandidates(allCandsData);
-        // Filtra para mostrar na tela apenas as abas da recepção
         setCandidates(allCandsData.filter(c => ['Agendado', 'Banco de Talentos', 'Reprovado'].includes(c.status)));
       }
       
@@ -106,7 +105,7 @@ export default function AgendamentosPage() {
   async function handleSaveCandidate(e) {
     e.preventDefault();
 
-    // --- NOVA REGRA: VALIDAÇÃO DE DUPLICIDADE DE CPF ---
+    // VALIDAÇÃO DE DUPLICIDADE DE CPF
     if (['Admissão', 'Readmissão'].includes(formData.process_type) && formData.cpf) {
       const cleanCpf = formData.cpf.replace(/\D/g, '');
       if (cleanCpf.length === 11) {
@@ -120,12 +119,11 @@ export default function AgendamentosPage() {
           const lastDate = new Date(latest.created_at);
           const monthsDiff = (new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
           
-          // TRAVA DE TEMPO CONFIGURADA PARA 6 MESES
           const TRAVA_MESES = 6; 
-          const locationMsg = `Candidato(a): ${latest.name}\nStatus atual: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
+          const locationMsg = `Candidato(a): ${latest.name}\nStatus no sistema: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
 
           if (!isClosed || monthsDiff < TRAVA_MESES) {
-            alert(`❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro para Readmissão/Admissão.`);
+            alert(`❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro para Readmissão.`);
             return; 
           } else {
             const proceed = confirm(`⚠️ AVISO DE DUPLICIDADE (HISTÓRICO ANTIGO)\n\nO sistema identificou um processo antigo para este CPF, encerrado há aprox. ${Math.floor(monthsDiff)} meses:\n\n${locationMsg}\n\nDeseja ignorar o alerta e iniciar o NOVO PROCESSO mesmo assim?`);
@@ -239,7 +237,7 @@ export default function AgendamentosPage() {
     } catch (err) { console.error(err); }
 
     const cancellationDate = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    const auditingBlock = `\n--- AUDITORIA DE CANCELAMENTO ---\n• Data e Hora: ${cancellationDate}\n• Usuário Executor: ${userDisplay}\n• Motivo Principal: ${reasonText}\n• Fase/Status no momento: ${rejectCandidate.status} (Análise ADM: ${rejectCandidate.analysis_status || 'Pendente'}, Exame Médico: ${rejectCandidate.medical_status || 'Pendente'}, Documentação: ${rejectCandidate.docs_status || 'Pendente'})\n${rejectForm.notes ? `• Observações Adicionais: ${rejectForm.notes}\n` : ''}---------------------------------`;
+    const auditingBlock = `\n--- AUDITORIA DE CANCELAMENTO ---\n• Data e Hora: ${cancellationDate}\n• Usuário Executor: ${userDisplay}\n• Motivo Principal: ${reasonText}\n• Fase/Status no momento: ${rejectCandidate.status}\n${rejectForm.notes ? `• Observações Adicionais: ${rejectForm.notes}\n` : ''}---------------------------------`;
     const newFeedback = (rejectCandidate.feedback || '') + auditingBlock;
 
     try {
@@ -250,7 +248,7 @@ export default function AgendamentosPage() {
       });
       
       if (confirm('Deseja enviar a mensagem de aviso (Reprovação/Banco) no WhatsApp do candidato?')) {
-        sendWhatsAppMessage(rejectCandidate, 'reprovacao', rejectCandidate.job_roles?.name, rejectCandidate.units?.name, rejectCandidate.interview_date);
+        sendWhatsAppMessage(rejectCandidate, 'reprovacao', rejectCandidate.job_roles?.name || rejectCandidate.job_role_name, rejectCandidate.units?.name || rejectCandidate.unit_name, rejectCandidate.interview_date);
       }
 
       setRejectCandidate(null);
@@ -266,7 +264,7 @@ export default function AgendamentosPage() {
     try {
       await api.candidates.update(candidate.id, { status: newStatus });
       if (newStatus === 'Banco de Talentos' && confirm('Deseja avisar o candidato pelo WhatsApp que ele foi para o Banco de Talentos?')) {
-        sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
+        sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name || candidate.job_role_name, candidate.units?.name || candidate.unit_name, candidate.interview_date);
       }
       fetchData();
     } catch (e) { console.error(e); }
@@ -274,7 +272,7 @@ export default function AgendamentosPage() {
 
   async function handleApprove(candidate) {
     if (confirm('Deseja enviar a mensagem de Aprovação e solicitação de documentos no WhatsApp do candidato?')) {
-      sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
+      sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name || candidate.job_role_name, candidate.units?.name || candidate.unit_name, candidate.interview_date);
     }
     try {
       await api.candidates.update(candidate.id, { status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() });
@@ -329,7 +327,6 @@ export default function AgendamentosPage() {
         </button>
       </div>
 
-      {/* BARRA DE FILTROS */}
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
         <Filter size={20} color="var(--text-muted)" />
         <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
@@ -355,7 +352,7 @@ export default function AgendamentosPage() {
       </div>
 
       {loading ? (
-        <p>Conectando ao banco de dados...</p>
+        <p>Carregando candidatos...</p>
       ) : sortedFilteredCandidates.length === 0 ? (
         <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)' }}>
           <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato encontrado com estes filtros.</p>
