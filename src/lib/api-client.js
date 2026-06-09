@@ -6,6 +6,7 @@ async function req(url, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
+  
   if (!res.ok) {
     let body;
     try {
@@ -18,15 +19,26 @@ async function req(url, options = {}) {
     err.body = body;
     throw err;
   }
+  
   if (res.status === 204) return null;
-  return res.json();
+  
+  const json = await res.json();
+  
+  // AUTO-DESEMPACOTADOR: Se a API retornar um objeto encapsulado { data: [...] } ou { rows: [...] }
+  // O cliente já extrai a lista automaticamente. Isso impede o erro fatal "filter is not a function" nas telas.
+  if (json && typeof json === 'object' && !Array.isArray(json)) {
+    if ('data' in json) return json.data;
+    if ('rows' in json) return json.rows;
+  }
+  
+  return json;
 }
 
 function crud(base) {
   return {
     list: () => req(base),
-    create: (name) => req(base, { method: 'POST', body: JSON.stringify({ name }) }),
-    update: (id, name) => req(`${base}/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    create: (data) => req(base, { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => req(`${base}/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     remove: (id) => req(`${base}/${id}`, { method: 'DELETE' }),
   };
 }
@@ -54,7 +66,6 @@ export const api = {
   },
 
   candidates: {
-    // params: { status } | { statusIn: 'a,b,c' } + { orderBy, order }
     list: (params = {}) => req(`/api/candidates?${new URLSearchParams(params).toString()}`),
     create: (data) => req('/api/candidates', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => req(`/api/candidates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
