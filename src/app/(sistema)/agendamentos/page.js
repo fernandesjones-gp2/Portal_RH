@@ -25,7 +25,8 @@ export default function AgendamentosPage() {
   const [filterResponsible, setFilterResponsible] = useState('');
   const [filterDate, setFilterDate] = useState('');
 
-  const [formData, setFormData] = useState({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '' });
+  // ATUALIZADO: Novos campos gender e is_pcd no estado inicial
+  const [formData, setFormData] = useState({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
   const [feedbackText, setFeedbackText] = useState('');
   const [rejectForm, setRejectForm] = useState({ reasonId: '', notes: '' });
 
@@ -76,7 +77,6 @@ export default function AgendamentosPage() {
     return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`;
   };
 
-  // --- MOTOR INTELIGENTE DE INTEGRAÇÃO COM WHATSAPP ---
   const sendWhatsAppMessage = (candidateData, templateId, roleName, unitName, interviewDate) => {
     let textMsg = '';
     const savedTemplates = localStorage.getItem('portal_rh_templates');
@@ -102,7 +102,6 @@ export default function AgendamentosPage() {
       }
     }
 
-    // Fallback de segurança caso os modelos sejam excluídos nas configurações
     if (!textMsg) {
       if (templateId === 'agendamento') textMsg = `Olá ${candidateData.name}, sua entrevista está agendada.`;
       if (templateId === 'aprovacao') textMsg = `Olá ${candidateData.name}, você foi aprovado(a) na nossa entrevista para a função de ${roleName}! Por favor, envie seus documentos.`;
@@ -137,7 +136,6 @@ export default function AgendamentosPage() {
     const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
     const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
 
-    // Abertura do Google Agenda
     if (interviewIso) {
       try {
         const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
@@ -153,23 +151,24 @@ export default function AgendamentosPage() {
       }
     }
 
-    // DISPARO DO WHATSAPP DE CONVITE (AGENDAMENTO)
     if (confirm('Deseja enviar o convite de agendamento para o WhatsApp do candidato?')) {
       sendWhatsAppMessage(formData, 'agendamento', roleName, unitName, interviewIso);
     }
 
     setIsModalOpen(false);
-    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '' });
+    // ATUALIZADO: Reset do formulário com os novos campos
+    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
     fetchData(); 
   }
 
   async function handleUpdateCandidate(e) {
     e.preventDefault();
-    const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date, responsible_id } = editingCandidate;
+    // ATUALIZADO: Extraindo e atualizando gender e is_pcd
+    const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date, responsible_id, gender, is_pcd } = editingCandidate;
     const interviewIso = getBrazilIsoDate(interview_date);
 
     const { error } = await supabase.from('candidates').update({
-      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id
+      process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd
     }).eq('id', id);
 
     if (error) return alert('Erro ao atualizar: ' + error.message);
@@ -236,11 +235,9 @@ export default function AgendamentosPage() {
     }).eq('id', rejectCandidate.id);
 
     if (!error) {
-      // DISPARO DO WHATSAPP DE REPROVAÇÃO / BANCO
       if (confirm('Deseja enviar a mensagem de aviso (Reprovação/Banco) no WhatsApp do candidato?')) {
         sendWhatsAppMessage(rejectCandidate, 'reprovacao', rejectCandidate.job_roles?.name, rejectCandidate.units?.name, rejectCandidate.interview_date);
       }
-      
       setRejectCandidate(null);
       setRejectForm({ reasonId: '', notes: '' });
       fetchData();
@@ -252,7 +249,6 @@ export default function AgendamentosPage() {
   async function changeStatus(candidate, newStatus) {
     const { error } = await supabase.from('candidates').update({ status: newStatus }).eq('id', candidate.id);
     if (!error) {
-      // DISPARO DO WHATSAPP PARA BANCO DE TALENTOS
       if (newStatus === 'Banco de Talentos') {
         if (confirm('Deseja avisar o candidato pelo WhatsApp que ele foi para o Banco de Talentos?')) {
           sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
@@ -263,7 +259,6 @@ export default function AgendamentosPage() {
   }
 
   async function handleApprove(candidate) {
-    // DISPARO DO WHATSAPP DE APROVAÇÃO
     if (confirm('Deseja enviar a mensagem de Aprovação e solicitação de documentos no WhatsApp do candidato?')) {
       sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
     }
@@ -363,6 +358,12 @@ export default function AgendamentosPage() {
                   <span style={{ backgroundColor: c.process_type === 'Promoção' ? 'var(--saritur-yellow)' : 'var(--saritur-orange)', color: c.process_type === 'Promoção' ? 'black' : 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
                     {c.process_type}
                   </span>
+                  {/* TAG VISUAL PCD */}
+                  {c.is_pcd && (
+                    <span style={{ backgroundColor: '#0284c7', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                      PCD
+                    </span>
+                  )}
                   <h3 style={{ fontSize: '1.125rem', fontWeight: '600' }}>{c.name}</h3>
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{c.job_roles?.name} • {c.units?.name} • CPF: {c.cpf}</p>
@@ -389,7 +390,6 @@ export default function AgendamentosPage() {
                 {currentTab === 'Agendado' && (
                   <>
                     <button className="btn-secondary" onClick={() => setEditingCandidate(c)} title="Editar Cadastro"><Edit2 size={16} /></button>
-                    {/* Botão de Mover agora passa o objeto C completo para acionar o WhatsApp */}
                     <button className="btn-secondary" onClick={() => changeStatus(c, 'Banco de Talentos')} title="Mover para Banco de Talentos"><Database size={16} /></button>
                     <button className="btn-secondary" onClick={() => handleApprove(c)} style={{ color: 'var(--success-color)', borderColor: 'var(--success-color)' }} title="Aprovar (Avançar)"><ThumbsUp size={16} /></button>
                     <button className="btn-secondary" onClick={() => setRejectCandidate(c)} style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Reprovar / Cancelar"><ThumbsDown size={16} /></button>
@@ -407,7 +407,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- NOVO MODAL: DETALHAMENTO DO CANCELAMENTO --- */}
+      {/* --- MODAL: DETALHAMENTO DO CANCELAMENTO --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px', maxHeight: '85vh', overflowY: 'auto' }}>
@@ -419,8 +419,11 @@ export default function AgendamentosPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
                 <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Candidato</span>
-                <p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>{detailsCandidate.name}</p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{detailsCandidate.job_roles?.name} • {detailsCandidate.units?.name}</p>
+                <p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                  {detailsCandidate.name}
+                  {detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}
+                </p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{detailsCandidate.job_roles?.name} • {detailsCandidate.units?.name} • Sexo: {detailsCandidate.gender || 'Não informado'}</p>
               </div>
 
               <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
@@ -474,6 +477,22 @@ export default function AgendamentosPage() {
                       <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} /></div>
                     </div>
 
+                    {/* ATUALIZADO: CAMPOS SEXO E PCD */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label>
+                        <select required style={{ width: '100%' }} value={data.gender || ''} onChange={e => setData({...data, gender: e.target.value})}>
+                          <option value="">Selecione...</option>
+                          <option value="Masculino">Masculino</option>
+                          <option value="Feminino">Feminino</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem' }}>
+                        <input type="checkbox" id={`pcd_${data.id || 'new'}`} checked={data.is_pcd || false} onChange={e => setData({...data, is_pcd: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} />
+                        <label htmlFor={`pcd_${data.id || 'new'}`} style={{ fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>Candidato PCD</label>
+                      </div>
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label>
@@ -520,7 +539,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL ATUALIZADO: PARECER COMO HISTÓRICO COM LOG DE EDIÇÃO --- */}
+      {/* --- MODAL: PARECER COMO HISTÓRICO COM LOG DE EDIÇÃO --- */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px' }}>
@@ -571,7 +590,7 @@ export default function AgendamentosPage() {
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo da Reprovação *</label>
-                <select required style={{ width: '100%' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}>
+                <select required style={{ width: '100%', padding: '0.6rem' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}>
                   <option value="">-- Selecione o motivo do banco --</option>
                   {cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
@@ -580,7 +599,7 @@ export default function AgendamentosPage() {
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
                 <textarea 
-                  style={{ width: '100%', minHeight: '80px' }} 
+                  style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} 
                   placeholder="Detalhes adicionais sobre a reprovação..."
                   value={rejectForm.notes} 
                   onChange={e => setRejectForm({...rejectForm, notes: e.target.value})}
