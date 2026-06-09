@@ -1,12 +1,15 @@
 import { query } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-export async function PUT(req, { params }) {
+export async function PUT(req, props) {
   try {
+    // A MÁGICA ACONTECE AQUI: Agora esperamos o Next.js resolver o ID da URL
+    const params = await props.params; 
     const { id } = params;
+    
     const body = await req.json();
 
-    // LISTA DE CAMPOS AUTORIZADOS (Porteiro da API) - Adicionado gender e is_pcd
+    // LISTA DE CAMPOS AUTORIZADOS (Porteiro da API)
     const allowedFields = [
       'process_type', 'name', 'mother_name', 'phone', 'cpf', 'rg', 
       'job_role_id', 'unit_id', 'interview_date', 'responsible_id', 
@@ -50,9 +53,12 @@ export async function PUT(req, { params }) {
   }
 }
 
-export async function DELETE(req, { params }) {
+export async function DELETE(req, props) {
   try {
+    // Precisamos aplicar a mesma correção para a rota de deletar
+    const params = await props.params; 
     const { id } = params;
+    
     await query('DELETE FROM candidates WHERE id = $1', [id]);
     return NextResponse.json({ success: true });
   } catch (error) {
