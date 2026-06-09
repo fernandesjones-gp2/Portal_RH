@@ -188,17 +188,31 @@ export default function AgendamentosPage() {
     const interviewIso = getBrazilIsoDate(interview_date);
 
     try {
+      // Montamos o pacote de dados forçando o formato correto (evita erros de undefined)
+      const payload = {
+        process_type, name, mother_name, phone, cpf, rg, 
+        job_role_id, unit_id, interview_date: interviewIso, 
+        responsible_id, 
+        gender: gender || '', 
+        is_pcd: is_pcd ? true : false 
+      };
+
       const res = await fetch(`/api/candidates/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd })
+        body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error('Falha ao atualizar na API');
+      
+      // SE DER ERRO, AGORA O SISTEMA VAI LER A MENSAGEM DO BANCO DE DADOS
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro HTTP ${res.status} no Servidor`);
+      }
       
       setEditingCandidate(null);
       fetchData();
     } catch (error) {
-      alert('Erro ao atualizar: ' + error.message);
+      alert('⚠️ DETALHE DO ERRO: ' + error.message);
     }
   }
 
