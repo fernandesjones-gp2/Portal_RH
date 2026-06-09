@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api-client';
 import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
@@ -30,31 +29,47 @@ export default function PipelineAdmissaoPage() {
   const [filterRole, setFilterRole] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
+
+  // Motor Blindado de Conexão com sua Nova API Postgres
+  const fetchApi = async (url) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const json = await res.json();
+      const extracted = json.data || json;
+      return Array.isArray(extracted) ? extracted : [];
+    } catch (error) {
+      console.error(`Erro ao buscar ${url}:`, error);
+      return [];
+    }
+  };
 
   async function fetchData() {
     setLoading(true);
     try {
-      const me = await api.me();
-      if (me) {
-        setCurrentUserRole(me.role || '');
+      // Puxa as informações da nova API de Sessão (NextAuth)
+      const sessionUser = await fetch('/api/users/me').then(r => r.ok ? r.json() : null).catch(() => null);
+      if (sessionUser) {
+        const role = sessionUser.data?.role || sessionUser.role || sessionUser[0]?.role || '';
+        setCurrentUserRole(role);
       }
 
-      const [candidatesRes, unitsRes, rolesRes, reasonsRes, usersRes] = await Promise.all([
-        api.candidates.list({ statusIn: ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].join(','), orderBy: 'created_at', order: 'desc' }),
-        api.units.list(),
-        api.jobRoles.list(),
-        api.cancellationReasons.list(),
-        api.users.list()
+      const [candidatesData, unitsData, rolesData, reasonsData, usersData] = await Promise.all([
+        fetchApi('/api/candidates'),
+        fetchApi('/api/units'),
+        fetchApi('/api/job-roles'),
+        fetchApi('/api/cancellation-reasons'),
+        fetchApi('/api/users')
       ]);
-
-      if (candidatesRes) setCandidates(candidatesRes);
-      if (unitsRes) setUnits(unitsRes);
-      if (rolesRes) setRoles(rolesRes);
-      if (reasonsRes) setCancellationReasons(reasonsRes);
-      if (usersRes) setResponsibles(usersRes);
+      
+      const filteredCands = candidatesData.filter(c => ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].includes(c.status));
+      
+      setCandidates(filteredCands);
+      setUnits(unitsData);
+      setRoles(rolesData);
+      setCancellationReasons(reasonsData);
+      setResponsibles(usersData);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -104,54 +119,12 @@ export default function PipelineAdmissaoPage() {
     const listToRequest = bloco1.filter(c => c.analysis_status === 'Pendente' && c.process_type !== 'Promoção');
     if (listToRequest.length === 0) return alert('Nenhum candidato no bloco 1 aguardando análise administrativa.');
     
-    let htmlContent = `
-      <html xmlns:x="urn:schemas-microsoft-com:office:excel">
-        <head>
-          <meta charset="utf-8">
-          <style>
-            table { border-collapse: collapse; font-family: Arial, sans-serif; }
-            th { background-color: #F37137; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; }
-            td { border: 1px solid #000; padding: 8px; vertical-align: middle; }
-          </style>
-        </head>
-        <body>
-          <table>
-            <tr>
-              <th>Data de Cadastro</th>
-              <th>Tipo de Processo</th>
-              <th>Nome do Candidato</th>
-              <th>Nome da Mãe</th>
-              <th>CPF</th>
-              <th>RG</th>
-              <th>Função (Cargo)</th>
-              <th>Unidade</th>
-              <th>Telefone</th>
-              <th>Data da Entrevista</th>
-              <th>Responsável pelo Processo</th>
-              <th>Status Atual</th>
-            </tr>
-    `;
+    let htmlContent = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"><style>table { border-collapse: collapse; font-family: Arial, sans-serif; } th { background-color: #F37137; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; } td { border: 1px solid #000; padding: 8px; vertical-align: middle; }</style></head><body><table><tr><th>Data de Cadastro</th><th>Tipo de Processo</th><th>Nome do Candidato</th><th>Nome da Mãe</th><th>CPF</th><th>RG</th><th>Função (Cargo)</th><th>Unidade</th><th>Telefone</th><th>Data da Entrevista</th><th>Responsável pelo Processo</th><th>Status Atual</th></tr>`;
 
     listToRequest.forEach(c => {
       const createdAt = c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '';
       const interviewDate = c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
-      
-      htmlContent += `
-        <tr>
-          <td>${createdAt}</td>
-          <td>${c.process_type || ''}</td>
-          <td>${c.name || ''}</td>
-          <td>${c.mother_name || ''}</td>
-          <td>${c.cpf || ''}</td>
-          <td>${c.rg || ''}</td>
-          <td>${c.job_roles?.name || ''}</td>
-          <td>${c.units?.name || ''}</td>
-          <td>${c.phone || ''}</td>
-          <td>${interviewDate}</td>
-          <td>${c.users?.name || ''}</td>
-          <td>${c.status || ''}</td>
-        </tr>
-      `;
+      htmlContent += `<tr><td>${createdAt}</td><td>${c.process_type || ''}</td><td>${c.name || ''}</td><td>${c.mother_name || ''}</td><td>${c.cpf || ''}</td><td>${c.rg || ''}</td><td>${c.job_roles?.name || c.job_role_name || ''}</td><td>${c.units?.name || c.unit_name || ''}</td><td>${c.phone || ''}</td><td>${interviewDate}</td><td>${c.users?.name || c.responsible_name || ''}</td><td>${c.status || ''}</td></tr>`;
     });
 
     htmlContent += `</table></body></html>`;
@@ -170,12 +143,12 @@ export default function PipelineAdmissaoPage() {
     alert(`O arquivo Excel (${fileName}) foi baixado. O status será alterado para "Solicitada".`);
     
     for (const c of listToRequest) {
-      await api.candidates.update(c.id, {
-        analysis_status: 'Solicitada',
-        analysis_request_date: new Date().toISOString()
+      await fetch(`/api/candidates/${c.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysis_status: 'Solicitada', analysis_request_date: new Date().toISOString() })
       });
     }
-
     fetchData();
   }
 
@@ -198,8 +171,7 @@ export default function PipelineAdmissaoPage() {
     };
 
     const oldC = candidates.find(cand => cand.id === c.id);
-    
-    if (oldC.analysis_status !== c.analysis_status) {
+    if (oldC && oldC.analysis_status !== c.analysis_status) {
       if (c.analysis_status === 'Solicitada') updates.analysis_request_date = new Date().toISOString();
       else if (c.analysis_status === 'Aprovado' || c.analysis_status === 'Reprovado') updates.analysis_update_date = new Date().toISOString();
     }
@@ -213,12 +185,16 @@ export default function PipelineAdmissaoPage() {
     }
 
     try {
-      await api.candidates.update(c.id, updates);
+      const res = await fetch(`/api/candidates/${c.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) throw new Error('Falha na atualização');
       setEditingCandidate(null);
       fetchData();
     } catch (error) {
       alert('Erro ao atualizar: ' + error.message);
-      console.error(error);
     }
   }
 
@@ -233,33 +209,28 @@ export default function PipelineAdmissaoPage() {
     const newFeedback = (rejectCandidate.feedback || '') + cancellationText;
 
     try {
-      await api.candidates.update(rejectCandidate.id, {
-        status: 'Reprovado',
-        cancellation_reason_id: rejectForm.reasonId,
-        feedback: newFeedback
+      await fetch(`/api/candidates/${rejectCandidate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Reprovado', cancellation_reason_id: rejectForm.reasonId, feedback: newFeedback })
       });
       setRejectCandidate(null);
       setRejectForm({ reasonId: '', notes: '' });
       fetchData();
     } catch (error) {
-      alert('Erro ao interromper processo: ' + error.message);
-      console.error(error);
+      alert('Erro ao interromper processo.');
     }
   }
 
   async function handleConfirmCancellationDP(c) {
     if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}?`)) {
       const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
-      try {
-        await api.candidates.update(c.id, {
-          status: 'Reprovado',
-          analysis_status: 'Cancelado',
-          feedback: (c.feedback || '') + finalNote
-        });
-        fetchData();
-      } catch (error) {
-        console.error(error);
-      }
+      await fetch(`/api/candidates/${c.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Reprovado', analysis_status: 'Cancelado', feedback: (c.feedback || '') + finalNote })
+      });
+      fetchData();
     }
   }
 
@@ -273,26 +244,24 @@ export default function PipelineAdmissaoPage() {
     e.preventDefault();
     if (!admissionDate) return;
     try {
-      await api.candidates.update(admissionModalCandidate.id, {
-        status: 'Pré-Admissão (Pronto)',
-        admission_date: new Date(admissionDate + 'T12:00:00').toISOString()
+      await fetch(`/api/candidates/${admissionModalCandidate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Pré-Admissão (Pronto)', admission_date: new Date(admissionDate + 'T12:00:00').toISOString() })
       });
-      setAdmissionModalCandidate(null);
-      fetchData();
-    } catch (error) {
-      alert('Erro ao confirmar data de admissão: ' + error.message);
-      console.error(error);
-    }
+      setAdmissionModalCandidate(null); 
+      fetchData(); 
+    } catch (error) { alert('Erro ao confirmar admissão'); }
   };
 
   async function handleConcluirFinal(id) {
     if (confirm('Deseja concluir todo o processo e mover este candidato para a lista de Concluídos?')) {
-      try {
-        await api.candidates.update(id, { status: 'Concluído' });
-        fetchData();
-      } catch (error) {
-        console.error(error);
-      }
+      await fetch(`/api/candidates/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Concluído' })
+      });
+      fetchData();
     }
   }
 
@@ -304,9 +273,13 @@ export default function PipelineAdmissaoPage() {
   async function handleSaveFeedback(e) {
     e.preventDefault();
     if(!feedbackText) return;
-    const newNote = `\n[${currentUserRole}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
-    await api.candidates.update(feedbackCandidate.id, { feedback: (feedbackCandidate.feedback || '') + newNote });
-    setFeedbackCandidate(null);
+    const newNote = `\n[${currentUserRole || 'SISTEMA'}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
+    await fetch(`/api/candidates/${feedbackCandidate.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback: (feedbackCandidate.feedback || '') + newNote })
+    });
+    setFeedbackCandidate(null); 
     fetchData();
   }
 
@@ -328,7 +301,7 @@ export default function PipelineAdmissaoPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <h3 style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.job_roles?.name} • {c.units?.name}</p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.job_roles?.name || c.job_role_name} • {c.units?.name || c.unit_name}</p>
           </div>
           
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -342,7 +315,6 @@ export default function PipelineAdmissaoPage() {
               </button>
             )}
 
-            {/* BOTÃO EDITAR VOLTOU AQUI */}
             {currentUserRole !== 'DP' && !isBloco3 && (
               <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Preencher Etapas e Editar">
                 <Settings2 size={14} /> Editar
