@@ -1,9 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { api } from '@/lib/api-client';
 import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw } from 'lucide-react';
 
 export default function AgendamentosPage() {
   const [candidates, setCandidates] = useState([]);
+  const [allCandidates, setAllCandidates] = useState([]); // Base completa para validação de CPF
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
   const [cancellationReasons, setCancellationReasons] = useState([]); 
@@ -30,38 +32,27 @@ export default function AgendamentosPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- NOVA ESTRUTURA DE FETCH (SEM SUPABASE) ---
-  const fetchApi = async (url) => {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return [];
-      const json = await res.json();
-      return json.data || json || [];
-    } catch (error) {
-      console.error(`Erro ao buscar ${url}:`, error);
-      return [];
-    }
-  };
-
   async function fetchData() {
     setLoading(true);
     try {
-      const [candidatesData, unitsData, rolesData, reasonsData, usersData] = await Promise.all([
-        fetchApi('/api/candidates'),
-        fetchApi('/api/units'),
-        fetchApi('/api/job-roles'),
-        fetchApi('/api/cancellation-reasons'),
-        fetchApi('/api/users')
+      const [allCandsData, unitsRes, rolesRes, usersRes, reasonsRes] = await Promise.all([
+        api.candidates.list(), // Puxa todos para validar CPF duplicado em todo o sistema
+        api.units.list(),
+        api.jobRoles.list(),
+        api.users.list(),
+        fetch('/api/cancellation-reasons').then(r => r.ok ? r.json() : []).then(j => j.data || j || []).catch(() => [])
       ]);
+
+      if (allCandsData) {
+        setAllCandidates(allCandsData);
+        // Filtra para mostrar na tela apenas as abas da recepção
+        setCandidates(allCandsData.filter(c => ['Agendado', 'Banco de Talentos', 'Reprovado'].includes(c.status)));
+      }
       
-      // Filtra localmente as abas ativas para a tela de Agendamentos
-      const filteredCands = candidatesData.filter(c => ['Agendado', 'Banco de Talentos', 'Reprovado'].includes(c.status));
-      
-      setCandidates(filteredCands);
-      setUnits(unitsData);
-      setRoles(rolesData);
-      setCancellationReasons(reasonsData);
-      setResponsibles(usersData);
+      if (unitsRes) setUnits(unitsRes);
+      if (rolesRes) setRoles(rolesRes);
+      if (usersRes) setResponsibles(usersRes);
+      if (reasonsRes) setCancellationReasons(reasonsRes);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -78,14 +69,9 @@ export default function AgendamentosPage() {
   const formatToBrazilDatetimeInput = (isoString) => {
     if (!isoString) return '';
     if (isoString.length === 16 && !isoString.includes('Z') && !isoString.includes('-')) return isoString; 
-    
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return isoString;
-    const formatter = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    });
+    const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
     const parts = formatter.formatToParts(d);
     const val = (type) => parts.find(p => p.type === type)?.value;
     return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`;
@@ -94,92 +80,104 @@ export default function AgendamentosPage() {
   const sendWhatsAppMessage = (candidateData, templateId, roleName, unitName, interviewDate) => {
     let textMsg = '';
     const savedTemplates = localStorage.getItem('portal_rh_templates');
-    
     if (savedTemplates) {
       const templates = JSON.parse(savedTemplates);
       const template = templates.find(t => t.id === templateId);
-      
       if (template) {
-        textMsg = template.content
-          .replace(/\{nome\}/g, candidateData.name || '')
-          .replace(/\{funcao\}/g, roleName || '')
-          .replace(/\{unidade\}/g, unitName || '');
-
+        textMsg = template.content.replace(/\{nome\}/g, candidateData.name || '').replace(/\{funcao\}/g, roleName || '').replace(/\{unidade\}/g, unitName || '');
         if (interviewDate) {
-          const dataFormatada = new Date(interviewDate).toLocaleString('pt-BR', { 
-            timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' 
-          });
+          const dataFormatada = new Date(interviewDate).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' });
           textMsg = textMsg.replace(/\{data_hora\}/g, dataFormatada);
         } else {
            textMsg = textMsg.replace(/\{data_hora\}/g, 'a definir');
         }
       }
     }
-
     if (!textMsg) {
       if (templateId === 'agendamento') textMsg = `Olá ${candidateData.name}, sua entrevista está agendada.`;
       if (templateId === 'aprovacao') textMsg = `Olá ${candidateData.name}, você foi aprovado(a) na nossa entrevista para a função de ${roleName}! Por favor, envie seus documentos.`;
       if (templateId === 'reprovacao') textMsg = `Olá ${candidateData.name}, agradecemos sua participação no processo para ${roleName}. Manteremos seu currículo em nosso banco de reserva.`;
     }
-
     const msg = encodeURIComponent(textMsg);
     const phone = (candidateData.phone || '').replace(/\D/g, '');
-    
-    if(phone) {
-       window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank');
-    } else {
-       alert('Aviso: O candidato não possui um número de telefone válido cadastrado para abrir o WhatsApp.');
-    }
+    if(phone) window.open(`https://wa.me/55${phone}?text=${msg}`, '_blank');
   };
 
-  // --- REQUISIÇÕES REST API ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
-    
-    let responsible_id = null; 
+
+    // --- NOVA REGRA: VALIDAÇÃO DE DUPLICIDADE DE CPF ---
+    if (['Admissão', 'Readmissão'].includes(formData.process_type) && formData.cpf) {
+      const cleanCpf = formData.cpf.replace(/\D/g, '');
+      if (cleanCpf.length === 11) {
+        const existingCandidates = allCandidates.filter(c => c.cpf && c.cpf.replace(/\D/g, '') === cleanCpf);
+        
+        if (existingCandidates.length > 0) {
+          existingCandidates.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          const latest = existingCandidates[0];
+
+          const isClosed = ['Reprovado', 'Concluído', 'Cancelado'].includes(latest.status);
+          const lastDate = new Date(latest.created_at);
+          const monthsDiff = (new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+          
+          // TRAVA DE TEMPO CONFIGURADA PARA 6 MESES
+          const TRAVA_MESES = 6; 
+          const locationMsg = `Candidato(a): ${latest.name}\nStatus atual: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
+
+          if (!isClosed || monthsDiff < TRAVA_MESES) {
+            alert(`❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro para Readmissão/Admissão.`);
+            return; 
+          } else {
+            const proceed = confirm(`⚠️ AVISO DE DUPLICIDADE (HISTÓRICO ANTIGO)\n\nO sistema identificou um processo antigo para este CPF, encerrado há aprox. ${Math.floor(monthsDiff)} meses:\n\n${locationMsg}\n\nDeseja ignorar o alerta e iniciar o NOVO PROCESSO mesmo assim?`);
+            if (!proceed) return;
+          }
+        }
+      }
+    }
+
+    let responsible_id = null;
     try {
-      // Puxa o usuário logado da nova API de Sessão
-      const sessionUser = await fetchApi('/api/users/me');
-      responsible_id = sessionUser?.id || null;
-    } catch (err) { console.error("Sessão não encontrada", err); }
+      const me = await api.me();
+      responsible_id = me?.id || null;
+    } catch (err) { console.error(err); }
 
     const interviewIso = getBrazilIsoDate(formData.interview_date);
-    const dataToSave = { ...formData, interview_date: interviewIso, responsible_id };
+    const dataToSave = { 
+      ...formData, 
+      interview_date: interviewIso, 
+      responsible_id,
+      gender: formData.gender || null,
+      is_pcd: formData.is_pcd ? true : false
+    };
 
     try {
-      const res = await fetch('/api/candidates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSave)
-      });
-      if (!res.ok) throw new Error('Falha ao conectar com a API');
-
-      const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
-      const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
-
-      if (interviewIso) {
-        try {
-          const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
-          const dAgenda = new Date(interviewIso);
-          const dateStr = dAgenda.toISOString().replace(/-|:|\.\d\d\d/g, "");
-          const dEnd = new Date(dAgenda.getTime() + 60 * 60 * 1000); 
-          const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
-          
-          const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
-          window.open(calUrl, '_blank');
-        } catch (agendaError) { console.error('Erro Google Agenda:', agendaError); }
-      }
-
-      if (confirm('Deseja enviar o convite de agendamento para o WhatsApp do candidato?')) {
-        sendWhatsAppMessage(formData, 'agendamento', roleName, unitName, interviewIso);
-      }
-
-      setIsModalOpen(false);
-      setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
-      fetchData(); 
-    } catch (error) {
-      alert('Erro ao salvar candidato: ' + error.message);
+      await api.candidates.create(dataToSave);
+    } catch (e) {
+      return alert('Erro ao salvar candidato: ' + e.message);
     }
+
+    const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
+    const unitName = units.find(u => u.id === formData.unit_id)?.name || '';
+
+    if (interviewIso) {
+      try {
+        const eventTitle = encodeURIComponent(`${formData.process_type} - ${formData.name} - ${roleName} - ${unitName}`);
+        const dAgenda = new Date(interviewIso);
+        const dateStr = dAgenda.toISOString().replace(/-|:|\.\d\d\d/g, "");
+        const dEnd = new Date(dAgenda.getTime() + 60 * 60 * 1000); 
+        const dateEndStr = dEnd.toISOString().replace(/-|:|\.\d\d\d/g, "");
+        const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${eventTitle}&dates=${dateStr}/${dateEndStr}&details=Candidato:+${formData.name}%0ATelefone:+${formData.phone}`;
+        window.open(calUrl, '_blank');
+      } catch (agendaError) { console.error('Erro Google Agenda:', agendaError); }
+    }
+
+    if (confirm('Deseja enviar o convite de agendamento para o WhatsApp do candidato?')) {
+      sendWhatsAppMessage(formData, 'agendamento', roleName, unitName, interviewIso);
+    }
+
+    setIsModalOpen(false);
+    setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
+    fetchData(); 
   }
 
   async function handleUpdateCandidate(e) {
@@ -188,37 +186,19 @@ export default function AgendamentosPage() {
     const interviewIso = getBrazilIsoDate(interview_date);
 
     try {
-      // Montamos o pacote de dados forçando o formato correto (evita erros de undefined)
-      const payload = {
-        process_type, name, mother_name, phone, cpf, rg, 
-        job_role_id, unit_id, interview_date: interviewIso, 
-        responsible_id, 
-        gender: gender || '', 
-        is_pcd: is_pcd ? true : false 
-      };
-
-      const res = await fetch(`/api/candidates/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      await api.candidates.update(id, {
+        process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd
       });
-      
-      // SE DER ERRO, AGORA O SISTEMA VAI LER A MENSAGEM DO BANCO DE DADOS
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `Erro HTTP ${res.status} no Servidor`);
-      }
-      
-      setEditingCandidate(null);
-      fetchData();
-    } catch (error) {
-      alert('⚠️ DETALHE DO ERRO: ' + error.message);
+    } catch (e) {
+      return alert('Erro ao atualizar: ' + e.message);
     }
+    setEditingCandidate(null);
+    fetchData();
   }
 
   function openFeedbackModal(c) {
     setFeedbackCandidate(c);
-    setFeedbackText(''); 
+    setFeedbackText('');
   }
 
   async function handleSaveFeedback() {
@@ -226,8 +206,8 @@ export default function AgendamentosPage() {
 
     let userDisplay = 'N/A';
     try {
-      const sessionUser = await fetchApi('/api/users/me');
-      userDisplay = sessionUser?.name || sessionUser?.email || 'N/A';
+      const me = await api.me();
+      userDisplay = me?.name || 'N/A';
     } catch (err) { console.error(err); }
 
     const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -235,15 +215,12 @@ export default function AgendamentosPage() {
     const updatedFeedback = (feedbackCandidate.feedback || '') + newNote;
 
     try {
-      await fetch(`/api/candidates/${feedbackCandidate.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ feedback: updatedFeedback })
-      });
+      await api.candidates.update(feedbackCandidate.id, { feedback: updatedFeedback });
       setFeedbackCandidate(null);
       setFeedbackText('');
       fetchData();
-    } catch (error) {
+    } catch (e) {
+      console.error(e);
       alert('Erro ao salvar parecer.');
     }
   }
@@ -257,68 +234,52 @@ export default function AgendamentosPage() {
 
     let userDisplay = 'N/A';
     try {
-      const sessionUser = await fetchApi('/api/users/me');
-      userDisplay = sessionUser?.name || sessionUser?.email || 'N/A';
+      const me = await api.me();
+      userDisplay = me?.name || 'N/A';
     } catch (err) { console.error(err); }
 
     const cancellationDate = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     const auditingBlock = `\n--- AUDITORIA DE CANCELAMENTO ---\n• Data e Hora: ${cancellationDate}\n• Usuário Executor: ${userDisplay}\n• Motivo Principal: ${reasonText}\n• Fase/Status no momento: ${rejectCandidate.status} (Análise ADM: ${rejectCandidate.analysis_status || 'Pendente'}, Exame Médico: ${rejectCandidate.medical_status || 'Pendente'}, Documentação: ${rejectCandidate.docs_status || 'Pendente'})\n${rejectForm.notes ? `• Observações Adicionais: ${rejectForm.notes}\n` : ''}---------------------------------`;
-    
     const newFeedback = (rejectCandidate.feedback || '') + auditingBlock;
 
     try {
-      await fetch(`/api/candidates/${rejectCandidate.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          status: 'Reprovado',
-          cancellation_reason_id: rejectForm.reasonId,
-          feedback: newFeedback
-        })
+      await api.candidates.update(rejectCandidate.id, {
+        status: 'Reprovado',
+        cancellation_reason_id: rejectForm.reasonId,
+        feedback: newFeedback
       });
-
+      
       if (confirm('Deseja enviar a mensagem de aviso (Reprovação/Banco) no WhatsApp do candidato?')) {
         sendWhatsAppMessage(rejectCandidate, 'reprovacao', rejectCandidate.job_roles?.name, rejectCandidate.units?.name, rejectCandidate.interview_date);
       }
-      
+
       setRejectCandidate(null);
       setRejectForm({ reasonId: '', notes: '' });
       fetchData();
-    } catch (error) {
+    } catch (e) {
+      console.error(e);
       alert('Erro ao arquivar processo.');
     }
   }
 
   async function changeStatus(candidate, newStatus) {
     try {
-      await fetch(`/api/candidates/${candidate.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      
-      if (newStatus === 'Banco de Talentos') {
-        if (confirm('Deseja avisar o candidato pelo WhatsApp que ele foi para o Banco de Talentos?')) {
-          sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
-        }
+      await api.candidates.update(candidate.id, { status: newStatus });
+      if (newStatus === 'Banco de Talentos' && confirm('Deseja avisar o candidato pelo WhatsApp que ele foi para o Banco de Talentos?')) {
+        sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
       }
       fetchData();
-    } catch(err) { console.error(err); }
+    } catch (e) { console.error(e); }
   }
 
   async function handleApprove(candidate) {
     if (confirm('Deseja enviar a mensagem de Aprovação e solicitação de documentos no WhatsApp do candidato?')) {
       sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name, candidate.units?.name, candidate.interview_date);
     }
-    
     try {
-      await fetch(`/api/candidates/${candidate.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() })
-      });
+      await api.candidates.update(candidate.id, { status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() });
       fetchData();
-    } catch(err) { console.error(err); }
+    } catch (e) { console.error(e); }
   }
 
   const sortedFilteredCandidates = candidates.filter(c => {
@@ -368,6 +329,7 @@ export default function AgendamentosPage() {
         </button>
       </div>
 
+      {/* BARRA DE FILTROS */}
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)', alignItems: 'center' }}>
         <Filter size={20} color="var(--text-muted)" />
         <span style={{ fontSize: '0.875rem', fontWeight: '600', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
@@ -389,13 +351,7 @@ export default function AgendamentosPage() {
           <option value="">Todos Responsáveis</option>
           {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
         </select>
-        <input 
-          type="date" 
-          title="Filtrar por data"
-          style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} 
-          value={filterDate} 
-          onChange={e => setFilterDate(e.target.value)} 
-        />
+        <input type="date" title="Filtrar por data" style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
       </div>
 
       {loading ? (
@@ -461,7 +417,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: DETALHAMENTO DO CANCELAMENTO --- */}
+      {/* --- MODAL DETALHES --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px', maxHeight: '85vh', overflowY: 'auto' }}>
@@ -487,7 +443,6 @@ export default function AgendamentosPage() {
                 </div>
               </div>
             </div>
-
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
               <button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Detalhes</button>
             </div>
@@ -495,7 +450,7 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* --- MODAL: NOVO CANDIDATO E EDITAR CANDIDATO --- */}
+      {/* --- MODAL DE EDIÇÃO / CADASTRO --- */}
       {(isModalOpen || editingCandidate) && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
