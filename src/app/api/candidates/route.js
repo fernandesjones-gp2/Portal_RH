@@ -1,49 +1,72 @@
 import { query } from '@/lib/db';
-import { json, requireApproved } from '@/lib/api-helpers';
-import { CANDIDATE_COLUMNS, CANDIDATE_ORDER_COLUMNS, CANDIDATE_SELECT } from '@/lib/candidates';
+import { NextResponse } from 'next/server';
 
-export const dynamic = 'force-dynamic';
+export async function GET() {
+  try {
+    const sql = `
+      SELECT 
+        c.*, 
+        u.name as unit_name, 
+        j.name as job_role_name, 
+        usr.name as responsible_name
+      FROM candidates c
+      LEFT JOIN units u ON c.unit_id = u.id
+      LEFT JOIN job_roles j ON c.job_role_id = j.id
+      LEFT JOIN users usr ON c.responsible_id = usr.id
+      ORDER BY c.created_at DESC
+    `;
+    const result = await query(sql);
 
-// GET /api/candidates?status=Concluído
-// GET /api/candidates?statusIn=Agendado,Banco de Talentos,Reprovado
-// &orderBy=created_at&order=desc
-export async function GET(req) {
-  const g = await requireApproved();
-  if (g.error) return g.error;
+    // Mapeamento necessário para manter o formato do Frontend intacto
+    const data = result.rows.map(row => ({
+      ...row,
+      units: { name: row.unit_name },
+      job_roles: { name: row.job_role_name },
+      users: { name: row.responsible_name }
+    }));
 
-  const sp = new URL(req.url).searchParams;
-  const status = sp.get('status');
-  const statusIn = sp.get('statusIn');
-  const orderBy = CANDIDATE_ORDER_COLUMNS.includes(sp.get('orderBy')) ? sp.get('orderBy') : 'created_at';
-  const order = (sp.get('order') || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-  let where = '';
-  const params = [];
-  if (statusIn) {
-    params.push(statusIn.split(',').map((s) => s.trim()));
-    where = `WHERE c.status = ANY($1)`;
-  } else if (status) {
-    params.push(status);
-    where = `WHERE c.status = $1`;
+    return NextResponse.json({ data }, { status: 200 });
+  } catch (error) {
+    console.error('Erro GET Candidates:', error);
+    return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });
   }
-
-  const { rows } = await query(`${CANDIDATE_SELECT} ${where} ORDER BY c."${orderBy}" ${order} NULLS LAST`, params);
-  return json(rows);
 }
 
-// POST /api/candidates -> cria candidato
 export async function POST(req) {
-  const g = await requireApproved();
-  if (g.error) return g.error;
-  const body = await req.json();
-  const cols = CANDIDATE_COLUMNS.filter((c) => c in body && body[c] !== undefined);
-  if (cols.length === 0) return json({ error: 'no_fields' }, 400);
-  const colList = cols.map((c) => `"${c}"`).join(', ');
-  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
-  const values = cols.map((c) => body[c]);
-  const { rows } = await query(
-    `INSERT INTO candidates (${colList}) VALUES (${placeholders}) RETURNING *`,
-    values
-  );
-  return json(rows[0], 201);
+  try {
+    const body = await req.json();
+    
+    // LISTA DE CAMPOS AUTORIZADOS - Adicionado gender e is_pcd
+    const allowedFields = [
+      'process_type', 'name', 'mother_name', 'phone', 'cpf', 'rg', 
+      'job_role_id', 'unit_id', 'interview_date', 'responsible_id',
+      'gender', 'is_pcd'
+    ];
+
+    const columns = [];
+    const placeholders = [];
+    const values = [];
+    let i = 1;
+
+    for (const key of Object.keys(body)) {
+      if (allowedFields.includes(key)) {
+        columns.push(key);
+        placeholders.push(`$${i}`);
+        values.push(body[key]);
+        i++;
+      }
+    }
+
+    if (columns.length === 0) {
+      return NextResponse.json({ error: 'Sem dados válidos para inserir' }, { status: 400 });
+    }
+
+    const sql = `INSERT INTO candidates (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
+    const result = await query(sql, values);
+
+    return NextResponse.json({ data: result.rows[0] }, { status: 201 });
+  } catch (error) {
+    console.error('Erro POST Candidates:', error);
+    return NextResponse.json({ error: 'Erro interno no servidor' }, { status: 500 });
+  }
 }
