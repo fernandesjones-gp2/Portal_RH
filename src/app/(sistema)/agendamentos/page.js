@@ -4,6 +4,7 @@ import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, 
 
 export default function AgendamentosPage() {
   const [candidates, setCandidates] = useState([]);
+  const [allCandidates, setAllCandidates] = useState([]); // NOVO ESTADO: Guarda todos para validação de CPF
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
   const [cancellationReasons, setCancellationReasons] = useState([]); 
@@ -30,7 +31,6 @@ export default function AgendamentosPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- NOVA ESTRUTURA DE FETCH (SEM SUPABASE) ---
   const fetchApi = async (url) => {
     try {
       const res = await fetch(url);
@@ -54,7 +54,8 @@ export default function AgendamentosPage() {
         fetchApi('/api/users')
       ]);
       
-      // Filtra localmente as abas ativas para a tela de Agendamentos
+      setAllCandidates(candidatesData); // Armazena a base inteira para o motor de busca de CPF
+      
       const filteredCands = candidatesData.filter(c => ['Agendado', 'Banco de Talentos', 'Reprovado'].includes(c.status));
       
       setCandidates(filteredCands);
@@ -132,13 +133,47 @@ export default function AgendamentosPage() {
     }
   };
 
-  // --- REQUISIÇÕES REST API ---
   async function handleSaveCandidate(e) {
     e.preventDefault();
-    
+
+    // --- NOVA REGRA: VALIDAÇÃO DE DUPLICIDADE DE CPF ---
+    if (['Admissão', 'Readmissão'].includes(formData.process_type) && formData.cpf) {
+      const cleanCpf = formData.cpf.replace(/\D/g, '');
+      
+      if (cleanCpf.length === 11) {
+        const existingCandidates = allCandidates.filter(c => c.cpf && c.cpf.replace(/\D/g, '') === cleanCpf);
+        
+        if (existingCandidates.length > 0) {
+          // Pega o registro mais recente desse CPF
+          existingCandidates.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          const latest = existingCandidates[0];
+
+          // Verifica se o processo está encerrado
+          const isClosed = ['Reprovado', 'Concluído'].includes(latest.status);
+          
+          // Calcula quantos meses se passaram desde a criação/atualização
+          const lastDate = new Date(latest.created_at);
+          const monthsDiff = (new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+          
+          // AQUI VOCÊ PODE ALTERAR O TEMPO DE TRAVA (Atual: 6 meses)
+          const TRAVA_MESES = 6; 
+
+          const locationMsg = `Candidato(a): ${latest.name}\nStatus no sistema: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
+
+          if (!isClosed || monthsDiff < TRAVA_MESES) {
+            alert(`❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro para Readmissão.`);
+            return; // Aborta o salvamento
+          } else {
+            const proceed = confirm(`⚠️ AVISO DE DUPLICIDADE (HISTÓRICO ANTIGO)\n\nO sistema identificou um processo antigo para este CPF, encerrado há aproximadamente ${Math.floor(monthsDiff)} meses:\n\n${locationMsg}\n\nDeseja ignorar o alerta e iniciar o NOVO PROCESSO mesmo assim?`);
+            if (!proceed) return; // Aborta se o usuário cancelar
+          }
+        }
+      }
+    }
+    // --- FIM DA VALIDAÇÃO ---
+
     let responsible_id = null; 
     try {
-      // Puxa o usuário logado da nova API de Sessão
       const sessionUser = await fetchApi('/api/users/me');
       responsible_id = sessionUser?.id || null;
     } catch (err) { console.error("Sessão não encontrada", err); }
@@ -188,7 +223,6 @@ export default function AgendamentosPage() {
     const interviewIso = getBrazilIsoDate(interview_date);
 
     try {
-      // Montamos o pacote de dados forçando o formato correto (evita erros de undefined)
       const payload = {
         process_type, name, mother_name, phone, cpf, rg, 
         job_role_id, unit_id, interview_date: interviewIso, 
@@ -203,7 +237,6 @@ export default function AgendamentosPage() {
         body: JSON.stringify(payload)
       });
       
-      // SE DER ERRO, AGORA O SISTEMA VAI LER A MENSAGEM DO BANCO DE DADOS
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Erro HTTP ${res.status} no Servidor`);
