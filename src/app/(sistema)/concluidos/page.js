@@ -11,11 +11,9 @@ export default function ConcluidosPage() {
   const [responsibles, setResponsibles] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Modal de Cancelamento de Admissão Concluída
   const [cancelCandidate, setCancelCandidate] = useState(null);
   const [cancelForm, setCancelForm] = useState({ reason: '', notes: '' });
 
-  // Filtros
   const [filterProcessType, setFilterProcessType] = useState('');
   const [filterUnit, setFilterUnit] = useState('');
   const [filterRole, setFilterRole] = useState('');
@@ -23,11 +21,9 @@ export default function ConcluidosPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
-async function fetchData() {
+  async function fetchData() {
     setLoading(true);
     try {
       const me = await api.me();
@@ -43,7 +39,6 @@ async function fetchData() {
       ]);
 
       if (candidatesData) {
-        // TRAVA DE SEGURANÇA: Filtra forçadamente no frontend só os concluídos
         const apenasConcluidos = candidatesData.filter(c => c.status === 'Concluído');
         setCandidates(apenasConcluidos);
       }
@@ -58,7 +53,6 @@ async function fetchData() {
     }
   }
 
-  // --- FUNÇÃO: ENVIAR SOLICITAÇÃO DE CANCELAMENTO AO PIPELINE ---
   async function handleConfirmCancel(e) {
     e.preventDefault();
     if (!cancelForm.reason) return alert('Por favor, selecione o motivo principal.');
@@ -66,20 +60,18 @@ async function fetchData() {
     const cancellationText = `\n[SOLICITAÇÃO DE CANCELAMENTO DE ADMISSÃO] Motivo: ${cancelForm.reason}. ${cancelForm.notes ? `Obs: ${cancelForm.notes}` : ''}`;
     const newFeedback = (cancelCandidate.feedback || '') + cancellationText;
 
-    // Altera o status para voltar ao 3º Bloco e joga a flag de "Cancelamento Pendente"
     try {
       await api.candidates.update(cancelCandidate.id, {
         status: 'Pré-Admissão (Pronto)',
         analysis_status: 'Cancelamento Pendente',
         feedback: newFeedback
       });
-
-      alert(`A solicitação de cancelamento de ${cancelCandidate.name} foi enviada para o Bloco 3 do Pipeline para homologação do DP.`);
+      alert(`A solicitação de cancelamento de ${cancelCandidate.name} foi enviada para o Bloco 3 do Pipeline.`);
       setCancelCandidate(null);
       setCancelForm({ reason: '', notes: '' });
       fetchData();
-    } catch (error) {
-      alert('Erro ao processar solicitação: ' + error.message);
+    } catch(err) {
+      alert('Erro ao processar solicitação.');
     }
   }
 
@@ -98,11 +90,9 @@ async function fetchData() {
       if (filterDateFrom && localDateStr < filterDateFrom) return false;
       if (filterDateTo && localDateStr > filterDateTo) return false;
     }
-
     return true;
   });
 
-  // Validador de trava de data (Sempre comparando com o dia de hoje)
   const isCandidateCancelable = (admissionDateStr) => {
     if (!admissionDateStr) return false;
     const today = new Date();
@@ -121,7 +111,6 @@ async function fetchData() {
         </div>
       </div>
 
-      {/* FILTROS */}
       <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
           <Filter size={20} color="var(--saritur-orange)" />
@@ -153,7 +142,7 @@ async function fetchData() {
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Responsável (Recrutador)</label>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Responsável</label>
             <select style={{ width: '100%', fontSize: '0.85rem' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
               <option value="">Todos</option>
               {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
@@ -172,7 +161,6 @@ async function fetchData() {
         </div>
       </div>
 
-      {/* CARDS */}
       {loading ? (
         <p style={{ color: 'var(--text-muted)' }}>Buscando o histórico...</p>
       ) : filteredCandidates.length === 0 ? (
@@ -186,6 +174,12 @@ async function fetchData() {
             const cancelable = isCandidateCancelable(c.admission_date);
             const canUserCancel = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole);
 
+            // A MÁGICA ACONTECE AQUI: Cruzamento de dados 100% à prova de falhas
+            const roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'Função não informada';
+            const unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'Unidade não informada';
+            const recruiterObj = responsibles.find(r => r.id === c.responsible_id);
+            const recruiterName = recruiterObj?.name || recruiterObj?.email || c.responsible_name || 'Sistema';
+
             return (
               <div key={c.id} className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', borderTop: '4px solid var(--success-color)' }}>
                 <div>
@@ -195,22 +189,21 @@ async function fetchData() {
                       <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
                         {c.process_type}
                       </span>
+                      {c.is_pcd && (
+                        <span style={{ backgroundColor: '#0284c7', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                          PCD
+                        </span>
+                      )}
                     </div>
                     
-                    {/* BOTÃO DE CANCELAR ADMISSÃO FUTURA OU ATUAL */}
                     {canUserCancel && (
                       <button 
                         disabled={!cancelable}
                         onClick={() => setCancelCandidate(c)}
                         style={{ 
-                          padding: '0.3rem 0.5rem', 
-                          fontSize: '0.7rem', 
-                          borderRadius: 'var(--radius-sm)', 
-                          border: '1px solid var(--border-color)',
-                          color: cancelable ? 'var(--danger-color)' : '#cccccc',
-                          borderColor: cancelable ? 'var(--danger-color)' : '#eaeaea',
-                          cursor: cancelable ? 'pointer' : 'not-allowed',
-                          backgroundColor: 'transparent'
+                          padding: '0.3rem 0.5rem', fontSize: '0.7rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)',
+                          color: cancelable ? 'var(--danger-color)' : '#cccccc', borderColor: cancelable ? 'var(--danger-color)' : '#eaeaea',
+                          cursor: cancelable ? 'pointer' : 'not-allowed', backgroundColor: 'transparent'
                         }}
                         title={cancelable ? "Solicitar Cancelamento de Admissão" : "Bloqueado: Admissões retroativas não podem ser canceladas."}
                       >
@@ -221,7 +214,7 @@ async function fetchData() {
 
                   <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                    {c.job_roles?.name} • {c.units?.name}
+                    {roleName} • {unitName}
                   </p>
                 </div>
 
@@ -235,7 +228,7 @@ async function fetchData() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <UserCheck size={14} color="var(--text-muted)" />
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Recrutador: {c.users?.name || 'Sistema'}
+                      Recrutador: {recruiterName}
                     </span>
                   </div>
                 </div>
@@ -245,7 +238,6 @@ async function fetchData() {
         </div>
       )}
 
-      {/* MODAL DE SOLICITAÇÃO DE CANCELAMENTO */}
       {cancelCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -259,7 +251,7 @@ async function fetchData() {
             <form onSubmit={handleConfirmCancel} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
-                <select required style={{ width: '100%' }} value={cancelForm.reason} onChange={e => setCancelForm({...cancelForm, reason: e.target.value})}>
+                <select required style={{ width: '100%', padding: '0.6rem' }} value={cancelForm.reason} onChange={e => setCancelForm({...cancelForm, reason: e.target.value})}>
                   <option value="">-- Selecione o motivo --</option>
                   <option value="Desistência do Candidato de Última Hora">Desistência do Candidato de Última Hora</option>
                   <option value="Identificada irregularidade documental tardia">Identificada irregularidade documental tardia</option>
@@ -270,7 +262,7 @@ async function fetchData() {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações / Justificativa</label>
-                <textarea style={{ width: '100%', minHeight: '80px' }} placeholder="Insira os detalhes obrigatórios ou notas para o DP..." value={cancelForm.notes} onChange={e => setCancelForm({...cancelForm, notes: e.target.value})} />
+                <textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} placeholder="Insira os detalhes obrigatórios ou notas para o DP..." value={cancelForm.notes} onChange={e => setCancelForm({...cancelForm, notes: e.target.value})} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setCancelCandidate(null)}>Voltar</button>
