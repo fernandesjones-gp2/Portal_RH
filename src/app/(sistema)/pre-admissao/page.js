@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -13,6 +13,7 @@ export default function PipelineAdmissaoPage() {
   
   const [loading, setLoading] = useState(true);
   const [editingCandidate, setEditingCandidate] = useState(null);
+  const [detailsCandidate, setDetailsCandidate] = useState(null); // NOVO ESTADO: Controla o modal de detalhes
   const [expandedNotes, setExpandedNotes] = useState([]);
 
   const [admissionModalCandidate, setAdmissionModalCandidate] = useState(null);
@@ -31,7 +32,6 @@ export default function PipelineAdmissaoPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Motor Blindado de Conexão com sua Nova API Postgres
   const fetchApi = async (url) => {
     try {
       const res = await fetch(url);
@@ -48,7 +48,6 @@ export default function PipelineAdmissaoPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      // Puxa as informações da nova API de Sessão (NextAuth)
       const sessionUser = await fetch('/api/users/me').then(r => r.ok ? r.json() : null).catch(() => null);
       if (sessionUser) {
         const role = sessionUser.data?.role || sessionUser.role || sessionUser[0]?.role || '';
@@ -305,7 +304,7 @@ export default function PipelineAdmissaoPage() {
           </div>
           
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico">
+            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico Rápido">
               <MessageSquareText size={16} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
             </button>
             
@@ -351,8 +350,15 @@ export default function PipelineAdmissaoPage() {
           </div>
         </div>
 
+        {/* ÁREA DE AÇÕES DO BLOCO 3 (VER DETALHES, CONCLUIR, CANCELAR) */}
         {isBloco3 && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            
+            {/* BOTÃO VER DETALHES (Novo) */}
+            <button onClick={() => setDetailsCandidate(c)} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas do Candidato">
+              <Eye size={16} style={{ marginRight: '6px' }} /> Ver Detalhes
+            </button>
+
             {isPendingCancellation ? (
               ['ADMIN', 'DP'].includes(currentUserRole) && (
                 <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--danger-color)' }}>
@@ -362,7 +368,7 @@ export default function PipelineAdmissaoPage() {
             ) : (
               ['ADMIN', 'DP'].includes(currentUserRole) && (
                 <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--success-color)' }}>
-                  <FileCheck size={16} /> Concluir Admissão
+                  <FileCheck size={16} style={{ marginRight: '6px' }} /> Concluir Admissão
                 </button>
               )
             )}
@@ -473,6 +479,96 @@ export default function PipelineAdmissaoPage() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* --- MODAL DETALHES COMPLETO DO CANDIDATO --- */}
+      {detailsCandidate && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Detalhamento do Candidato</h2>
+              <button onClick={() => setDetailsCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome Completo</span>
+                  <p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                    {detailsCandidate.name}
+                    {detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}
+                  </p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tipo de Processo</span>
+                  <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: '500' }}>{detailsCandidate.process_type}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.cpf}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>RG</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.rg || '-'}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sexo</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.gender || '-'}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Função Designada</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.job_roles?.name || detailsCandidate.job_role_name || '-'}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Unidade de Lotação</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.units?.name || detailsCandidate.unit_name || '-'}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Telefone (WhatsApp)</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.phone}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome da Mãe</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.mother_name}</p>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Datas Importantes</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
+                  <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Entrevista</span>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsCandidate.interview_date ? new Date(detailsCandidate.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</p>
+                  </div>
+                  <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success-color)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--success-color)', fontWeight: 'bold' }}>Previsão de Admissão</span>
+                    <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: 'bold', marginTop: '0.2rem' }}>{detailsCandidate.admission_date ? new Date(detailsCandidate.admission_date).toLocaleDateString('pt-BR') : '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Histórico Completo</span>
+                <div style={{ marginTop: '0.5rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.6' }}>
+                  {detailsCandidate.feedback || 'Nenhuma observação registrada neste processo.'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+              <button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Visualização</button>
+            </div>
+          </div>
         </div>
       )}
 
