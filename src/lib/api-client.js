@@ -42,7 +42,8 @@ export const api = {
   units: crud('/api/units'),
   jobRoles: crud('/api/job-roles'),
   cancellationReasons: crud('/api/cancellation-reasons'),
-  messageTemplates: crud('/api/message-templates'), // <-- NOVA INTEGRAÇÃO
+  messageTemplates: crud('/api/message-templates'), 
+  dashboardWidgets: crud('/api/dashboard-widgets'),// <-- NOVA INTEGRAÇÃO
   rolePermissions: {
     list: (role) => req(`/api/role-permissions${role ? `?role=${encodeURIComponent(role)}` : ''}`),
     add: (role, menu_path) => req('/api/role-permissions', { method: 'POST', body: JSON.stringify({ role, menu_path }) }),
