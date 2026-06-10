@@ -17,7 +17,8 @@ export async function POST(req) {
   if (g.error) return g.error;
   const body = await req.json();
   
-  const allowedFields = ['title', 'chart_type', 'metric_type', 'status_filter', 'color', 'roles_visible'];
+  // ADICIONADO O CAMPO advanced_config
+  const allowedFields = ['title', 'chart_type', 'metric_type', 'status_filter', 'color', 'roles_visible', 'advanced_config'];
   const columns = []; const placeholders = []; const values = []; let i = 1;
 
   for (const key of Object.keys(body)) {
