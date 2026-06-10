@@ -7,7 +7,8 @@ export async function PATCH(req, props) {
   const params = await props.params;
   const body = await req.json();
 
-  const allowedFields = ['title', 'chart_type', 'metric_type', 'status_filter', 'color', 'roles_visible'];
+  // ADICIONADO O CAMPO advanced_config
+  const allowedFields = ['title', 'chart_type', 'metric_type', 'status_filter', 'color', 'roles_visible', 'advanced_config'];
   const updates = []; const values = []; let i = 1;
 
   for (const key of Object.keys(body)) {
