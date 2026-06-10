@@ -243,47 +243,69 @@ export default function ConfiguracoesPage() {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>{editingWidget ? 'Editar Indicador' : 'Novo Indicador Dinâmico'}</h2>
               <button onClick={() => setIsWidgetModalOpen(false)}><X size={24} color="var(--text-muted)" /></button>
             </div>
-            <form onSubmit={handleSaveWidget} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+           <form onSubmit={handleSaveWidget} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Título do Indicador</label>
-                <input required type="text" style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} placeholder="Ex: Total de Reprovados" value={widgetForm.title} onChange={e => setWidgetForm({...widgetForm, title: e.target.value})} />
+                <input required type="text" style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} placeholder="Ex: Lead Time de Admissão (SLA)" value={widgetForm.title} onChange={e => setWidgetForm({...widgetForm, title: e.target.value})} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Formato (Visual)</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.chart_type} onChange={e => setWidgetForm({...widgetForm, chart_type: e.target.value})}>
-                    <option value="kpi">Cartão Simples (Número)</option>
-                    <option value="bar">Gráfico de Barras (Evolução)</option>
-                    <option value="line">Gráfico de Linha (Tendência)</option>
+                    <option value="kpi">Cartão Simples (Número/Média)</option>
+                    <option value="bar">Gráfico de Colunas</option>
+                    <option value="line">Gráfico de Linhas</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Fórmula de Cálculo</label>
-                  <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.metric_type} onChange={e => setWidgetForm({...widgetForm, metric_type: e.target.value})}>
-                    <option value="count">Contagem Direta (Qtd)</option>
-                    <option value="rate">Taxa Percentual (%)</option>
-                    <option value="monthly">Somar por Mês (Para Gráficos)</option>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Tipo de Métrica (Fórmula)</label>
+                  <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.metric_type} onChange={e => setWidgetForm({...widgetForm, metric_type: e.target.value, advanced_config: { ...widgetForm.advanced_config, formula: e.target.value }})}>
+                    <option value="count">Contagem Simples (Qtd)</option>
+                    <option value="date_diff">Operação Matemática (Data Fim - Data Inicial em Dias)</option>
                   </select>
                 </div>
               </div>
+
+              {/* CONSTRUTOR DE FÓRMULA MATEMÁTICA AVANÇADA */}
+              {widgetForm.metric_type === 'date_diff' && (
+                <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.05)', border: '1px solid var(--saritur-orange)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--saritur-orange)', marginBottom: '0.75rem' }}>Fórmula de Lead Time / SLA</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                    <select required style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.dateEnd || ''} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, dateEnd: e.target.value}})}>
+                      <option value="">-- Campo Final --</option>
+                      <option value="admission_date">Data de Admissão</option>
+                      <option value="medical_result_date">Data Resultado Exame</option>
+                      <option value="docs_receive_date">Data Docs Recebidos</option>
+                    </select>
+                    <span style={{ fontWeight: 'bold', fontSize: '1.5rem', color: 'var(--text-muted)' }}>-</span>
+                    <select required style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.dateStart || ''} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, dateStart: e.target.value}})}>
+                      <option value="">-- Campo Inicial --</option>
+                      <option value="interview_date">Data da Entrevista</option>
+                      <option value="medical_request_date">Data Solicit. Exame</option>
+                      <option value="docs_request_date">Data Solicit. Docs</option>
+                      <option value="created_at">Data de Cadastro Inicial</option>
+                    </select>
+                  </div>
+                  <div style={{ marginTop: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.3rem' }}>Linha de Meta Fixa (Alvo X no gráfico)</label>
+                    <input type="number" step="0.1" placeholder="Ex: 15 (dias)" style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.targetValue || ''} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, targetValue: e.target.value}})} />
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Base de Dados / Filtro</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.status_filter} onChange={e => setWidgetForm({...widgetForm, status_filter: e.target.value})}>
                     <option value="Todos">Todos os Processos (Sem filtro)</option>
-                    <option value="Agendado">Somente Agendados (Entrevista)</option>
-                    <option value="Banco de Talentos">Banco de Talentos</option>
-                    <option value="Pré-Admissão (Pendente)">Pré-Admissão (Pendente/Análise)</option>
-                    <option value="Pré-Admissão (Pronto)">Pré-Admissão (Pronto/Aguardando DP)</option>
-                    <option value="Concluído">Admissões Concluídas (Efetivados)</option>
-                    <option value="Reprovado">Candidatos Reprovados / Cancelados</option>
+                    <option value="Concluído">Somente Concluídos (Admitidos)</option>
+                    <option value="Reprovado">Somente Reprovados</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Cor Primária</label>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Cor do Gráfico</label>
                   <input type="color" style={{ width: '100%', height: '40px', padding: '0', border: 'none', cursor: 'pointer' }} value={widgetForm.color} onChange={e => setWidgetForm({...widgetForm, color: e.target.value})} />
                 </div>
               </div>
@@ -291,7 +313,7 @@ export default function ConfiguracoesPage() {
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem' }}>Visibilidade (Quem pode ver este indicador no Dashboard?)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  {availableRoles.map(role => (
+                  {['ADMIN', 'RECRUITER', 'MANAGER', 'DP'].map(role => (
                     <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={widgetForm.roles_visible.includes(role)} onChange={() => handleRoleToggle(role)} style={{ cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} />
                       {role}
@@ -302,7 +324,7 @@ export default function ConfiguracoesPage() {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsWidgetModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary">Salvar no Painel</button>
+                <button type="submit" className="btn-primary">Salvar Fórmula</button>
               </div>
             </form>
           </div>
