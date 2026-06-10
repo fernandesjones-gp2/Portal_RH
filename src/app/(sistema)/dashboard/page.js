@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/api-client';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Users, UserCheck, Clock, TrendingUp } from 'lucide-react';
 
@@ -14,20 +13,31 @@ export default function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
 
+  const fetchApi = async (url) => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const json = await res.json();
+      const extracted = json.data || json;
+      return Array.isArray(extracted) ? extracted : [];
+    } catch (error) {
+      console.error(`Erro ao buscar ${url}:`, error);
+      return [];
+    }
+  };
+
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        // 1. Busca o nome do usuário logado
-        const me = await api.me();
-        if (me) {
-          const fullName = me.name || 'Colaborador';
-          setUserName(fullName.split(' ')[0]); // Pega apenas o primeiro nome
+        const sessionUser = await fetch('/api/users/me').then(r => r.ok ? r.json() : null).catch(() => null);
+        if (sessionUser) {
+          const fullName = sessionUser.data?.name || sessionUser.name || sessionUser.email || 'Colaborador';
+          setUserName(fullName.split(' ')[0]); 
         }
 
-        // 2. Busca o status e a data de criação de todos os candidatos
-        const candidates = await api.candidates.list();
+        const candidates = await fetchApi('/api/candidates');
 
-        if (candidates) {
+        if (candidates && candidates.length > 0) {
           const total = candidates.length;
           const admitted = candidates.filter(c => c.status === 'Concluído').length;
           const rate = total > 0 ? Math.round((admitted / total) * 100) : 0;
@@ -37,7 +47,8 @@ export default function DashboardPage() {
             6: 'Jul', 7: 'Ago', 8: 'Set', 9: 'Out', 10: 'Nov', 11: 'Dez'
           };
 
-          const defaultMonths = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai'];
+          // INICIALIZA OS 12 MESES DO ANO
+          const defaultMonths = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
           const grouped = {};
           
           defaultMonths.forEach(m => {
@@ -45,13 +56,15 @@ export default function DashboardPage() {
           });
 
           candidates.forEach(c => {
-            const date = new Date(c.created_at);
+            // A MÁGICA ACONTECE AQUI: Prioriza a data de admissão. Se não tiver, usa a de criação (para reprovados)
+            const referenceDate = c.admission_date || c.created_at;
+            
+            if(!referenceDate) return;
+            
+            const date = new Date(referenceDate);
             const monthName = monthsMap[date.getMonth()];
             
             if (monthName) {
-              if (!grouped[monthName]) {
-                grouped[monthName] = { name: monthName, admitidos: 0, reprovados: 0 };
-              }
               if (c.status === 'Concluído') grouped[monthName].admitidos++;
               if (c.status === 'Reprovado') grouped[monthName].reprovados++;
             }
@@ -88,7 +101,6 @@ export default function DashboardPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       
-      {/* SAUDAÇÃO PERSONALIZADA */}
       <div style={{ marginBottom: '-0.5rem' }}>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.25rem' }}>
           Olá, {userName}! 👋
@@ -96,7 +108,6 @@ export default function DashboardPage() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Aqui está o resumo das suas métricas de recrutamento e performance.</p>
       </div>
 
-      {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
         {kpis.map((kpi, idx) => (
           <div key={idx} style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
@@ -114,7 +125,6 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Charts Area */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
         <div style={{ backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
           <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Visão Geral de Contratações</h3>
