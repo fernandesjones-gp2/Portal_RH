@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X } from 'lucide-react';
+import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X, Download } from 'lucide-react';
 
 export default function ConcluidosPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -102,13 +102,74 @@ export default function ConcluidosPage() {
     return admDate >= today;
   };
 
+  // --- MOTOR DE EXPORTAÇÃO PARA EXCEL ---
+  function handleExportExcel() {
+    if (filteredCandidates.length === 0) return alert('Nenhum candidato encontrado com os filtros atuais para exportar.');
+
+    // DICIONÁRIO DE COLUNAS CONFIGURÁVEL:
+    // Para adicionar um campo no futuro, basta criar uma nova linha aqui no padrão:
+    // { label: 'Nome da Coluna no Excel', value: (c) => c.nome_do_campo_no_banco }
+    const exportColumns = [
+      { label: 'Nº', value: (c, index) => index + 1 },
+      { label: 'Nome Completo', value: (c) => c.name || '' },
+      { label: 'Função', value: (c) => roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || '' },
+      { label: 'Unidade', value: (c) => units.find(u => u.id === c.unit_id)?.name || c.unit_name || '' },
+      { label: 'Data de Admissão', value: (c) => c.admission_date ? new Date(c.admission_date).toLocaleDateString('pt-BR') : '' },
+      
+      // EXEMPLOS DE CAMPOS FUTUROS (Basta descomentar para usar):
+      // { label: 'CPF', value: (c) => c.cpf || '' },
+      // { label: 'PCD', value: (c) => c.is_pcd ? 'SIM' : 'NÃO' },
+      // { label: 'Recrutador Responsável', value: (c) => responsibles.find(r => r.id === c.responsible_id)?.name || c.responsible_name || 'Sistema' }
+    ];
+
+    // Constrói a tabela HTML que o Excel lê nativamente
+    let htmlContent = `<html xmlns:x="urn:schemas-microsoft-com:office:excel">
+      <head>
+        <meta charset="utf-8">
+        <style>
+          table { border-collapse: collapse; font-family: Arial, sans-serif; }
+          th { background-color: #057a55; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; }
+          td { border: 1px solid #000; padding: 8px; vertical-align: middle; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr>${exportColumns.map(col => `<th>${col.label}</th>`).join('')}</tr>
+          ${filteredCandidates.map((c, index) => `
+            <tr>${exportColumns.map(col => `<td>${col.value(c, index)}</td>`).join('')}</tr>
+          `).join('')}
+        </table>
+      </body>
+    </html>`;
+
+    // Processo de Download
+    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
+    // Nome do arquivo gerado automaticamente com a data
+    const fileName = `Relatorio_Admissoes_${new Date().toISOString().split('T')[0]}.xls`;
+    
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Processos Concluídos</h1>
           <p style={{ color: 'var(--text-muted)' }}>Histórico completo de candidatos que finalizaram a admissão no sistema.</p>
         </div>
+        
+        {/* NOVO BOTÃO DE EXPORTAÇÃO */}
+        <button className="btn-primary" onClick={handleExportExcel} style={{ backgroundColor: 'var(--success-color)', padding: '0.6rem 1.25rem' }}>
+          <Download size={18} style={{ marginRight: '8px' }} />
+          Exportar Relatório (.XLS)
+        </button>
       </div>
 
       <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', backgroundColor: 'var(--surface-color)' }}>
@@ -174,7 +235,6 @@ export default function ConcluidosPage() {
             const cancelable = isCandidateCancelable(c.admission_date);
             const canUserCancel = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole);
 
-            // A MÁGICA ACONTECE AQUI: Cruzamento de dados 100% à prova de falhas
             const roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'Função não informada';
             const unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'Unidade não informada';
             const recruiterObj = responsibles.find(r => r.id === c.responsible_id);
