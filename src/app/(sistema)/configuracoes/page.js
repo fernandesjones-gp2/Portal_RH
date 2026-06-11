@@ -37,7 +37,7 @@ export default function ConfiguracoesPage() {
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
   const [widgetForm, setWidgetForm] = useState({ 
     title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: ['ADMIN'],
-    advanced_config: { format: 'integer', size: 'half', groupBy: 'month' }
+    advanced_config: { format: 'integer', size: 'half', groupBy: 'all' }
   });
 
   const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
@@ -124,6 +124,7 @@ export default function ConfiguracoesPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', paddingBottom: '3rem' }}>
       <div><h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Painel de Governança Integrada</h1></div>
 
+      {/* BLOCO NOVO: CONSTRUTOR DE DASHBOARD */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -131,7 +132,7 @@ export default function ConfiguracoesPage() {
           </h2>
           <button onClick={() => { 
             setEditingWidget(null); 
-            setWidgetForm({ title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: ['ADMIN'], advanced_config: { format: 'integer', size: 'half', groupBy: 'month' } }); 
+            setWidgetForm({ title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: ['ADMIN'], advanced_config: { format: 'integer', size: 'half', groupBy: 'all' } }); 
             setIsWidgetModalOpen(true); 
           }} className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
             <Plus size={16} /> Novo Indicador
@@ -156,7 +157,6 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO DE DROPDOWNS E USUARIOS ENXUTOS PARA MANTER O CODIGO COMPLETO AQUI */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Settings2 size={20} color="var(--saritur-orange)" /> Tabelas Estruturais</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '2rem' }}>
@@ -214,6 +214,35 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
+      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de Mensagens (WhatsApp)</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {templates.map(template => (
+            <div key={template.id} style={{ padding: '1.25rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{template.title}</strong>
+                {editingTemplateId === template.id ? (
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button onClick={() => handleSaveTemplate(template.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><Check size={14} /> Salvar</button>
+                    <button onClick={() => setEditingTemplateId(null)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><X size={14} /> Cancelar</button>
+                  </div>
+                ) : ( <button onClick={() => startEditingTemplate(template)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}><Edit2 size={12} /> Editar</button> )}
+              </div>
+              {editingTemplateId === template.id ? (<textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem' }} value={editingTemplateContent} onChange={e => setEditingTemplateContent(e.target.value)} />) : (<p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>"{template.content}"</p>)}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><BarChart3 size={20} color="var(--saritur-orange)" /> Metas Globais do Dashboard</h2>
+        <form onSubmit={handleSaveTargets} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1.5rem', alignItems: 'end' }}>
+          <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Meta Leadtime (Dias)</label><input type="number" style={{padding: '0.5rem', width: '100%', borderRadius: '4px', border: '1px solid var(--border-color)'}} placeholder="Ex: 15" value={dashTargets.targetLeadtime} onChange={e => setDashTargets({...dashTargets, targetLeadtime: e.target.value})} /></div>
+          <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Taxa de Aprovação (%)</label><input type="number" style={{padding: '0.5rem', width: '100%', borderRadius: '4px', border: '1px solid var(--border-color)'}} placeholder="Ex: 60" value={dashTargets.targetApprovalRate} onChange={e => setDashTargets({...dashTargets, targetApprovalRate: e.target.value})} /></div>
+          <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.5rem' }}><Save size={16} /> Salvar Parâmetros</button>
+        </form>
+      </div>
+
       {/* --- O SUPER MODAL DO CONSTRUTOR --- */}
       {isWidgetModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
@@ -226,7 +255,7 @@ export default function ConfiguracoesPage() {
             <form onSubmit={handleSaveWidget} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Título do Indicador</label>
-                <input required type="text" style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} placeholder="Ex: Lead Time por Unidade" value={widgetForm.title} onChange={e => setWidgetForm({...widgetForm, title: e.target.value})} />
+                <input required type="text" style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} placeholder="Ex: Lead Time de Admissão (SLA)" value={widgetForm.title} onChange={e => setWidgetForm({...widgetForm, title: e.target.value})} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -254,7 +283,9 @@ export default function ConfiguracoesPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Agrupamento (Eixo X ou Categorias)</label>
-                  <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.advanced_config?.groupBy || 'month'} onChange={e => setWidgetForm({...widgetForm, advanced_config: { ...widgetForm.advanced_config, groupBy: e.target.value }})}>
+                  <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.advanced_config?.groupBy || 'all'} onChange={e => setWidgetForm({...widgetForm, advanced_config: { ...widgetForm.advanced_config, groupBy: e.target.value }})}>
+                    {/* A NOVA OPÇÃO FOI INSERIDA AQUI */}
+                    <option value="all">Sem Agrupamento (Total Geral)</option>
                     <option value="month">Por Mês de Admissão/Conclusão</option>
                     <option value="unit">Por Unidade Operacional</option>
                     <option value="role">Por Função (Cargo)</option>
@@ -320,7 +351,7 @@ export default function ConfiguracoesPage() {
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem' }}>Perfis com Acesso ao Indicador</label>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem' }}>Visibilidade (Quem pode ver este indicador no Dashboard?)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                   {availableRoles.map(role => (
                     <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer' }}>
