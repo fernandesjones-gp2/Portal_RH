@@ -10,7 +10,7 @@ export default function AgendamentosPage() {
   const [roles, setRoles] = useState([]);
   const [cancellationReasons, setCancellationReasons] = useState([]); 
   const [responsibles, setResponsibles] = useState([]);
-  const [templates, setTemplates] = useState([]); // <-- TEMPLATES VEM DA NUVEM AGORA
+  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   
   const [currentTab, setCurrentTab] = useState('Agendado');
@@ -36,13 +36,14 @@ export default function AgendamentosPage() {
   async function fetchData() {
     setLoading(true);
     try {
+      // O parâmetro _t: Date.now() impede que o navegador use dados cacheados velhos
       const [allCandsData, unitsRes, rolesRes, usersRes, reasonsRes, templatesRes] = await Promise.all([
-        api.candidates.list(),
-        api.units.list(),
-        api.jobRoles.list(),
-        api.users.list(),
-        api.cancellationReasons.list().catch(() => []),
-        api.messageTemplates.list().catch(() => []) // PUXA AS MENSAGENS DO BANCO DE DADOS
+        api.candidates.list({ _t: Date.now() }),
+        api.units.list({ _t: Date.now() }),
+        api.jobRoles.list({ _t: Date.now() }),
+        api.users.list({ _t: Date.now() }),
+        api.cancellationReasons.list({ _t: Date.now() }).catch(() => []),
+        api.messageTemplates.list({ _t: Date.now() }).catch(() => []) 
       ]);
 
       if (allCandsData) {
@@ -58,6 +59,49 @@ export default function AgendamentosPage() {
     } catch (error) { console.error('Error fetching data:', error); } 
     finally { setLoading(false); }
   }
+
+  // --- MOTOR BLINDADO DE VALIDAÇÃO DE DUPLICIDADE DE CPF ---
+  function getDuplicateWarning(cpfToCheck, currentCandidateId = null) {
+    if (!cpfToCheck) return null;
+    const cleanCpf = String(cpfToCheck).replace(/\D/g, '');
+    if (cleanCpf.length !== 11) return null;
+
+    const existing = allCandidates.filter(c => 
+      c.cpf && 
+      String(c.cpf).replace(/\D/g, '') === cleanCpf && 
+      c.id !== currentCandidateId
+    );
+
+    if (existing.length === 0) return null;
+
+    existing.sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    const latest = existing[0];
+    const isClosed = ['Reprovado', 'Concluído', 'Cancelado'].includes(latest.status);
+    
+    const lastDate = new Date(latest.created_at || new Date());
+    const monthsDiff = (new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+    const TRAVA_MESES = 6; 
+    
+    const locationMsg = `Candidato(a): ${latest.name}\nStatus no sistema: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
+
+    if (!isClosed || monthsDiff < TRAVA_MESES) {
+      return {
+        block: true,
+        message: `❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro.`
+      };
+    } else {
+      return {
+        block: false,
+        message: `⚠️ AVISO DE DUPLICIDADE (HISTÓRICO ANTIGO)\n\nO sistema identificou um processo antigo para este CPF, encerrado há aprox. ${Math.floor(monthsDiff)} meses:\n\n${locationMsg}\n\nDeseja ignorar o alerta e prosseguir com o processo mesmo assim?`
+      };
+    }
+  }
+  // ---------------------------------------------------------
 
   const getBrazilIsoDate = (val) => {
     if (!val) return null;
@@ -76,7 +120,6 @@ export default function AgendamentosPage() {
     return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`;
   };
 
-  // AGORA ELE CONSULTA O ESTADO `templates` AO INVÉS DO LOCAL STORAGE
   const sendWhatsAppMessage = (candidateData, templateId, roleName, unitName, interviewDate) => {
     let textMsg = '';
     const template = templates.find(t => t.id === templateId);
@@ -105,25 +148,13 @@ export default function AgendamentosPage() {
     e.preventDefault();
 
     if (['Admissão', 'Readmissão'].includes(formData.process_type) && formData.cpf) {
-      const cleanCpf = formData.cpf.replace(/\D/g, '');
-      if (cleanCpf.length === 11) {
-        const existingCandidates = allCandidates.filter(c => c.cpf && c.cpf.replace(/\D/g, '') === cleanCpf);
-        if (existingCandidates.length > 0) {
-          existingCandidates.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-          const latest = existingCandidates[0];
-          const isClosed = ['Reprovado', 'Concluído', 'Cancelado'].includes(latest.status);
-          const lastDate = new Date(latest.created_at);
-          const monthsDiff = (new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-          const TRAVA_MESES = 6; 
-          const locationMsg = `Candidato(a): ${latest.name}\nStatus no sistema: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
-
-          if (!isClosed || monthsDiff < TRAVA_MESES) {
-            alert(`❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro para Readmissão.`);
-            return; 
-          } else {
-            const proceed = confirm(`⚠️ AVISO DE DUPLICIDADE (HISTÓRICO ANTIGO)\n\nO sistema identificou um processo antigo para este CPF, encerrado há aprox. ${Math.floor(monthsDiff)} meses:\n\n${locationMsg}\n\nDeseja ignorar o alerta e iniciar o NOVO PROCESSO mesmo assim?`);
-            if (!proceed) return;
-          }
+      const warning = getDuplicateWarning(formData.cpf);
+      if (warning) {
+        if (warning.block) {
+          alert(warning.message);
+          return; // Aborta salvamento
+        } else {
+          if (!confirm(warning.message)) return; // Aborta salvamento
         }
       }
     }
@@ -163,6 +194,19 @@ export default function AgendamentosPage() {
   async function handleUpdateCandidate(e) {
     e.preventDefault();
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date, responsible_id, gender, is_pcd } = editingCandidate;
+    
+    if (['Admissão', 'Readmissão'].includes(process_type) && cpf) {
+      const warning = getDuplicateWarning(cpf, id);
+      if (warning) {
+        if (warning.block) {
+          alert(warning.message);
+          return; 
+        } else {
+          if (!confirm(warning.message)) return; 
+        }
+      }
+    }
+
     const interviewIso = getBrazilIsoDate(interview_date);
 
     try { await api.candidates.update(id, { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd }); } 
@@ -289,9 +333,6 @@ export default function AgendamentosPage() {
         </div>
       )}
 
-      {/* MODAL DE DETALHES E FEEDBACK E REPROVAÇÃO IDÊNTICOS AQUI */}
-      {/* ... CÓDIGOS DE MODAIS ABAIXO (Feedback, Reject, Detail, Edit) ... */}
-      {/* Devido ao tamanho da tela e para preservar 100% o design visual que você aprovou, as janelas Modais que flutuam na tela seguem a mesma regra funcional de handleSubmit */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px', maxHeight: '85vh', overflowY: 'auto' }}>
