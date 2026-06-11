@@ -13,7 +13,7 @@ export default function PipelineAdmissaoPage() {
   
   const [loading, setLoading] = useState(true);
   const [editingCandidate, setEditingCandidate] = useState(null);
-  const [detailsCandidate, setDetailsCandidate] = useState(null); // NOVO ESTADO: Controla o modal de detalhes
+  const [detailsCandidate, setDetailsCandidate] = useState(null); 
   const [expandedNotes, setExpandedNotes] = useState([]);
 
   const [admissionModalCandidate, setAdmissionModalCandidate] = useState(null);
@@ -242,11 +242,22 @@ export default function PipelineAdmissaoPage() {
   const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
+
+    // --- NOVA REGRA: BLOQUEIO DE DATA RETROATIVA ---
+    const selected = new Date(admissionDate + 'T12:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Zera o relógio para comparar apenas o dia
+
+    if (selected < today) {
+      return alert('❌ BLOQUEIO: A data de admissão não pode ser retroativa (anterior a hoje).');
+    }
+    // -----------------------------------------------
+
     try {
       await fetch(`/api/candidates/${admissionModalCandidate.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'Pré-Admissão (Pronto)', admission_date: new Date(admissionDate + 'T12:00:00').toISOString() })
+        body: JSON.stringify({ status: 'Pré-Admissão (Pronto)', admission_date: selected.toISOString() })
       });
       setAdmissionModalCandidate(null); 
       fetchData(); 
@@ -289,6 +300,12 @@ export default function PipelineAdmissaoPage() {
       case 'Solicitada': return '#F6D317'; 
       default: return '#888888'; 
     }
+  };
+
+  // Calcula a data de hoje no formato YYYY-MM-DD para o atributo 'min' do HTML
+  const getTodayISO = () => {
+    const tzOffset = (new Date()).getTimezoneOffset() * 60000; 
+    return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
   };
 
   const renderCard = (c, isBloco3 = false) => {
@@ -354,7 +371,6 @@ export default function PipelineAdmissaoPage() {
         {isBloco3 && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
             
-            {/* BOTÃO VER DETALHES (Novo) */}
             <button onClick={() => setDetailsCandidate(c)} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas do Candidato">
               <Eye size={16} style={{ marginRight: '6px' }} /> Ver Detalhes
             </button>
@@ -654,7 +670,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* ADMISSION MODAL E REJECT MODAL */}
+      {/* ADMISSION MODAL (COM TRAVA HTML E JS) */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -666,7 +682,14 @@ export default function PipelineAdmissaoPage() {
             <form onSubmit={handleGridConfirmAdmission} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
-                <input required type="date" style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
+                <input 
+                  required 
+                  type="date" 
+                  min={getTodayISO()} 
+                  style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} 
+                  value={admissionDate} 
+                  onChange={e => setAdmissionDate(e.target.value)} 
+                />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
