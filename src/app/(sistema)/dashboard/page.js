@@ -33,7 +33,6 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, []);
 
-  // FORMATADOR UNIVERSAL (Inteiro, Decimal, Percentual)
   const formatValue = (val, formatRule) => {
     if (formatRule === 'decimal') return parseFloat(val.toFixed(1));
     if (formatRule === 'percent') return parseFloat(val.toFixed(2));
@@ -43,7 +42,6 @@ export default function DashboardPage() {
   const calculateKpiValue = (widget) => {
     if (!candidatesData || candidatesData.length === 0) return 0;
     const config = widget.advanced_config || {};
-    
     const filteredBase = widget.status_filter === 'Todos' ? candidatesData : candidatesData.filter(c => c.status === widget.status_filter);
 
     if (widget.metric_type === 'count') return filteredBase.length;
@@ -69,19 +67,23 @@ export default function DashboardPage() {
   const generateDynamicChartData = (widget) => {
     if (!candidatesData || candidatesData.length === 0) return [];
     const config = widget.advanced_config || {};
-    const groupBy = config.groupBy || 'month';
+    const groupBy = config.groupBy || 'all'; // Agora o padrão evita quebra de eixos
     const grouped = {};
 
     // INICIALIZADORES
     if (groupBy === 'month') {
       const monthsMap = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
       monthsMap.forEach(m => { grouped[m] = { name: m, valor: 0, _sum: 0, _count: 0 }; });
+    } else if (groupBy === 'all') {
+      // PREPARA A CAIXA ÚNICA PARA O "SEM AGRUPAMENTO"
+      grouped['Total Geral'] = { name: 'Total Geral', valor: 0, _sum: 0, _count: 0 };
     }
 
     candidatesData.forEach(c => {
       if (widget.status_filter !== 'Todos' && c.status !== widget.status_filter) return;
 
       let groupKey = 'Não Classificado';
+      
       if (groupBy === 'month') {
         const refDate = c.admission_date || c.created_at;
         if (!refDate) return;
@@ -92,6 +94,9 @@ export default function DashboardPage() {
         groupKey = c.job_roles?.name || c.job_role_name || 'Sem Cargo';
       } else if (groupBy === 'recruiter') {
         groupKey = c.users?.name || c.responsible_name || 'Sistema';
+      } else if (groupBy === 'all') {
+        // ENCAMINHA PARA A CAIXA ÚNICA
+        groupKey = 'Total Geral';
       }
 
       if (!grouped[groupKey]) grouped[groupKey] = { name: groupKey, valor: 0, _sum: 0, _count: 0 };
@@ -108,7 +113,6 @@ export default function DashboardPage() {
       }
     });
 
-    // APLICA MÉDIAS E FORMATOS
     let finalArray = Object.values(grouped);
     if (widget.metric_type === 'date_diff') {
       finalArray = finalArray.map(g => ({
@@ -117,8 +121,7 @@ export default function DashboardPage() {
       }));
     }
 
-    // ORDENAÇÃO DINÂMICA
-    if (groupBy !== 'month') {
+    if (groupBy !== 'month' && groupBy !== 'all') {
       finalArray.sort((a, b) => b.valor - a.valor);
     }
     return finalArray;
@@ -141,11 +144,10 @@ export default function DashboardPage() {
   const kpiCards = dashboardWidgets.filter(w => w.chart_type === 'kpi');
   const charts = dashboardWidgets.filter(w => w.chart_type !== 'kpi');
 
-  // Auxiliares de GRID para tamanho da tela
   const getGridSpan = (sizeConfig) => {
-    if (sizeConfig === 'full') return '1 / -1'; // Ocupa a linha toda
-    if (sizeConfig === 'third') return 'span 1'; // 1/3
-    return 'span 2'; // half (Padrão, ocupa 2 blocos de um grid de 4)
+    if (sizeConfig === 'full') return '1 / -1'; 
+    if (sizeConfig === 'third') return 'span 1'; 
+    return 'span 2'; 
   };
 
   return (
@@ -172,7 +174,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* RENDERIZADOR UNIVERSAL DE GRÁFICOS (Grid Responsivo Avançado) */}
       {charts.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
           {charts.map((chart) => {
@@ -183,12 +184,11 @@ export default function DashboardPage() {
             return (
               <div key={chart.id} style={{ gridColumn, backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)', minWidth: '0' }}>
                 <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.2rem' }}>{chart.title}</h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Agrupado por: {chart.advanced_config?.groupBy || 'month'} • Base: {chart.status_filter}</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Agrupado por: {chart.advanced_config?.groupBy === 'all' ? 'Total Geral' : chart.advanced_config?.groupBy} • Base: {chart.status_filter}</p>
                 
                 <div style={{ height: '300px', width: '100%' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     
-                    {/* BARRAS VERTICAIS */}
                     {chart.chart_type === 'bar' && (
                       <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -199,7 +199,6 @@ export default function DashboardPage() {
                       </BarChart>
                     )}
 
-                    {/* BARRAS HORIZONTAIS */}
                     {chart.chart_type === 'bar_horizontal' && (
                       <BarChart data={chartData} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
@@ -210,7 +209,6 @@ export default function DashboardPage() {
                       </BarChart>
                     )}
 
-                    {/* LINHAS */}
                     {chart.chart_type === 'line' && (
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -221,7 +219,6 @@ export default function DashboardPage() {
                       </LineChart>
                     )}
 
-                    {/* ÁREA */}
                     {chart.chart_type === 'area' && (
                       <AreaChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -232,7 +229,6 @@ export default function DashboardPage() {
                       </AreaChart>
                     )}
 
-                    {/* PIZZA (PIE) */}
                     {chart.chart_type === 'pie' && (
                       <PieChart>
                         <Tooltip content={<CustomTooltip />} />
