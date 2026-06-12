@@ -7,15 +7,15 @@ export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
   
   const [candidates, setCandidates] = useState([]);
-  const [allCandidates, setAllCandidates] = useState([]); // Usado para bloqueio de CPF
+  const [allCandidates, setAllCandidates] = useState([]); 
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
   const [cancellationReasons, setCancellationReasons] = useState([]);
   const [responsibles, setResponsibles] = useState([]);
   
   const [loading, setLoading] = useState(true);
-  const [editingCandidate, setEditingCandidate] = useState(null); // Edição de Status/Etapas
-  const [editingBasicData, setEditingBasicData] = useState(null); // Edição de Dados Pessoais
+  const [editingCandidate, setEditingCandidate] = useState(null); 
+  const [editingBasicData, setEditingBasicData] = useState(null); 
   const [detailsCandidate, setDetailsCandidate] = useState(null); 
   const [expandedNotes, setExpandedNotes] = useState([]);
 
@@ -68,7 +68,7 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  // --- MÁSCARAS E VALIDAÇÕES (Idênticas a Agendamentos) ---
+  // --- MÁSCARAS E VALIDAÇÕES ---
   const maskCPF = (val) => val.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1');
   const maskPhone = (val) => {
     let r = val.replace(/\D/g, "");
@@ -81,6 +81,23 @@ export default function PipelineAdmissaoPage() {
   };
   const maskName = (val) => val.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s']/g, "");
 
+  const getBrazilIsoDate = (val) => {
+    if (!val) return null;
+    if (val.endsWith('Z') || val.match(/[+-]\d\d:\d\d$/)) return val;
+    return `${val}:00-03:00`;
+  };
+
+  const formatToBrazilDatetimeInput = (isoString) => {
+    if (!isoString) return '';
+    if (isoString.length === 16 && !isoString.includes('Z') && !isoString.includes('-')) return isoString; 
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    const parts = formatter.formatToParts(d);
+    const val = (type) => parts.find(p => p.type === type)?.value;
+    return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`;
+  };
+
   function validateForm(data) {
     if (!data.name || data.name.trim().length < 3) return alert('❌ VALIDAÇÃO: O Nome Completo é obrigatório.'), false;
     if (!data.mother_name || data.mother_name.trim().length < 3) return alert('❌ VALIDAÇÃO: O Nome da Mãe é obrigatório.'), false;
@@ -91,6 +108,7 @@ export default function PipelineAdmissaoPage() {
     if (!data.gender) return alert('❌ VALIDAÇÃO: O campo Sexo é obrigatório.'), false;
     if (!data.job_role_id) return alert('❌ VALIDAÇÃO: O campo Função é obrigatório.'), false;
     if (!data.unit_id) return alert('❌ VALIDAÇÃO: O campo Unidade é obrigatório.'), false;
+    if (!data.responsible_id) return alert('❌ VALIDAÇÃO: O campo Responsável é obrigatório.'), false;
     return true;
   }
 
@@ -177,7 +195,7 @@ export default function PipelineAdmissaoPage() {
   const handleDateChange = (val) => val ? new Date(val + 'T12:00:00').toISOString() : null;
   const formatInputDate = (isoString) => isoString ? isoString.split('T')[0] : '';
 
-  // SALVAR ETAPAS
+  // SALVAR ETAPAS (STATUS)
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
@@ -212,12 +230,12 @@ export default function PipelineAdmissaoPage() {
     } catch (error) { alert('Erro ao atualizar: ' + error.message); }
   }
 
-  // SALVAR CADASTRO BÁSICO
+  // SALVAR DADOS DE CADASTRO (Agora com todos os campos)
   async function handleUpdateBasicData(e) {
     e.preventDefault();
     if (!validateForm(editingBasicData)) return;
 
-    const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd } = editingBasicData;
+    const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd, responsible_id, interview_date } = editingBasicData;
     
     if (['Admissão', 'Readmissão'].includes(process_type) && cpf) {
       const warning = getDuplicateWarning(cpf, id);
@@ -227,8 +245,13 @@ export default function PipelineAdmissaoPage() {
       }
     }
 
+    const interviewIso = getBrazilIsoDate(interview_date);
+
     try { 
-      await api.candidates.update(id, { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd }); 
+      await api.candidates.update(id, { 
+        process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd,
+        responsible_id, interview_date: interviewIso 
+      }); 
     } catch (err) { return alert('Erro ao atualizar: ' + err.message); }
     
     setEditingBasicData(null);
@@ -327,13 +350,12 @@ export default function PipelineAdmissaoPage() {
               </button>
             )}
 
-            {/* NOVOS BOTÕES DIVIDIDOS: Etapas vs. Cadastro */}
             {currentUserRole !== 'DP' && !isBloco3 && (
               <>
                 <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Atualizar Status das Etapas">
                   <Settings2 size={14} /> Etapas
                 </button>
-                <button onClick={() => setEditingBasicData({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Editar Dados Pessoais do Candidato">
+                <button onClick={() => setEditingBasicData({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Editar Dados Cadastrais e Responsável">
                   <Edit2 size={14} /> Cadastro
                 </button>
               </>
@@ -522,7 +544,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAL 2: EDITAR DADOS BÁSICOS (CADASTRO) --- */}
+      {/* --- MODAL 2: EDITAR DADOS BÁSICOS (CADASTRO) AGORA COM RESPONSÁVEL E DATA --- */}
       {editingBasicData && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -534,7 +556,7 @@ export default function PipelineAdmissaoPage() {
             <form onSubmit={handleUpdateBasicData} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Tipo de Processo</label>
-                <select required style={{ width: '100%' }} value={editingBasicData.process_type} onChange={e => setEditingBasicData({...editingBasicData, process_type: e.target.value})}>
+                <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.process_type} onChange={e => setEditingBasicData({...editingBasicData, process_type: e.target.value})}>
                   <option value="Admissão">Admissão</option>
                   <option value="Readmissão">Readmissão</option>
                   <option value="Promoção">Promoção</option>
@@ -544,33 +566,33 @@ export default function PipelineAdmissaoPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label>
-                  <input required type="text" style={{ width: '100%' }} value={editingBasicData.name} onChange={e => setEditingBasicData({...editingBasicData, name: maskName(e.target.value)})} placeholder="Apenas letras" />
+                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.name} onChange={e => setEditingBasicData({...editingBasicData, name: maskName(e.target.value)})} placeholder="Apenas letras" />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label>
-                  <input required type="text" style={{ width: '100%' }} value={editingBasicData.mother_name} onChange={e => setEditingBasicData({...editingBasicData, mother_name: maskName(e.target.value)})} placeholder="Apenas letras" />
+                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.mother_name} onChange={e => setEditingBasicData({...editingBasicData, mother_name: maskName(e.target.value)})} placeholder="Apenas letras" />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Telefone (WhatsApp)</label>
-                  <input required type="text" style={{ width: '100%' }} value={editingBasicData.phone} onChange={e => setEditingBasicData({...editingBasicData, phone: maskPhone(e.target.value)})} placeholder="(00) 00000-0000" />
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>WhatsApp</label>
+                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.phone} onChange={e => setEditingBasicData({...editingBasicData, phone: maskPhone(e.target.value)})} placeholder="(00) 00000-0000" />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label>
-                  <input required type="text" style={{ width: '100%' }} value={editingBasicData.cpf} onChange={e => setEditingBasicData({...editingBasicData, cpf: maskCPF(e.target.value)})} placeholder="000.000.000-00" />
+                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.cpf} onChange={e => setEditingBasicData({...editingBasicData, cpf: maskCPF(e.target.value)})} placeholder="000.000.000-00" />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label>
-                  <input type="text" style={{ width: '100%' }} value={editingBasicData.rg} onChange={e => setEditingBasicData({...editingBasicData, rg: e.target.value})} placeholder="Número do RG" />
+                  <input type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.rg} onChange={e => setEditingBasicData({...editingBasicData, rg: e.target.value})} placeholder="Número do RG" />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label>
-                  <select required style={{ width: '100%' }} value={editingBasicData.gender || ''} onChange={e => setEditingBasicData({...editingBasicData, gender: e.target.value})}>
+                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.gender || ''} onChange={e => setEditingBasicData({...editingBasicData, gender: e.target.value})}>
                     <option value="">Selecione...</option>
                     <option value="Masculino">Masculino</option>
                     <option value="Feminino">Feminino</option>
@@ -585,16 +607,30 @@ export default function PipelineAdmissaoPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label>
-                  <select required style={{ width: '100%' }} value={editingBasicData.job_role_id || ''} onChange={e => setEditingBasicData({...editingBasicData, job_role_id: e.target.value})}>
+                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.job_role_id || ''} onChange={e => setEditingBasicData({...editingBasicData, job_role_id: e.target.value})}>
                     <option value="">-- Selecione a função --</option>
                     {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Unidade</label>
-                  <select required style={{ width: '100%' }} value={editingBasicData.unit_id || ''} onChange={e => setEditingBasicData({...editingBasicData, unit_id: e.target.value})}>
+                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.unit_id || ''} onChange={e => setEditingBasicData({...editingBasicData, unit_id: e.target.value})}>
                     <option value="">-- Selecione a unidade --</option>
                     {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
+                  <input required type="datetime-local" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={formatToBrazilDatetimeInput(editingBasicData.interview_date)} onChange={e => setEditingBasicData({...editingBasicData, interview_date: e.target.value})} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Responsável pelo Processo</label>
+                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.responsible_id || ''} onChange={e => setEditingBasicData({...editingBasicData, responsible_id: e.target.value})}>
+                    <option value="">Selecione o responsável</option>
+                    {responsibles.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
                   </select>
                 </div>
               </div>
