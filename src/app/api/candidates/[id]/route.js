@@ -1,17 +1,14 @@
 import { query } from '@/lib/db';
 import { json, requireApproved } from '@/lib/api-helpers';
 
-// ATENÇÃO: O cliente da sua aplicação usa PATCH para atualizar
 export async function PATCH(req, props) {
   const g = await requireApproved();
   if (g.error) return g.error;
-
-  // CORREÇÃO DO NEXT 15+: Await nos parâmetros tira o erro 404
   const params = await props.params;
   const { id } = params;
-
   const body = await req.json();
 
+  // ADICIONADA A COLUNA 'unread_feedback' AQUI PARA PERMITIR A NOTIFICAÇÃO
   const allowedFields = [
     'process_type', 'name', 'mother_name', 'phone', 'cpf', 'rg', 
     'job_role_id', 'unit_id', 'interview_date', 'responsible_id', 
@@ -19,7 +16,7 @@ export async function PATCH(req, props) {
     'feedback', 'cancellation_reason_id', 'admission_date',
     'medical_request_date', 'medical_result_date', 
     'docs_request_date', 'docs_receive_date', 'analysis_request_date', 
-    'analysis_update_date', 'gender', 'is_pcd'
+    'analysis_update_date', 'gender', 'is_pcd', 'unread_feedback'
   ];
 
   const updates = [];
@@ -41,7 +38,6 @@ export async function PATCH(req, props) {
   try {
     const sql = `UPDATE candidates SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`;
     const { rows } = await query(sql, values);
-    
     if (rows.length === 0) return json({ error: 'not_found' }, 404);
     return json(rows[0]);
   } catch (err) {
@@ -50,13 +46,11 @@ export async function PATCH(req, props) {
   }
 }
 
-// Alias de Segurança: Caso você mande PUT algum dia, ele redireciona pro PATCH
 export const PUT = PATCH;
 
 export async function DELETE(req, props) {
   const g = await requireApproved();
   if (g.error) return g.error;
-
   const params = await props.params;
   const { id } = params;
 
