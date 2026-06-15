@@ -36,9 +36,11 @@ export default function ConfiguracoesPage() {
   const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
   const INTERNAL_ROLES = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'SUPERINTENDENT', 'PSYCHOLOGIST'];
   
+  const defaultFunnelColors = ['#BDBDBD', '#1976D2', '#FB8C00', '#2E7D32']; // Suas cores padrão
+
   const [widgetForm, setWidgetForm] = useState({ 
     title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: availableRoles,
-    advanced_config: { format: 'integer', size: 'half', groupBy: 'all' }, visibility_type: 'generic'
+    advanced_config: { format: 'integer', size: 'half', groupBy: 'all', funnelColors: defaultFunnelColors }, visibility_type: 'generic'
   });
 
   const menusAcessiveis = [
@@ -134,7 +136,7 @@ export default function ConfiguracoesPage() {
           </h2>
           <button onClick={() => { 
             setEditingWidget(null); 
-            setWidgetForm({ title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: availableRoles, advanced_config: { format: 'integer', size: 'half', groupBy: 'all' }, visibility_type: 'generic' }); 
+            setWidgetForm({ title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: availableRoles, advanced_config: { format: 'integer', size: 'half', groupBy: 'all', funnelColors: defaultFunnelColors }, visibility_type: 'generic' }); 
             setIsWidgetModalOpen(true); 
           }} className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
             <Plus size={16} /> Novo Indicador
@@ -267,8 +269,10 @@ export default function ConfiguracoesPage() {
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Visualização do Gráfico</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.chart_type} onChange={e => setWidgetForm({...widgetForm, chart_type: e.target.value})}>
                     <option value="kpi">Cartão KPI (Número Solto)</option>
-                    <option value="bar">Gráfico de Barras / Colunas</option>
+                    <option value="bar">Gráfico de Colunas (Vertical)</option>
+                    <option value="bar_horizontal">Gráfico de Barras (Horizontal)</option>
                     <option value="line">Gráfico de Linha (Tendência)</option>
+                    <option value="area">Gráfico de Área</option>
                     <option value="pie">Gráfico de Pizza (Proporção)</option>
                   </select>
                 </div>
@@ -305,6 +309,47 @@ export default function ConfiguracoesPage() {
                   </select>
                 </div>
               </div>
+
+              {/* PAINEL DE CORES DO FUNIL QUE SÓ APARECE SE FOR FUNIL */}
+              {widgetForm.metric_type === 'smart_funnel' && (
+                <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.05)', border: '1px solid var(--saritur-orange)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--saritur-orange)', marginBottom: '0.75rem' }}>Personalizar Cores do Funil</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>1. Total</label>
+                      <input type="color" value={widgetForm.advanced_config?.funnelColors?.[0] || defaultFunnelColors[0]} onChange={e => {
+                        const newColors = [...(widgetForm.advanced_config?.funnelColors || defaultFunnelColors)];
+                        newColors[0] = e.target.value;
+                        setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, funnelColors: newColors}});
+                      }} style={{ width: '100%', height: '30px', border: 'none', cursor: 'pointer' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>2. Entrevista</label>
+                      <input type="color" value={widgetForm.advanced_config?.funnelColors?.[1] || defaultFunnelColors[1]} onChange={e => {
+                        const newColors = [...(widgetForm.advanced_config?.funnelColors || defaultFunnelColors)];
+                        newColors[1] = e.target.value;
+                        setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, funnelColors: newColors}});
+                      }} style={{ width: '100%', height: '30px', border: 'none', cursor: 'pointer' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>3. Pipeline</label>
+                      <input type="color" value={widgetForm.advanced_config?.funnelColors?.[2] || defaultFunnelColors[2]} onChange={e => {
+                        const newColors = [...(widgetForm.advanced_config?.funnelColors || defaultFunnelColors)];
+                        newColors[2] = e.target.value;
+                        setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, funnelColors: newColors}});
+                      }} style={{ width: '100%', height: '30px', border: 'none', cursor: 'pointer' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>4. Admitidos</label>
+                      <input type="color" value={widgetForm.advanced_config?.funnelColors?.[3] || defaultFunnelColors[3]} onChange={e => {
+                        const newColors = [...(widgetForm.advanced_config?.funnelColors || defaultFunnelColors)];
+                        newColors[3] = e.target.value;
+                        setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, funnelColors: newColors}});
+                      }} style={{ width: '100%', height: '30px', border: 'none', cursor: 'pointer' }} />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {widgetForm.metric_type === 'date_diff' && (
                 <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.05)', border: '1px solid var(--saritur-orange)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
@@ -348,7 +393,6 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
-              {/* CHAVE DE VISIBILIDADE SIMPLIFICADA */}
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Visibilidade do Indicador</label>
                 <div style={{ display: 'flex', gap: '1.5rem' }}>
