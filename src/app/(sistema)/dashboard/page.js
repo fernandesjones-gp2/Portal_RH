@@ -9,7 +9,6 @@ export default function DashboardPage() {
   const [userRole, setUserRole] = useState('');
   const [dashboardWidgets, setDashboardWidgets] = useState([]);
   
-  // DADOS BRUTOS DO BANCO
   const [allCandidates, setAllCandidates] = useState([]);
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -17,11 +16,10 @@ export default function DashboardPage() {
   const [cancellationReasons, setCancellationReasons] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // FILTROS GLOBAIS
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [filterProcessType, setFilterProcessType] = useState('');
-  const [filterUnits, setFilterUnits] = useState([]); // Array para checkboxes
+  const [filterUnits, setFilterUnits] = useState([]); 
   const [filterRole, setFilterRole] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -59,7 +57,6 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, []);
 
-  // --- MOTOR DE FILTRAGEM GLOBAL ---
   const filteredCandidates = allCandidates.filter(c => {
     if (filterDateFrom || filterDateTo) {
       const refDate = c.created_at ? new Date(c.created_at).toISOString().split('T')[0] : '';
@@ -78,14 +75,12 @@ export default function DashboardPage() {
     else setFilterUnits([...filterUnits, unitId]);
   };
 
-  // --- FORMATADOR ---
   const formatValue = (val, formatRule) => {
     if (formatRule === 'decimal') return parseFloat(val.toFixed(1));
     if (formatRule === 'percent') return parseFloat(val.toFixed(1)) + '%';
     return Math.round(val);
   };
 
-  // --- MOTOR DE CÁLCULO INTELIGENTE ---
   const processSmartMetrics = (widget) => {
     const base = widget.status_filter === 'Todos' ? filteredCandidates : filteredCandidates.filter(c => c.status === widget.status_filter);
     const mType = widget.metric_type;
@@ -99,14 +94,13 @@ export default function DashboardPage() {
       const admitidos = base.filter(c => c.status === 'Concluído').length;
       return [
         { name: '1. Total', valor: total },
-        { name: '2. Aprovados na Entrevista', valor: pipeline },
-        { name: '3. Em Análise (Pipeline)', valor: andamento },
+        { name: '2. Entrevista', valor: pipeline },
+        { name: '3. Pipeline', valor: andamento },
         { name: '4. Admitidos', valor: admitidos }
       ];
     }
 
     if (mType === 'smart_stuck') {
-      // Data de entrevista passou 2 dias E continua no status Agendado
       const today = new Date().getTime();
       const stuck = base.filter(c => {
         if (c.status !== 'Agendado' || !c.interview_date) return false;
@@ -123,7 +117,6 @@ export default function DashboardPage() {
       return [{ name: 'Taxa de Aprovação', valor: taxa, isRate: true }];
     }
 
-    // --- AGRUPAMENTOS TRADICIONAIS (Mês, Unidade, Recrutador, Motivo Reprovação) ---
     const config = widget.advanced_config || {};
     const groupBy = config.groupBy || 'all';
     const grouped = {};
@@ -199,15 +192,15 @@ export default function DashboardPage() {
   const getGridSpan = (sizeConfig) => {
     if (sizeConfig === 'full') return '1 / -1'; 
     if (sizeConfig === 'third') return 'span 1'; 
-    return 'span 2'; // half
+    return 'span 2'; 
   };
 
-  const COLORS = ['#F37137', '#057a55', '#e02424', '#888888', '#3b82f6', '#d946ef', '#f59e0b'];
+  // Cores genéricas para a pizza caso não seja funil
+  const DEFAULT_COLORS = ['#F37137', '#057a55', '#e02424', '#888888', '#3b82f6', '#d946ef', '#f59e0b'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', paddingBottom: '3rem' }}>
       
-      {/* CABEÇALHO E BOTÃO DE FILTROS */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Visão Estratégica</h1>
@@ -219,17 +212,14 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* PAINEL DE FILTROS GLOBAIS */}
       {isFilterOpen && (
         <div className="glass-panel" style={{ padding: '1.5rem', backgroundColor: 'var(--surface-color)', animation: 'fadeIn 0.3s ease-in-out' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--text-main)' }}>Refinar Dados do Dashboard</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
-            
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
               <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Data Inicial</label><input type="date" style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} /></div>
               <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Data Final</label><input type="date" style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} /></div>
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Múltiplas Unidades</label>
               <div style={{ border: '1px solid var(--border-color)', borderRadius: '4px', padding: '0.5rem', maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.3rem', backgroundColor: 'var(--bg-color)' }}>
@@ -240,28 +230,24 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Tipo de Processo</label>
               <select style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
                 <option value="">Todos os Tipos</option><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option>
               </select>
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Função Específica</label>
               <select style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
                 <option value="">Todas as Funções</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
               </select>
             </div>
-
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Recrutador Responsável</label>
               <select style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
                 <option value="">Todos os Recrutadores</option>{responsibles.map(r => <option key={r.id} value={r.id}>{r.name || r.email}</option>)}
               </select>
             </div>
-
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
             <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); setFilterProcessType(''); setFilterUnits([]); setFilterRole(''); setFilterResponsible(''); }} className="btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>Limpar Filtros</button>
@@ -269,7 +255,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* --- RENDERIZAÇÃO DOS CARTÕES KPI --- */}
       {kpiCards.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
           {kpiCards.map((kpi) => {
@@ -291,7 +276,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* --- RENDERIZAÇÃO DOS GRÁFICOS --- */}
       {charts.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
           {charts.map((chart) => {
@@ -299,6 +283,9 @@ export default function DashboardPage() {
             const metaX = chart.advanced_config?.targetValue ? parseFloat(chart.advanced_config.targetValue) : null;
             const gridColumn = getGridSpan(chart.advanced_config?.size);
             const isFunnel = chart.metric_type === 'smart_funnel';
+            
+            // Lógica de Cores do Funil configuráveis
+            const funnelColors = chart.advanced_config?.funnelColors || ['#BDBDBD', '#1976D2', '#FB8C00', '#2E7D32'];
 
             return (
               <div key={chart.id} style={{ gridColumn, backgroundColor: 'var(--surface-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)', minWidth: '0' }}>
@@ -307,7 +294,6 @@ export default function DashboardPage() {
                 <div style={{ height: '300px', width: '100%', marginTop: '1.5rem' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     
-                    {/* BARRAS VERTICAIS */}
                     {chart.chart_type === 'bar' && !isFunnel && (
                       <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -318,7 +304,6 @@ export default function DashboardPage() {
                       </BarChart>
                     )}
 
-                    {/* BARRAS HORIZONTAIS (Excelente para Funil) */}
                     {(chart.chart_type === 'bar_horizontal' || isFunnel) && (
                       <BarChart data={chartData} layout="vertical" margin={{ left: isFunnel ? 40 : 0 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
@@ -328,13 +313,12 @@ export default function DashboardPage() {
                         {metaX && <ReferenceLine x={metaX} stroke="var(--danger-color)" strokeWidth={2} strokeDasharray="4 4" />}
                         <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
                           {chartData.map((entry, index) => (
-                             <Cell key={`cell-${index}`} fill={isFunnel ? COLORS[index % COLORS.length] : chart.color} />
+                             <Cell key={`cell-${index}`} fill={isFunnel ? funnelColors[index % 4] : chart.color} />
                           ))}
                         </Bar>
                       </BarChart>
                     )}
 
-                    {/* LINHAS */}
                     {chart.chart_type === 'line' && (
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -345,14 +329,13 @@ export default function DashboardPage() {
                       </LineChart>
                     )}
 
-                    {/* PIZZA (PIE) */}
                     {chart.chart_type === 'pie' && (
                       <PieChart>
                         <Tooltip content={<CustomTooltip />} />
                         <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }}/>
                         <Pie data={chartData} dataKey="valor" nameKey="name" cx="50%" cy="50%" innerRadius={isFunnel ? 0 : 60} outerRadius={100} label>
                           {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            <Cell key={`cell-${index}`} fill={isFunnel ? funnelColors[index % 4] : DEFAULT_COLORS[index % DEFAULT_COLORS.length]} />
                           ))}
                         </Pie>
                       </PieChart>
