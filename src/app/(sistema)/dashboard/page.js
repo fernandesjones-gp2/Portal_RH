@@ -98,9 +98,9 @@ export default function DashboardPage() {
       const andamento = base.filter(c => ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].includes(c.status)).length;
       const admitidos = base.filter(c => c.status === 'Concluído').length;
       return [
-        { name: '1. Total Recebido', valor: total },
+        { name: '1. Total', valor: total },
         { name: '2. Aprovados na Entrevista', valor: pipeline },
-        { name: '3. Em Análise (DP)', valor: andamento },
+        { name: '3. Em Análise (Pipeline)', valor: andamento },
         { name: '4. Admitidos', valor: admitidos }
       ];
     }
