@@ -18,29 +18,29 @@ export default function ConfiguracoesPage() {
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const [selectedReasonId, setSelectedReasonId] = useState(''); 
-
   const [newUnit, setNewUnit] = useState('');
   const [newRole, setNewRole] = useState('');
   const [newReason, setNewReason] = useState(''); 
-
   const [editingUnit, setEditingUnit] = useState(null);
   const [editingRole, setEditingRole] = useState(null);
   const [editingReason, setEditingReason] = useState(null); 
-
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [editingTemplateContent, setEditingTemplateContent] = useState('');
 
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
-  // ESTADOS DO CONSTRUTOR DE DASHBOARD AVANÇADO
+  // CONSTRUTOR DE DASHBOARD AVANÇADO
   const [editingWidget, setEditingWidget] = useState(null);
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
+  
+  const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
+  const INTERNAL_ROLES = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'SUPERINTENDENT', 'PSYCHOLOGIST'];
+  
   const [widgetForm, setWidgetForm] = useState({ 
-    title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: ['ADMIN'],
-    advanced_config: { format: 'integer', size: 'half', groupBy: 'all' }
+    title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: availableRoles,
+    advanced_config: { format: 'integer', size: 'half', groupBy: 'all' }, visibility_type: 'generic'
   });
 
-  const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
   const menusAcessiveis = [
     { path: '/dashboard', label: 'Dashboard' }, { path: '/agendamentos', label: 'Agendamentos' },
     { path: '/pre-admissao', label: 'Pipeline' }, { path: '/promocoes', label: 'Promoções' },
@@ -75,9 +75,12 @@ export default function ConfiguracoesPage() {
     } catch (err) {}
   }
 
-  function handleRoleToggle(role) {
-    if (widgetForm.roles_visible.includes(role)) setWidgetForm({ ...widgetForm, roles_visible: widgetForm.roles_visible.filter(r => r !== role) });
-    else setWidgetForm({ ...widgetForm, roles_visible: [...widgetForm.roles_visible, role] });
+  function handleVisibilityChange(type) {
+    if (type === 'generic') {
+      setWidgetForm({ ...widgetForm, visibility_type: 'generic', roles_visible: availableRoles });
+    } else {
+      setWidgetForm({ ...widgetForm, visibility_type: 'internal', roles_visible: INTERNAL_ROLES });
+    }
   }
 
   async function handleSaveWidget(e) {
@@ -124,7 +127,6 @@ export default function ConfiguracoesPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', paddingBottom: '3rem' }}>
       <div><h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Painel de Governança Integrada</h1></div>
 
-      {/* BLOCO NOVO: CONSTRUTOR DE DASHBOARD */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -132,7 +134,7 @@ export default function ConfiguracoesPage() {
           </h2>
           <button onClick={() => { 
             setEditingWidget(null); 
-            setWidgetForm({ title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: ['ADMIN'], advanced_config: { format: 'integer', size: 'half', groupBy: 'all' } }); 
+            setWidgetForm({ title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: availableRoles, advanced_config: { format: 'integer', size: 'half', groupBy: 'all' }, visibility_type: 'generic' }); 
             setIsWidgetModalOpen(true); 
           }} className="btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
             <Plus size={16} /> Novo Indicador
@@ -146,9 +148,12 @@ export default function ConfiguracoesPage() {
                 <div>
                   <h3 style={{ fontWeight: 'bold', fontSize: '1rem', color: 'var(--text-main)' }}>{w.title}</h3>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{w.chart_type.toUpperCase()} | {w.metric_type}</p>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--saritur-orange)', fontWeight: 'bold', marginTop: '4px' }}>
+                    {w.roles_visible?.length > 6 ? 'Visão: Genérica (Todos)' : 'Visão: Interna (RH/Admin)'}
+                  </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button onClick={() => { setEditingWidget(w); setWidgetForm(w); setIsWidgetModalOpen(true); }}><Edit2 size={14} color="var(--text-muted)"/></button>
+                  <button onClick={() => { setEditingWidget(w); setWidgetForm({...w, visibility_type: w.roles_visible?.length > 6 ? 'generic' : 'internal'}); setIsWidgetModalOpen(true); }}><Edit2 size={14} color="var(--text-muted)"/></button>
                   <button onClick={() => handleDeleteWidget(w.id)}><Trash2 size={14} color="var(--danger-color)"/></button>
                 </div>
               </div>
@@ -243,7 +248,6 @@ export default function ConfiguracoesPage() {
         </form>
       </div>
 
-      {/* --- O SUPER MODAL DO CONSTRUTOR --- */}
       {isWidgetModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -263,10 +267,8 @@ export default function ConfiguracoesPage() {
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Visualização do Gráfico</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.chart_type} onChange={e => setWidgetForm({...widgetForm, chart_type: e.target.value})}>
                     <option value="kpi">Cartão KPI (Número Solto)</option>
-                    <option value="bar">Gráfico de Colunas (Vertical)</option>
-                    <option value="bar_horizontal">Gráfico de Barras (Horizontal)</option>
+                    <option value="bar">Gráfico de Barras / Colunas</option>
                     <option value="line">Gráfico de Linha (Tendência)</option>
-                    <option value="area">Gráfico de Área</option>
                     <option value="pie">Gráfico de Pizza (Proporção)</option>
                   </select>
                 </div>
@@ -282,66 +284,62 @@ export default function ConfiguracoesPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Agrupamento (Eixo X ou Categorias)</label>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Agrupamento (Eixo X / Categorias)</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.advanced_config?.groupBy || 'all'} onChange={e => setWidgetForm({...widgetForm, advanced_config: { ...widgetForm.advanced_config, groupBy: e.target.value }})}>
-                    {/* A NOVA OPÇÃO FOI INSERIDA AQUI */}
                     <option value="all">Sem Agrupamento (Total Geral)</option>
                     <option value="month">Por Mês de Admissão/Conclusão</option>
                     <option value="unit">Por Unidade Operacional</option>
                     <option value="role">Por Função (Cargo)</option>
                     <option value="recruiter">Por Responsável/Recrutador</option>
+                    <option value="reason">Por Motivo de Reprovação</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Cálculo / Fórmula (Eixo Y)</label>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Cálculo da Métrica Inteligente</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.metric_type} onChange={e => setWidgetForm({...widgetForm, metric_type: e.target.value})}>
-                    <option value="count">Contagem de Processos (Quantidade)</option>
-                    <option value="date_diff">Operação Matemática (Data Fim - Data Inicial em Dias)</option>
+                    <option value="count">Contagem Simples (Qtd de Pessoas)</option>
+                    <option value="smart_approval_rate">Índice de Aprovação na Entrevista (%)</option>
+                    <option value="smart_stuck">Candidatos Parados a Mais de 2 Dias</option>
+                    <option value="smart_funnel">Funil Completo de Recrutamento</option>
+                    <option value="date_diff">Lead Time Avançado (Data A - Data B)</option>
                   </select>
                 </div>
               </div>
 
               {widgetForm.metric_type === 'date_diff' && (
                 <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.05)', border: '1px solid var(--saritur-orange)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
-                  <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--saritur-orange)', marginBottom: '0.75rem' }}>Matemática: Variáveis de Data</h4>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--saritur-orange)', marginBottom: '0.75rem' }}>Configuração do Lead Time</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.5rem', alignItems: 'center' }}>
                     <select required style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.dateEnd || ''} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, dateEnd: e.target.value}})}>
                       <option value="">-- Campo Final --</option>
                       <option value="admission_date">Data de Admissão</option>
-                      <option value="medical_result_date">Resultado do Exame</option>
-                      <option value="docs_receive_date">Recebimento Docs</option>
+                      <option value="medical_result_date">Resultado Exame</option>
                     </select>
                     <span style={{ fontWeight: 'bold', fontSize: '1.5rem', color: 'var(--text-muted)' }}>-</span>
                     <select required style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.dateStart || ''} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, dateStart: e.target.value}})}>
                       <option value="">-- Campo Inicial --</option>
                       <option value="interview_date">Data da Entrevista</option>
-                      <option value="created_at">Criação do Processo</option>
+                      <option value="created_at">Data de Criação</option>
                     </select>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.3rem' }}>Formato de Saída</label>
-                      <select style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.format || 'integer'} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, format: e.target.value}})}>
-                        <option value="integer">Número Inteiro</option>
-                        <option value="decimal">Decimal (ex: 2.5)</option>
-                        <option value="percent">Percentual (%)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.3rem' }}>Linha de Meta (Opcional)</label>
-                      <input type="number" step="0.1" placeholder="Ex: Meta de 15 dias" style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.targetValue || ''} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, targetValue: e.target.value}})} />
-                    </div>
+                  <div style={{ marginTop: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.3rem' }}>Formato de Saída</label>
+                    <select style={{ width: '100%', padding: '0.5rem', fontSize: '0.85rem' }} value={widgetForm.advanced_config?.format || 'decimal'} onChange={e => setWidgetForm({...widgetForm, advanced_config: {...widgetForm.advanced_config, format: e.target.value}})}>
+                      <option value="decimal">Decimal (ex: 5.5 dias)</option>
+                      <option value="integer">Número Inteiro (ex: 6 dias)</option>
+                    </select>
                   </div>
                 </div>
               )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Base de Dados / Filtro Global</label>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Filtro de Processo (O que incluir?)</label>
                   <select style={{ width: '100%', padding: '0.6rem', border: '1px solid var(--border-color)', borderRadius: '4px' }} value={widgetForm.status_filter} onChange={e => setWidgetForm({...widgetForm, status_filter: e.target.value})}>
-                    <option value="Todos">Todo o Histórico (Sem filtro)</option>
-                    <option value="Concluído">Somente Concluídos (Admitidos)</option>
+                    <option value="Todos">Todo o Histórico</option>
+                    <option value="Concluído">Somente Admitidos (Concluídos)</option>
                     <option value="Reprovado">Somente Reprovados</option>
+                    <option value="Agendado">Somente Agendados (Entrevista)</option>
                   </select>
                 </div>
                 <div>
@@ -350,15 +348,18 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
+              {/* CHAVE DE VISIBILIDADE SIMPLIFICADA */}
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem' }}>Visibilidade (Quem pode ver este indicador no Dashboard?)</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  {availableRoles.map(role => (
-                    <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={widgetForm.roles_visible.includes(role)} onChange={() => handleRoleToggle(role)} style={{ cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} />
-                      {role}
-                    </label>
-                  ))}
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Visibilidade do Indicador</label>
+                <div style={{ display: 'flex', gap: '1.5rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input type="radio" name="visibility" checked={widgetForm.visibility_type === 'generic'} onChange={() => handleVisibilityChange('generic')} style={{ accentColor: 'var(--saritur-orange)', width: '18px', height: '18px' }} />
+                    <strong>Genérico</strong> (Todos os Usuários)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input type="radio" name="visibility" checked={widgetForm.visibility_type === 'internal'} onChange={() => handleVisibilityChange('internal')} style={{ accentColor: 'var(--saritur-orange)', width: '18px', height: '18px' }} />
+                    <strong>Interno</strong> (Apenas ADMIN, RH, DP e Psicólogos)
+                  </label>
                 </div>
               </div>
 
