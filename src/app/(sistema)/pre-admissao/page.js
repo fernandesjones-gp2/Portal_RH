@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye, Edit2 } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye, Edit2, BellRing } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
+  const [currentUserName, setCurrentUserName] = useState(''); // NOVO: Guarda o nome do usuário logado
   
   const [candidates, setCandidates] = useState([]);
   const [allCandidates, setAllCandidates] = useState([]); 
@@ -41,7 +42,9 @@ export default function PipelineAdmissaoPage() {
       const sessionUser = await api.me();
       if (sessionUser) {
         const role = sessionUser.data?.role || sessionUser.role || sessionUser[0]?.role || '';
+        const name = sessionUser.data?.name || sessionUser.name || sessionUser.email || 'SISTEMA';
         setCurrentUserRole(role);
+        setCurrentUserName(name);
       }
 
       const [allCandsData, unitsData, rolesData, reasonsData, usersData] = await Promise.all([
@@ -80,23 +83,8 @@ export default function PipelineAdmissaoPage() {
     return r;
   };
   const maskName = (val) => val.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s']/g, "");
-
-  const getBrazilIsoDate = (val) => {
-    if (!val) return null;
-    if (val.endsWith('Z') || val.match(/[+-]\d\d:\d\d$/)) return val;
-    return `${val}:00-03:00`;
-  };
-
-  const formatToBrazilDatetimeInput = (isoString) => {
-    if (!isoString) return '';
-    if (isoString.length === 16 && !isoString.includes('Z') && !isoString.includes('-')) return isoString; 
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return isoString;
-    const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-    const parts = formatter.formatToParts(d);
-    const val = (type) => parts.find(p => p.type === type)?.value;
-    return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`;
-  };
+  const getBrazilIsoDate = (val) => { if (!val) return null; if (val.endsWith('Z') || val.match(/[+-]\d\d:\d\d$/)) return val; return `${val}:00-03:00`; };
+  const formatToBrazilDatetimeInput = (isoString) => { if (!isoString) return ''; if (isoString.length === 16 && !isoString.includes('Z') && !isoString.includes('-')) return isoString; const d = new Date(isoString); if (isNaN(d.getTime())) return isoString; const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }); const parts = formatter.formatToParts(d); const val = (type) => parts.find(p => p.type === type)?.value; return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`; };
 
   function validateForm(data) {
     if (!data.name || data.name.trim().length < 3) return alert('❌ VALIDAÇÃO: O Nome Completo é obrigatório.'), false;
@@ -148,10 +136,7 @@ export default function PipelineAdmissaoPage() {
 
   const groupedBloco3 = [];
   const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
-  
-  if (cancelamentosSolicitados.length > 0) {
-    groupedBloco3.push({ date: '🚨 CANCELAMENTO SOLICITADO (AGUARDANDO DP)', candidates: cancelamentosSolicitados, isCancellationSection: true });
-  }
+  if (cancelamentosSolicitados.length > 0) groupedBloco3.push({ date: '🚨 CANCELAMENTO SOLICITADO (AGUARDANDO DP)', candidates: cancelamentosSolicitados, isCancellationSection: true });
 
   bloco3.filter(c => c.analysis_status !== 'Cancelamento Pendente').forEach(c => {
     const dateStr = new Date(c.admission_date).toLocaleDateString('pt-BR');
@@ -160,9 +145,20 @@ export default function PipelineAdmissaoPage() {
     group.candidates.push(c);
   });
 
-  const toggleNotes = (id) => {
-    if (expandedNotes.includes(id)) setExpandedNotes(expandedNotes.filter(i => i !== id));
-    else setExpandedNotes([...expandedNotes, id]);
+  // --- FUNÇÃO PARA LIMPAR NOTIFICAÇÃO AO LER ---
+  async function markAsRead(c) {
+    if (c.unread_feedback) {
+      try {
+        await api.candidates.update(c.id, { unread_feedback: false });
+        setCandidates(prev => prev.map(cand => cand.id === c.id ? {...cand, unread_feedback: false} : cand));
+      } catch(e) {}
+    }
+  }
+
+  const toggleNotes = (c) => {
+    markAsRead(c); // Limpa notificação
+    if (expandedNotes.includes(c.id)) setExpandedNotes(expandedNotes.filter(i => i !== c.id));
+    else setExpandedNotes([...expandedNotes, c.id]);
   };
 
   async function requestAnalysisBatch() {
@@ -170,7 +166,6 @@ export default function PipelineAdmissaoPage() {
     if (listToRequest.length === 0) return alert('Nenhum candidato no bloco 1 aguardando análise administrativa.');
     
     let htmlContent = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"><style>table { border-collapse: collapse; font-family: Arial, sans-serif; } th { background-color: #F37137; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; } td { border: 1px solid #000; padding: 8px; vertical-align: middle; }</style></head><body><table><tr><th>Data de Cadastro</th><th>Tipo de Processo</th><th>Nome do Candidato</th><th>Nome da Mãe</th><th>CPF</th><th>RG</th><th>Função (Cargo)</th><th>Unidade</th><th>Telefone</th><th>Data da Entrevista</th><th>Responsável pelo Processo</th><th>Status Atual</th></tr>`;
-
     listToRequest.forEach(c => {
       const createdAt = c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '';
       const interviewDate = c.interview_date ? new Date(c.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
@@ -195,7 +190,7 @@ export default function PipelineAdmissaoPage() {
   const handleDateChange = (val) => val ? new Date(val + 'T12:00:00').toISOString() : null;
   const formatInputDate = (isoString) => isoString ? isoString.split('T')[0] : '';
 
-  // SALVAR ETAPAS (STATUS)
+  // SALVAR ETAPAS (STATUS) E DETECTA NOVA MENSAGEM NO EDIT
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
@@ -217,6 +212,11 @@ export default function PipelineAdmissaoPage() {
       else if (c.analysis_status === 'Aprovado' || c.analysis_status === 'Reprovado') updates.analysis_update_date = new Date().toISOString();
     }
 
+    // Se o usuário adicionou feedback por aqui e estiver no Bloco 3, ativa a notificação
+    if (oldC && oldC.feedback !== c.feedback && c.status === 'Pré-Admissão (Pronto)') {
+      updates.unread_feedback = true;
+    }
+
     if (c.analysis_status === 'Reprovado' || c.medical_status === 'Inapto') {
       if (confirm('Atenção: A Análise foi Reprovada ou Médico deu Inapto. O candidato será movido para Cancelados/Reprovados. Confirmar?')) {
         updates.status = 'Reprovado';
@@ -230,7 +230,7 @@ export default function PipelineAdmissaoPage() {
     } catch (error) { alert('Erro ao atualizar: ' + error.message); }
   }
 
-  // SALVAR DADOS DE CADASTRO (Agora com todos os campos)
+  // SALVAR DADOS DE CADASTRO
   async function handleUpdateBasicData(e) {
     e.preventDefault();
     if (!validateForm(editingBasicData)) return;
@@ -303,14 +303,33 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  function openFeedbackModal(c) { setFeedbackCandidate(c); setFeedbackText(''); }
+  function openFeedbackModal(c) { 
+    markAsRead(c); // Limpa notificação ao abrir
+    setFeedbackCandidate(c); 
+    setFeedbackText(''); 
+  }
   
+  // --- SALVAR MENSAGEM COM USUÁRIO, DATA, HORA E NOTIFICAÇÃO ---
   async function handleSaveFeedback(e) {
     e.preventDefault();
     if(!feedbackText) return;
-    const newNote = `\n[${currentUserRole || 'SISTEMA'}] ${new Date().toLocaleDateString('pt-BR')}: ${feedbackText}`;
-    await api.candidates.update(feedbackCandidate.id, { feedback: (feedbackCandidate.feedback || '') + newNote });
-    setFeedbackCandidate(null); fetchData();
+    
+    // Formata o timestamp com Data e Hora exata de SP
+    const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    
+    // Adiciona o nome real do usuário
+    const newNote = `\n--- Adicionado em ${timestamp} por ${currentUserName} ---\n${feedbackText}\n`;
+    
+    const updates = { feedback: (feedbackCandidate.feedback || '') + newNote };
+    
+    // Aciona a notificação se o candidato estiver no Bloco 3
+    if (feedbackCandidate.status === 'Pré-Admissão (Pronto)') {
+      updates.unread_feedback = true;
+    }
+
+    await api.candidates.update(feedbackCandidate.id, updates);
+    setFeedbackCandidate(null); 
+    fetchData();
   }
 
   const getStatusColor = (status) => {
@@ -335,12 +354,19 @@ export default function PipelineAdmissaoPage() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h3 style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
+            <h3 style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {c.name}
+              {c.unread_feedback && isBloco3 && (
+                <span style={{ backgroundColor: 'var(--danger-color)', color: 'white', fontSize: '0.6rem', padding: '0.1rem 0.4rem', borderRadius: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <BellRing size={10}/> Nova Mensagem
+                </span>
+              )}
+            </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.job_roles?.name || c.job_role_name} • {c.units?.name || c.unit_name}</p>
           </div>
           
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={() => toggleNotes(c.id)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico Rápido">
+            <button onClick={() => toggleNotes(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico Rápido">
               <MessageSquareText size={16} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
             </button>
             
@@ -393,7 +419,7 @@ export default function PipelineAdmissaoPage() {
 
         {isBloco3 && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={() => setDetailsCandidate(c)} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas do Candidato">
+            <button onClick={() => { markAsRead(c); setDetailsCandidate(c); }} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas do Candidato">
               <Eye size={16} style={{ marginRight: '6px' }} /> Ver Detalhes
             </button>
             {isPendingCancellation ? (
@@ -544,7 +570,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAL 2: EDITAR DADOS BÁSICOS (CADASTRO) AGORA COM RESPONSÁVEL E DATA --- */}
+      {/* --- MODAL 2: EDITAR DADOS BÁSICOS (CADASTRO) --- */}
       {editingBasicData && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
