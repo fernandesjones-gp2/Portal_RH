@@ -5,6 +5,8 @@ import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X, Downl
 
 export default function ConcluidosPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
+  const [userPermissions, setUserPermissions] = useState({}); // RBAC Dinâmico
+
   const [candidates, setCandidates] = useState([]);
   const [units, setUnits] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -27,16 +29,27 @@ export default function ConcluidosPage() {
     setLoading(true);
     try {
       const me = await api.me();
+      let roleName = '';
       if (me) {
-        setCurrentUserRole(me.role || '');
+        roleName = me.role || '';
+        setCurrentUserRole(roleName);
       }
 
-      const [candidatesData, unitsData, rolesData, usersData] = await Promise.all([
+      const [candidatesData, unitsData, rolesData, usersData, customRolesData] = await Promise.all([
         api.candidates.list({ status: 'Concluído', orderBy: 'admission_date', order: 'desc' }),
         api.units.list(),
         api.jobRoles.list(),
-        api.users.list()
+        api.users.list(),
+        api.customRoles.list().catch(() => []) // Busca a Matriz Dinâmica
       ]);
+
+      // Associa as permissões da matriz ao usuário logado
+      if (me && customRolesData) {
+        const myRoleObj = customRolesData.find(r => r.name === roleName);
+        if (myRoleObj && myRoleObj.permissions) {
+          setUserPermissions(myRoleObj.permissions);
+        }
+      }
 
       if (candidatesData) {
         const apenasConcluidos = candidatesData.filter(c => c.status === 'Concluído');
@@ -86,7 +99,6 @@ export default function ConcluidosPage() {
       const d = new Date(c.admission_date);
       const tzOffset = d.getTimezoneOffset() * 60000;
       const localDateStr = new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
-      
       if (filterDateFrom && localDateStr < filterDateFrom) return false;
       if (filterDateTo && localDateStr > filterDateTo) return false;
     }
@@ -95,67 +107,32 @@ export default function ConcluidosPage() {
 
   const isCandidateCancelable = (admissionDateStr) => {
     if (!admissionDateStr) return false;
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const admDate = new Date(admissionDateStr);
-    admDate.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const admDate = new Date(admissionDateStr); admDate.setHours(0,0,0,0);
     return admDate >= today;
   };
 
-  // --- MOTOR DE EXPORTAÇÃO PARA EXCEL ---
   function handleExportExcel() {
-    if (filteredCandidates.length === 0) return alert('Nenhum candidato encontrado com os filtros atuais para exportar.');
-
-    // DICIONÁRIO DE COLUNAS CONFIGURÁVEL:
-    // Para adicionar um campo no futuro, basta criar uma nova linha aqui no padrão:
-    // { label: 'Nome da Coluna no Excel', value: (c) => c.nome_do_campo_no_banco }
+    if (filteredCandidates.length === 0) return alert('Nenhum candidato encontrado com os filtros atuais.');
     const exportColumns = [
       { label: 'Nº', value: (c, index) => index + 1 },
       { label: 'Nome Completo', value: (c) => c.name || '' },
       { label: 'Função', value: (c) => roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || '' },
       { label: 'Unidade', value: (c) => units.find(u => u.id === c.unit_id)?.name || c.unit_name || '' },
       { label: 'Data de Admissão', value: (c) => c.admission_date ? new Date(c.admission_date).toLocaleDateString('pt-BR') : '' },
-      
-      // EXEMPLOS DE CAMPOS FUTUROS (Basta descomentar para usar):
-      // { label: 'CPF', value: (c) => c.cpf || '' },
-      // { label: 'PCD', value: (c) => c.is_pcd ? 'SIM' : 'NÃO' },
-      // { label: 'Recrutador Responsável', value: (c) => responsibles.find(r => r.id === c.responsible_id)?.name || c.responsible_name || 'Sistema' }
     ];
 
-    // Constrói a tabela HTML que o Excel lê nativamente
-    let htmlContent = `<html xmlns:x="urn:schemas-microsoft-com:office:excel">
-      <head>
-        <meta charset="utf-8">
-        <style>
-          table { border-collapse: collapse; font-family: Arial, sans-serif; }
-          th { background-color: #057a55; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; }
-          td { border: 1px solid #000; padding: 8px; vertical-align: middle; }
-        </style>
-      </head>
-      <body>
-        <table>
-          <tr>${exportColumns.map(col => `<th>${col.label}</th>`).join('')}</tr>
-          ${filteredCandidates.map((c, index) => `
-            <tr>${exportColumns.map(col => `<td>${col.value(c, index)}</td>`).join('')}</tr>
-          `).join('')}
-        </table>
-      </body>
-    </html>`;
+    let htmlContent = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"><style>table { border-collapse: collapse; font-family: Arial, sans-serif; } th { background-color: #057a55; color: white; font-weight: bold; border: 1px solid #000; padding: 8px; text-align: left; } td { border: 1px solid #000; padding: 8px; vertical-align: middle; }</style></head><body><table><tr>${exportColumns.map(col => `<th>${col.label}</th>`).join('')}</tr>${filteredCandidates.map((c, index) => `<tr>${exportColumns.map(col => `<td>${col.value(c, index)}</td>`).join('')}</tr>`).join('')}</table></body></html>`;
 
-    // Processo de Download
     const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    
-    // Nome do arquivo gerado automaticamente com a data
     const fileName = `Relatorio_Admissoes_${new Date().toISOString().split('T')[0]}.xls`;
-    
-    link.href = url;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.href = url; link.setAttribute('download', fileName); document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
+
+  // Regra Blindada: Apenas ADMIN, RECRUITER_ANALYST ou quem tem permissão 'Delete' na matriz desta tela
+  const canUserCancel = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/concluidos']?.delete;
 
   return (
     <div>
@@ -165,10 +142,8 @@ export default function ConcluidosPage() {
           <p style={{ color: 'var(--text-muted)' }}>Histórico completo de candidatos que finalizaram a admissão no sistema.</p>
         </div>
         
-        {/* NOVO BOTÃO DE EXPORTAÇÃO */}
         <button className="btn-primary" onClick={handleExportExcel} style={{ backgroundColor: 'var(--success-color)', padding: '0.6rem 1.25rem' }}>
-          <Download size={18} style={{ marginRight: '8px' }} />
-          Exportar Relatório (.XLS)
+          <Download size={18} style={{ marginRight: '8px' }} /> Exportar Relatório (.XLS)
         </button>
       </div>
 
@@ -179,45 +154,13 @@ export default function ConcluidosPage() {
         </div>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Tipo de Processo</label>
-            <select style={{ width: '100%', fontSize: '0.85rem' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}>
-              <option value="">Todos</option>
-              <option value="Admissão">Admissão</option>
-              <option value="Readmissão">Readmissão</option>
-              <option value="Promoção">Promoção</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Unidade</label>
-            <select style={{ width: '100%', fontSize: '0.85rem' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
-              <option value="">Todas</option>
-              {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Função</label>
-            <select style={{ width: '100%', fontSize: '0.85rem' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}>
-              <option value="">Todas</option>
-              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Responsável</label>
-            <select style={{ width: '100%', fontSize: '0.85rem' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}>
-              <option value="">Todos</option>
-              {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
-            </select>
-          </div>
+          <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Tipo de Processo</label><select style={{ width: '100%', fontSize: '0.85rem' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}><option value="">Todos</option><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option></select></div>
+          <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Unidade</label><select style={{ width: '100%', fontSize: '0.85rem' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+          <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Função</label><select style={{ width: '100%', fontSize: '0.85rem' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}><option value="">Todas</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+          <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Responsável</label><select style={{ width: '100%', fontSize: '0.85rem' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}><option value="">Todos</option>{responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}</select></div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (De)</label>
-              <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (Até)</label>
-              <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
-            </div>
+            <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (De)</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} /></div>
+            <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (Até)</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem' }} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} /></div>
           </div>
         </div>
       </div>
@@ -233,8 +176,6 @@ export default function ConcluidosPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
           {filteredCandidates.map((c) => {
             const cancelable = isCandidateCancelable(c.admission_date);
-            const canUserCancel = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole);
-
             const roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'Função não informada';
             const unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'Unidade não informada';
             const recruiterObj = responsibles.find(r => r.id === c.responsible_id);
@@ -246,14 +187,8 @@ export default function ConcluidosPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <CheckCircle size={20} color="var(--success-color)" />
-                      <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                        {c.process_type}
-                      </span>
-                      {c.is_pcd && (
-                        <span style={{ backgroundColor: '#0284c7', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                          PCD
-                        </span>
-                      )}
+                      <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>{c.process_type}</span>
+                      {c.is_pcd && <span style={{ backgroundColor: '#0284c7', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>PCD</span>}
                     </div>
                     
                     {canUserCancel && (
@@ -273,9 +208,7 @@ export default function ConcluidosPage() {
                   </div>
 
                   <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                    {roleName} • {unitName}
-                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>{roleName} • {unitName}</p>
                 </div>
 
                 <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
@@ -287,9 +220,7 @@ export default function ConcluidosPage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <UserCheck size={14} color="var(--text-muted)" />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Recrutador: {recruiterName}
-                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Recrutador: {recruiterName}</span>
                   </div>
                 </div>
               </div>
@@ -305,29 +236,10 @@ export default function ConcluidosPage() {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Solicitar Cancelamento</h2>
               <button onClick={() => setCancelCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
             </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-              Iniciando pedido de cancelamento para <strong>{cancelCandidate.name}</strong>. O processo retornará ao Bloco 3 do Pipeline aguardando a homologação final do DP.
-            </p>
             <form onSubmit={handleConfirmCancel} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
-                <select required style={{ width: '100%', padding: '0.6rem' }} value={cancelForm.reason} onChange={e => setCancelForm({...cancelForm, reason: e.target.value})}>
-                  <option value="">-- Selecione o motivo --</option>
-                  <option value="Desistência do Candidato de Última Hora">Desistência do Candidato de Última Hora</option>
-                  <option value="Identificada irregularidade documental tardia">Identificada irregularidade documental tardia</option>
-                  <option value="Mudança de estratégia / Vaga congelada">Mudança de estratégia / Vaga congelada</option>
-                  <option value="Erro Operacional de Conclusão">Erro Operacional de Conclusão</option>
-                  <option value="Outros">Outros</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações / Justificativa</label>
-                <textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} placeholder="Insira os detalhes obrigatórios ou notas para o DP..." value={cancelForm.notes} onChange={e => setCancelForm({...cancelForm, notes: e.target.value})} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setCancelCandidate(null)}>Voltar</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Enviar para o Pipeline</button>
-              </div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label><select required style={{ width: '100%', padding: '0.6rem' }} value={cancelForm.reason} onChange={e => setCancelForm({...cancelForm, reason: e.target.value})}><option value="">-- Selecione o motivo --</option><option value="Desistência do Candidato de Última Hora">Desistência do Candidato de Última Hora</option><option value="Identificada irregularidade documental tardia">Identificada irregularidade documental tardia</option><option value="Mudança de estratégia / Vaga congelada">Mudança de estratégia / Vaga congelada</option><option value="Erro Operacional de Conclusão">Erro Operacional de Conclusão</option><option value="Outros">Outros</option></select></div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações / Justificativa</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} value={cancelForm.notes} onChange={e => setCancelForm({...cancelForm, notes: e.target.value})} /></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setCancelCandidate(null)}>Voltar</button><button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Enviar para o Pipeline</button></div>
             </form>
           </div>
         </div>
