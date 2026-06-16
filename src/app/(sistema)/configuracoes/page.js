@@ -155,7 +155,13 @@ export default function ConfiguracoesPage() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button onClick={() => { setEditingWidget(w); setWidgetForm({...w, visibility_type: w.roles_visible?.length > 6 ? 'generic' : 'internal'}); setIsWidgetModalOpen(true); }}><Edit2 size={14} color="var(--text-muted)"/></button>
+                  <button onClick={() => { 
+                    setEditingWidget(w); 
+                    // SAFEGUARD PARA NÃO QUEBRAR SE O CARD ANTIGO FOR VAZIO
+                    const safeConfig = w.advanced_config || { format: 'integer', size: 'half', groupBy: 'all', funnelColors: defaultFunnelColors };
+                    setWidgetForm({...w, advanced_config: safeConfig, visibility_type: w.roles_visible?.length > 6 ? 'generic' : 'internal'}); 
+                    setIsWidgetModalOpen(true); 
+                  }}><Edit2 size={14} color="var(--text-muted)"/></button>
                   <button onClick={() => handleDeleteWidget(w.id)}><Trash2 size={14} color="var(--danger-color)"/></button>
                 </div>
               </div>
@@ -393,6 +399,7 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
+              {/* CHAVE DE VISIBILIDADE SIMPLIFICADA */}
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Visibilidade do Indicador</label>
                 <div style={{ display: 'flex', gap: '1.5rem' }}>
