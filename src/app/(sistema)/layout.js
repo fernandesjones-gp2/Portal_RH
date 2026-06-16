@@ -14,7 +14,7 @@ export default function SistemaLayout({ children }) {
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('Carregando...');
   const [userRole, setUserRole] = useState('');
-  const [userStatus, setUserStatus] = useState(''); // NOVO: Controle de status
+  const [userStatus, setUserStatus] = useState(''); 
 
   const menuItems = [
     { name: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
@@ -41,7 +41,6 @@ export default function SistemaLayout({ children }) {
           return;
         }
 
-        // Busca as informações do usuário logado (agora incluindo o STATUS)
         const user = { name: me.name, role: me.role, status: me.status };
 
         if (user) {
@@ -49,11 +48,25 @@ export default function SistemaLayout({ children }) {
           setUserRole(user.role);
           setUserStatus(user.status);
 
-          const perms = await api.rolePermissions.list(user.role);
-
-          if (perms) {
-            setAllowedPaths(perms.map(p => p.menu_path));
+          // CONEXÃO COM A NOVA MATRIZ DE PERMISSÕES DINÂMICA
+          try {
+            const customRoles = await api.customRoles.list();
+            const myRoleObj = customRoles.find(r => r.name === user.role);
+            
+            if (myRoleObj && myRoleObj.permissions) {
+              // Extrai apenas as rotas onde a permissão de "Visualizar" (view) é verdadeira
+              const allowed = Object.keys(myRoleObj.permissions).filter(
+                path => myRoleObj.permissions[path].view === true
+              );
+              setAllowedPaths(allowed);
+            } else {
+              setAllowedPaths([]); // Sem acesso se o perfil não existir na matriz
+            }
+          } catch (err) {
+            console.error('Erro ao buscar a Matriz de Perfis:', err);
+            setAllowedPaths([]);
           }
+
         } else {
           setUserName(me.email);
           setUserRole('RECRUITER');
@@ -76,7 +89,7 @@ export default function SistemaLayout({ children }) {
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif' }}>
-        <p style={{ fontWeight: '500' }}>Verificando chaves de segurança...</p>
+        <p style={{ fontWeight: '500' }}>Verificando chaves de segurança e matriz de acessos...</p>
       </div>
     );
   }
@@ -103,9 +116,29 @@ export default function SistemaLayout({ children }) {
   const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
 
   const isAllowed = allowedPaths.includes(pathname);
+  
+  // Se ele não pode ver a tela atual, mas tem outras telas, joga ele para a primeira disponível
   if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
     router.push(allowedPaths[0]);
     return null;
+  }
+
+  // Se não tem permissão de ver absolutamente NENHUMA TELA
+  if (allowedPaths.length === 0 && pathname !== '/') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif', padding: '2rem' }}>
+        <div className="glass-panel" style={{ padding: '3rem', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+          <ShieldAlert size={64} color="var(--danger-color)" style={{ marginBottom: '1.5rem' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>Acesso Restrito</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', lineHeight: '1.6' }}>
+            O seu perfil de usuário <strong>({userRole})</strong> não possui permissão para visualizar nenhum módulo deste sistema. Solicite a um administrador que configure seus acessos na Matriz.
+          </p>
+          <button onClick={handleLogout} className="btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+            <LogOut size={18} /> Sair do Sistema
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const initials = userName ? userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'RH';
