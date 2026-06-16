@@ -5,7 +5,8 @@ import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
-  const [currentUserName, setCurrentUserName] = useState(''); // NOVO: Guarda o nome do usuário logado
+  const [currentUserName, setCurrentUserName] = useState('');
+  const [userPermissions, setUserPermissions] = useState({}); // RBAC Dinâmico
   
   const [candidates, setCandidates] = useState([]);
   const [allCandidates, setAllCandidates] = useState([]); 
@@ -40,20 +41,30 @@ export default function PipelineAdmissaoPage() {
     setLoading(true);
     try {
       const sessionUser = await api.me();
+      let roleName = '';
       if (sessionUser) {
-        const role = sessionUser.data?.role || sessionUser.role || sessionUser[0]?.role || '';
+        roleName = sessionUser.data?.role || sessionUser.role || sessionUser[0]?.role || '';
         const name = sessionUser.data?.name || sessionUser.name || sessionUser.email || 'SISTEMA';
-        setCurrentUserRole(role);
+        setCurrentUserRole(roleName);
         setCurrentUserName(name);
       }
 
-      const [allCandsData, unitsData, rolesData, reasonsData, usersData] = await Promise.all([
+      const [allCandsData, unitsData, rolesData, reasonsData, usersData, customRolesData] = await Promise.all([
         api.candidates.list({ _t: Date.now() }),
         api.units.list(),
         api.jobRoles.list(),
         api.cancellationReasons.list().catch(() => []),
-        api.users.list()
+        api.users.list(),
+        api.customRoles.list().catch(() => []) // Busca a Matriz Dinâmica
       ]);
+      
+      // Associa as permissões da matriz ao usuário logado
+      if (sessionUser && customRolesData) {
+        const myRoleObj = customRolesData.find(r => r.name === roleName);
+        if (myRoleObj && myRoleObj.permissions) {
+          setUserPermissions(myRoleObj.permissions);
+        }
+      }
       
       if (allCandsData) {
         setAllCandidates(allCandsData);
@@ -71,7 +82,6 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  // --- MÁSCARAS E VALIDAÇÕES ---
   const maskCPF = (val) => val.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1');
   const maskPhone = (val) => {
     let r = val.replace(/\D/g, "");
@@ -104,17 +114,14 @@ export default function PipelineAdmissaoPage() {
     if (!cpfToCheck) return null;
     const cleanCpf = String(cpfToCheck).replace(/\D/g, '');
     if (cleanCpf.length !== 11) return null;
-
     const existing = allCandidates.filter(c => c.cpf && String(c.cpf).replace(/\D/g, '') === cleanCpf && c.id !== currentCandidateId);
     if (existing.length === 0) return null;
-
     existing.sort((a, b) => (b.created_at ? new Date(b.created_at).getTime() : 0) - (a.created_at ? new Date(a.created_at).getTime() : 0));
     const latest = existing[0];
     const isClosed = ['Reprovado', 'Concluído', 'Cancelado'].includes(latest.status);
     const monthsDiff = (new Date().getTime() - new Date(latest.created_at || new Date()).getTime()) / (1000 * 60 * 60 * 24 * 30);
     const TRAVA_MESES = 6; 
     const locationMsg = `Candidato(a): ${latest.name}\nStatus: ${latest.status}\nFunção: ${latest.job_roles?.name || latest.job_role_name || 'N/A'}\nUnidade: ${latest.units?.name || latest.unit_name || 'N/A'}`;
-
     if (!isClosed || monthsDiff < TRAVA_MESES) {
       return { block: true, message: `❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nEste CPF já está em uso em um processo ativo ou recente na plataforma:\n\n${locationMsg}\n\nRegra: Apenas processos encerrados há mais de ${TRAVA_MESES} meses podem gerar um novo cadastro.` };
     } else {
@@ -145,7 +152,6 @@ export default function PipelineAdmissaoPage() {
     group.candidates.push(c);
   });
 
-  // --- FUNÇÃO PARA LIMPAR NOTIFICAÇÃO AO LER ---
   async function markAsRead(c) {
     if (c.unread_feedback) {
       try {
@@ -156,7 +162,7 @@ export default function PipelineAdmissaoPage() {
   }
 
   const toggleNotes = (c) => {
-    markAsRead(c); // Limpa notificação
+    markAsRead(c); 
     if (expandedNotes.includes(c.id)) setExpandedNotes(expandedNotes.filter(i => i !== c.id));
     else setExpandedNotes([...expandedNotes, c.id]);
   };
@@ -187,75 +193,34 @@ export default function PipelineAdmissaoPage() {
     fetchData();
   }
 
-  const handleDateChange = (val) => val ? new Date(val + 'T12:00:00').toISOString() : null;
-  const formatInputDate = (isoString) => isoString ? isoString.split('T')[0] : '';
-
-  // SALVAR ETAPAS (STATUS) E DETECTA NOVA MENSAGEM NO EDIT
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
-    
-    const updates = {
-      analysis_status: c.analysis_status,
-      medical_status: c.medical_status,
-      docs_status: c.docs_status,
-      feedback: c.feedback,
-      medical_request_date: c.medical_request_date,
-      medical_result_date: c.medical_result_date,
-      docs_request_date: c.docs_request_date,
-      docs_receive_date: c.docs_receive_date
-    };
-
+    const updates = { analysis_status: c.analysis_status, medical_status: c.medical_status, docs_status: c.docs_status, feedback: c.feedback, medical_request_date: c.medical_request_date, medical_result_date: c.medical_result_date, docs_request_date: c.docs_request_date, docs_receive_date: c.docs_receive_date };
     const oldC = candidates.find(cand => cand.id === c.id);
     if (oldC && oldC.analysis_status !== c.analysis_status) {
       if (c.analysis_status === 'Solicitada') updates.analysis_request_date = new Date().toISOString();
       else if (c.analysis_status === 'Aprovado' || c.analysis_status === 'Reprovado') updates.analysis_update_date = new Date().toISOString();
     }
-
-    // Se o usuário adicionou feedback por aqui e estiver no Bloco 3, ativa a notificação
-    if (oldC && oldC.feedback !== c.feedback && c.status === 'Pré-Admissão (Pronto)') {
-      updates.unread_feedback = true;
-    }
-
+    if (oldC && oldC.feedback !== c.feedback && c.status === 'Pré-Admissão (Pronto)') updates.unread_feedback = true;
     if (c.analysis_status === 'Reprovado' || c.medical_status === 'Inapto') {
-      if (confirm('Atenção: A Análise foi Reprovada ou Médico deu Inapto. O candidato será movido para Cancelados/Reprovados. Confirmar?')) {
-        updates.status = 'Reprovado';
-      } else return;
+      if (confirm('Atenção: A Análise foi Reprovada ou Médico deu Inapto. O candidato será movido para Cancelados/Reprovados. Confirmar?')) updates.status = 'Reprovado';
+      else return;
     }
-
-    try {
-      await api.candidates.update(c.id, updates);
-      setEditingCandidate(null);
-      fetchData();
-    } catch (error) { alert('Erro ao atualizar: ' + error.message); }
+    try { await api.candidates.update(c.id, updates); setEditingCandidate(null); fetchData(); } catch (error) { alert('Erro ao atualizar: ' + error.message); }
   }
 
-  // SALVAR DADOS DE CADASTRO
   async function handleUpdateBasicData(e) {
     e.preventDefault();
     if (!validateForm(editingBasicData)) return;
-
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd, responsible_id, interview_date } = editingBasicData;
-    
     if (['Admissão', 'Readmissão'].includes(process_type) && cpf) {
       const warning = getDuplicateWarning(cpf, id);
-      if (warning) {
-        if (warning.block) { alert(warning.message); return; } 
-        else { if (!confirm(warning.message)) return; }
-      }
+      if (warning) { if (warning.block) { alert(warning.message); return; } else { if (!confirm(warning.message)) return; } }
     }
-
     const interviewIso = getBrazilIsoDate(interview_date);
-
-    try { 
-      await api.candidates.update(id, { 
-        process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd,
-        responsible_id, interview_date: interviewIso 
-      }); 
-    } catch (err) { return alert('Erro ao atualizar: ' + err.message); }
-    
-    setEditingBasicData(null);
-    fetchData();
+    try { await api.candidates.update(id, { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd, responsible_id, interview_date: interviewIso }); } catch (err) { return alert('Erro ao atualizar: ' + err.message); }
+    setEditingBasicData(null); fetchData();
   }
 
   async function handleConfirmReject(e) {
@@ -288,7 +253,6 @@ export default function PipelineAdmissaoPage() {
     if (!admissionDate) return;
     const selected = new Date(admissionDate + 'T12:00:00');
     const today = new Date(); today.setHours(0, 0, 0, 0); 
-
     if (selected < today) return alert('❌ BLOQUEIO: A data de admissão não pode ser retroativa (anterior a hoje).');
     try {
       await api.candidates.update(admissionModalCandidate.id, { status: 'Pré-Admissão (Pronto)', admission_date: selected.toISOString() });
@@ -303,33 +267,17 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  function openFeedbackModal(c) { 
-    markAsRead(c); // Limpa notificação ao abrir
-    setFeedbackCandidate(c); 
-    setFeedbackText(''); 
-  }
+  function openFeedbackModal(c) { markAsRead(c); setFeedbackCandidate(c); setFeedbackText(''); }
   
-  // --- SALVAR MENSAGEM COM USUÁRIO, DATA, HORA E NOTIFICAÇÃO ---
   async function handleSaveFeedback(e) {
     e.preventDefault();
     if(!feedbackText) return;
-    
-    // Formata o timestamp com Data e Hora exata de SP
     const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    
-    // Adiciona o nome real do usuário
     const newNote = `\n--- Adicionado em ${timestamp} por ${currentUserName} ---\n${feedbackText}\n`;
-    
     const updates = { feedback: (feedbackCandidate.feedback || '') + newNote };
-    
-    // Aciona a notificação se o candidato estiver no Bloco 3
-    if (feedbackCandidate.status === 'Pré-Admissão (Pronto)') {
-      updates.unread_feedback = true;
-    }
-
+    if (feedbackCandidate.status === 'Pré-Admissão (Pronto)') updates.unread_feedback = true;
     await api.candidates.update(feedbackCandidate.id, updates);
-    setFeedbackCandidate(null); 
-    fetchData();
+    setFeedbackCandidate(null); fetchData();
   }
 
   const getStatusColor = (status) => {
@@ -346,12 +294,20 @@ export default function PipelineAdmissaoPage() {
     return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
   };
 
+  // REGRAS BLINDADAS (Hardcoded Roles + Matriz de Permissões)
+  const canExportXLS = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.create;
+
   const renderCard = (c, isBloco3 = false) => {
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
     
+    // Regra Blindada: Apenas ADMIN, RECRUITER_ANALYST ou quem tem permissão 'Delete' na matriz
+    const canInterruptProcess = !isPendingCancellation && (
+      (!isBloco3 && currentUserRole !== 'DP') || 
+      (isBloco3 && (['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.delete))
+    );
+
     return (
       <div key={c.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: isPendingCancellation ? '4px solid var(--danger-color)' : (isBloco3 ? '4px solid var(--success-color)' : 'none'), backgroundColor: isPendingCancellation ? 'rgba(224, 36, 36, 0.03)' : 'var(--surface-color)' }}>
-        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <h3 style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -364,33 +320,17 @@ export default function PipelineAdmissaoPage() {
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.job_roles?.name || c.job_role_name} • {c.units?.name || c.unit_name}</p>
           </div>
-          
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button onClick={() => toggleNotes(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico Rápido">
-              <MessageSquareText size={16} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} />
-            </button>
-            
-            {(currentUserRole !== 'DP' || isBloco3) && (
-              <button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem">
-                <MessageSquare size={16} color="var(--text-main)" />
-              </button>
-            )}
-
+            <button onClick={() => toggleNotes(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Ver Histórico Rápido"><MessageSquareText size={16} color={expandedNotes.includes(c.id) ? 'var(--saritur-orange)' : 'var(--text-muted)'} /></button>
+            {(currentUserRole !== 'DP' || isBloco3) && (<button onClick={() => openFeedbackModal(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)' }} title="Nova Mensagem"><MessageSquare size={16} color="var(--text-main)" /></button>)}
             {currentUserRole !== 'DP' && !isBloco3 && (
               <>
-                <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Atualizar Status das Etapas">
-                  <Settings2 size={14} /> Etapas
-                </button>
-                <button onClick={() => setEditingBasicData({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Editar Dados Cadastrais e Responsável">
-                  <Edit2 size={14} /> Cadastro
-                </button>
+                <button onClick={() => setEditingCandidate({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Atualizar Status das Etapas"><Settings2 size={14} /> Etapas</button>
+                <button onClick={() => setEditingBasicData({...c})} className="btn-secondary" style={{ padding: '0.4rem 0.6rem', fontSize: '0.75rem', borderRadius: 'var(--radius-sm)' }} title="Editar Dados Cadastrais"><Edit2 size={14} /> Cadastro</button>
               </>
             )}
-
-            {!isPendingCancellation && ((!isBloco3 && currentUserRole !== 'DP') || (isBloco3 && ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole))) && (
-              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo">
-                <ThumbsDown size={14} />
-              </button>
+            {canInterruptProcess && (
+              <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo"><ThumbsDown size={14} /></button>
             )}
           </div>
         </div>
@@ -403,47 +343,24 @@ export default function PipelineAdmissaoPage() {
         )}
 
         <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Circle size={10} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} />
-            <span style={{ fontWeight: '600' }}>Análise:</span> <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Circle size={10} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} />
-            <span style={{ fontWeight: '600' }}>Médico:</span> <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Circle size={10} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} />
-            <span style={{ fontWeight: '600' }}>Doc:</span> <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span>
-          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Circle size={10} fill={getStatusColor(c.analysis_status)} color={getStatusColor(c.analysis_status)} /><span style={{ fontWeight: '600' }}>Análise:</span> <span style={{ color: 'var(--text-muted)' }}>{c.analysis_status}</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Circle size={10} fill={getStatusColor(c.medical_status)} color={getStatusColor(c.medical_status)} /><span style={{ fontWeight: '600' }}>Médico:</span> <span style={{ color: 'var(--text-muted)' }}>{c.medical_status}</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Circle size={10} fill={getStatusColor(c.docs_status)} color={getStatusColor(c.docs_status)} /><span style={{ fontWeight: '600' }}>Doc:</span> <span style={{ color: 'var(--text-muted)' }}>{c.docs_status}</span></div>
         </div>
 
         {isBloco3 && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-            <button onClick={() => { markAsRead(c); setDetailsCandidate(c); }} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas do Candidato">
-              <Eye size={16} style={{ marginRight: '6px' }} /> Ver Detalhes
-            </button>
+            <button onClick={() => { markAsRead(c); setDetailsCandidate(c); }} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas"><Eye size={16} style={{ marginRight: '6px' }} /> Ver Detalhes</button>
             {isPendingCancellation ? (
-              ['ADMIN', 'DP'].includes(currentUserRole) && (
-                <button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--danger-color)' }}>
-                  <ShieldAlert size={16} style={{ marginRight: '6px' }} /> Confirmar Cancelamento
-                </button>
-              )
+              ['ADMIN', 'DP'].includes(currentUserRole) && (<button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--danger-color)' }}><ShieldAlert size={16} style={{ marginRight: '6px' }} /> Confirmar Cancelamento</button>)
             ) : (
-              ['ADMIN', 'DP'].includes(currentUserRole) && (
-                <button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--success-color)' }}>
-                  <FileCheck size={16} style={{ marginRight: '6px' }} /> Concluir Admissão
-                </button>
-              )
+              ['ADMIN', 'DP'].includes(currentUserRole) && (<button onClick={() => handleConcluirFinal(c.id)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--success-color)' }}><FileCheck size={16} style={{ marginRight: '6px' }} /> Concluir Admissão</button>)
             )}
           </div>
         )}
 
         {currentUserRole !== 'DP' && !isBloco3 && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && (
-          <div style={{ marginTop: '0.75rem' }}>
-            <button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', justifyContent: 'center' }}>
-              Definir Data de Admissão <ArrowRight size={16} style={{ marginLeft: '6px' }}/>
-            </button>
-          </div>
+          <div style={{ marginTop: '0.75rem' }}><button onClick={() => handleOpenAdmissionModal(c)} className="btn-primary" style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', justifyContent: 'center' }}>Definir Data de Admissão <ArrowRight size={16} style={{ marginLeft: '6px' }}/></button></div>
         )}
       </div>
     );
@@ -452,11 +369,8 @@ export default function PipelineAdmissaoPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p>
-        </div>
-        {['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) && (
+        <div><h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Admissão</h1><p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhe os candidatos aprovados em 3 etapas até a efetivação.</p></div>
+        {canExportXLS && (
           <button className="btn-primary" onClick={requestAnalysisBatch} style={{ padding: '0.75rem 1.5rem' }}>
             <Send size={18} style={{ marginRight: '0.5rem' }} /> Solicitar Análises (.XLS)
           </button>
@@ -464,17 +378,14 @@ export default function PipelineAdmissaoPage() {
       </div>
 
       <div className="glass-panel" style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', backgroundColor: 'var(--surface-color)', padding: '1.25rem', borderRadius: 'var(--radius-lg)', alignItems: 'center' }}>
-        <Filter size={20} color="var(--saritur-orange)" />
-        <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
+        <Filter size={20} color="var(--saritur-orange)" /><span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-main)', marginRight: '0.5rem' }}>Filtros:</span>
         <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterProcessType} onChange={e => setFilterProcessType(e.target.value)}><option value="">Todos Processos</option><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option></select>
         <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Todas Unidades</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
         <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterRole} onChange={e => setFilterRole(e.target.value)}><option value="">Todas Funções</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
         <select style={{ padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem', minWidth: '150px' }} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)}><option value="">Responsáveis</option>{responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}</select>
       </div>
 
-      {loading ? (
-        <p style={{ color: 'var(--text-muted)' }}>Carregando Pipeline...</p>
-      ) : (
+      {loading ? (<p style={{ color: 'var(--text-muted)' }}>Carregando Pipeline...</p>) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '2rem', alignItems: 'start' }}>
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><AlertCircle size={24} color="var(--saritur-orange)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>1. Em Andamento ({bloco1.length})</h2></div>
@@ -506,10 +417,7 @@ export default function PipelineAdmissaoPage() {
       {editingCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Atualizar Etapas: {editingCandidate.name}</h2>
-              <button onClick={() => setEditingCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Atualizar Etapas: {editingCandidate.name}</h2><button onClick={() => setEditingCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleSaveEditingStages} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
                 <div style={{ padding: '1rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
@@ -523,18 +431,8 @@ export default function PipelineAdmissaoPage() {
                   <select style={{ width: '100%', padding: '0.6rem', marginBottom: '0.75rem' }} value={editingCandidate.medical_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, medical_status: e.target.value})}>
                     <option value="Pendente">Pendente</option><option value="Solicitada">Solicitada</option><option value="Apto">Apto</option><option value="Inapto">Inapto</option>
                   </select>
-                  {['Solicitada', 'Apto', 'Inapto'].includes(editingCandidate.medical_status) && (
-                    <div style={{ marginBottom: '0.75rem' }}>
-                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
-                      <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_request_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_request_date: handleDateChange(e.target.value)})} />
-                    </div>
-                  )}
-                  {['Apto', 'Inapto'].includes(editingCandidate.medical_status) && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data do Resultado:</label>
-                      <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_result_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_result_date: handleDateChange(e.target.value)})} />
-                    </div>
-                  )}
+                  {['Solicitada', 'Apto', 'Inapto'].includes(editingCandidate.medical_status) && (<div style={{ marginBottom: '0.75rem' }}><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_request_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_request_date: handleDateChange(e.target.value)})} /></div>)}
+                  {['Apto', 'Inapto'].includes(editingCandidate.medical_status) && (<div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data do Resultado:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_result_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_result_date: handleDateChange(e.target.value)})} /></div>)}
                 </div>
               </div>
               <div style={{ padding: '1rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
@@ -544,247 +442,61 @@ export default function PipelineAdmissaoPage() {
                 </select>
                 {['Solicitada', 'Recebida'].includes(editingCandidate.docs_status) && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label>
-                      <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_request_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_request_date: handleDateChange(e.target.value)})} />
-                    </div>
-                    {['Recebida'].includes(editingCandidate.docs_status) && (
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data de Recebimento:</label>
-                        <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_receive_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_receive_date: handleDateChange(e.target.value)})} />
-                      </div>
-                    )}
+                    <div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_request_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_request_date: handleDateChange(e.target.value)})} /></div>
+                    {['Recebida'].includes(editingCandidate.docs_status) && (<div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data de Recebimento:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_receive_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_receive_date: handleDateChange(e.target.value)})} /></div>)}
                   </div>
                 )}
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Observações</label>
-                <textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem' }} value={editingCandidate.feedback || ''} onChange={e => setEditingCandidate({...editingCandidate, feedback: e.target.value})} placeholder="Digite as observações aqui..."></textarea>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setEditingCandidate(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary" style={{ padding: '0.6rem 1.25rem' }}>Salvar Alterações</button>
-              </div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Observações</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem' }} value={editingCandidate.feedback || ''} onChange={e => setEditingCandidate({...editingCandidate, feedback: e.target.value})} placeholder="Digite as observações aqui..."></textarea></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setEditingCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary" style={{ padding: '0.6rem 1.25rem' }}>Salvar Alterações</button></div>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- MODAL 2: EDITAR DADOS BÁSICOS (CADASTRO) --- */}
+      {/* --- MODAL 2: EDITAR DADOS BÁSICOS --- */}
       {editingBasicData && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Editar Dados Cadastrais</h2>
-              <button onClick={() => setEditingBasicData(null)}><X size={24} color="var(--text-muted)" /></button>
-            </div>
-            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Editar Dados Cadastrais</h2><button onClick={() => setEditingBasicData(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleUpdateBasicData} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Tipo de Processo</label>
-                <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.process_type} onChange={e => setEditingBasicData({...editingBasicData, process_type: e.target.value})}>
-                  <option value="Admissão">Admissão</option>
-                  <option value="Readmissão">Readmissão</option>
-                  <option value="Promoção">Promoção</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label>
-                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.name} onChange={e => setEditingBasicData({...editingBasicData, name: maskName(e.target.value)})} placeholder="Apenas letras" />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label>
-                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.mother_name} onChange={e => setEditingBasicData({...editingBasicData, mother_name: maskName(e.target.value)})} placeholder="Apenas letras" />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>WhatsApp</label>
-                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.phone} onChange={e => setEditingBasicData({...editingBasicData, phone: maskPhone(e.target.value)})} placeholder="(00) 00000-0000" />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label>
-                  <input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.cpf} onChange={e => setEditingBasicData({...editingBasicData, cpf: maskCPF(e.target.value)})} placeholder="000.000.000-00" />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label>
-                  <input type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.rg} onChange={e => setEditingBasicData({...editingBasicData, rg: e.target.value})} placeholder="Número do RG" />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label>
-                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.gender || ''} onChange={e => setEditingBasicData({...editingBasicData, gender: e.target.value})}>
-                    <option value="">Selecione...</option>
-                    <option value="Masculino">Masculino</option>
-                    <option value="Feminino">Feminino</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem' }}>
-                  <input type="checkbox" id={`pcd_edit_${editingBasicData.id}`} checked={editingBasicData.is_pcd || false} onChange={e => setEditingBasicData({...editingBasicData, is_pcd: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} />
-                  <label htmlFor={`pcd_edit_${editingBasicData.id}`} style={{ fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>Candidato PCD</label>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label>
-                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.job_role_id || ''} onChange={e => setEditingBasicData({...editingBasicData, job_role_id: e.target.value})}>
-                    <option value="">-- Selecione a função --</option>
-                    {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Unidade</label>
-                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.unit_id || ''} onChange={e => setEditingBasicData({...editingBasicData, unit_id: e.target.value})}>
-                    <option value="">-- Selecione a unidade --</option>
-                    {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label>
-                  <input required type="datetime-local" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={formatToBrazilDatetimeInput(editingBasicData.interview_date)} onChange={e => setEditingBasicData({...editingBasicData, interview_date: e.target.value})} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Responsável pelo Processo</label>
-                  <select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.responsible_id || ''} onChange={e => setEditingBasicData({...editingBasicData, responsible_id: e.target.value})}>
-                    <option value="">Selecione o responsável</option>
-                    {responsibles.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setEditingBasicData(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary">Atualizar Dados Pessoais</button>
-              </div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Tipo de Processo</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.process_type} onChange={e => setEditingBasicData({...editingBasicData, process_type: e.target.value})}><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option></select></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.name} onChange={e => setEditingBasicData({...editingBasicData, name: maskName(e.target.value)})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.mother_name} onChange={e => setEditingBasicData({...editingBasicData, mother_name: maskName(e.target.value)})} /></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>WhatsApp</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.phone} onChange={e => setEditingBasicData({...editingBasicData, phone: maskPhone(e.target.value)})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.cpf} onChange={e => setEditingBasicData({...editingBasicData, cpf: maskCPF(e.target.value)})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label><input type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.rg} onChange={e => setEditingBasicData({...editingBasicData, rg: e.target.value})} /></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.gender || ''} onChange={e => setEditingBasicData({...editingBasicData, gender: e.target.value})}><option value="">Selecione...</option><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option></select></div><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem' }}><input type="checkbox" id={`pcd_edit_${editingBasicData.id}`} checked={editingBasicData.is_pcd || false} onChange={e => setEditingBasicData({...editingBasicData, is_pcd: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} /><label htmlFor={`pcd_edit_${editingBasicData.id}`} style={{ fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>Candidato PCD</label></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.job_role_id || ''} onChange={e => setEditingBasicData({...editingBasicData, job_role_id: e.target.value})}><option value="">-- Selecione a função --</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Unidade</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.unit_id || ''} onChange={e => setEditingBasicData({...editingBasicData, unit_id: e.target.value})}><option value="">-- Selecione a unidade --</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label><input required type="datetime-local" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={formatToBrazilDatetimeInput(editingBasicData.interview_date)} onChange={e => setEditingBasicData({...editingBasicData, interview_date: e.target.value})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Responsável pelo Processo</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.responsible_id || ''} onChange={e => setEditingBasicData({...editingBasicData, responsible_id: e.target.value})}><option value="">Selecione o responsável</option>{responsibles.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}</select></div></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}><button type="button" className="btn-secondary" onClick={() => setEditingBasicData(null)}>Cancelar</button><button type="submit" className="btn-primary">Atualizar Dados Pessoais</button></div>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- MODAL DETALHES COMPLETO DO CANDIDATO --- */}
+      {/* --- OUTROS MODAIS (Detalhes, Admissão, Rejeição, Feedback) PERMANECEM IDENTICOS --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Detalhamento do Candidato</h2>
-              <button onClick={() => setDetailsCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
-            </div>
-            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Detalhamento do Candidato</h2><button onClick={() => setDetailsCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome Completo</span>
-                  <p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                    {detailsCandidate.name}
-                    {detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}
-                  </p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tipo de Processo</span>
-                  <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: '500' }}>{detailsCandidate.process_type}</p>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.cpf}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>RG</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.rg || '-'}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sexo</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.gender || '-'}</p>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Função Designada</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.job_roles?.name || detailsCandidate.job_role_name || '-'}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Unidade de Lotação</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.units?.name || detailsCandidate.unit_name || '-'}</p>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Telefone (WhatsApp)</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.phone}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome da Mãe</span>
-                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.mother_name}</p>
-                </div>
-              </div>
-
-              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Datas Importantes</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
-                  <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Entrevista</span>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsCandidate.interview_date ? new Date(detailsCandidate.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</p>
-                  </div>
-                  <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success-color)' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--success-color)', fontWeight: 'bold' }}>Previsão de Admissão</span>
-                    <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: 'bold', marginTop: '0.2rem' }}>{detailsCandidate.admission_date ? new Date(detailsCandidate.admission_date).toLocaleDateString('pt-BR') : '-'}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Histórico Completo</span>
-                <div style={{ marginTop: '0.5rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.6' }}>
-                  {detailsCandidate.feedback || 'Nenhuma observação registrada neste processo.'}
-                </div>
-              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome Completo</span><p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>{detailsCandidate.name}{detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}</p></div><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tipo de Processo</span><p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: '500' }}>{detailsCandidate.process_type}</p></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.cpf}</p></div><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>RG</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.rg || '-'}</p></div><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sexo</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.gender || '-'}</p></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Função Designada</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.job_roles?.name || detailsCandidate.job_role_name || '-'}</p></div><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Unidade de Lotação</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.units?.name || detailsCandidate.unit_name || '-'}</p></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Telefone (WhatsApp)</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.phone}</p></div><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome da Mãe</span><p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.mother_name}</p></div></div>
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Datas Importantes</span><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}><div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}><span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Entrevista</span><p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsCandidate.interview_date ? new Date(detailsCandidate.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</p></div><div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success-color)' }}><span style={{ fontSize: '0.75rem', color: 'var(--success-color)', fontWeight: 'bold' }}>Previsão de Admissão</span><p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: 'bold', marginTop: '0.2rem' }}>{detailsCandidate.admission_date ? new Date(detailsCandidate.admission_date).toLocaleDateString('pt-BR') : '-'}</p></div></div></div>
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Histórico Completo</span><div style={{ marginTop: '0.5rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.6' }}>{detailsCandidate.feedback || 'Nenhuma observação registrada neste processo.'}</div></div>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-              <button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Visualização</button>
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}><button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Visualização</button></div>
           </div>
         </div>
       )}
 
-      {/* ADMISSION MODAL E REJECT MODAL */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Definir Data de Admissão</h2>
-              <button onClick={() => setAdmissionModalCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{admissionModalCandidate.name}</strong> cumpriu todas as exigências. Defina a data da admissão para enviá-lo ao 3º Bloco.</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Definir Data de Admissão</h2><button onClick={() => setAdmissionModalCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleGridConfirmAdmission} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label>
-                <input 
-                  required 
-                  type="date" 
-                  min={getTodayISO()} 
-                  style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} 
-                  value={admissionDate} 
-                  onChange={e => setAdmissionDate(e.target.value)} 
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary">Confirmar e Mover</button>
-              </div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label><input required type="date" min={getTodayISO()} style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} /></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}><button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary">Confirmar e Mover</button></div>
             </form>
           </div>
         </div>
@@ -793,57 +505,23 @@ export default function PipelineAdmissaoPage() {
       {rejectCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2>
-              <button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2><button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label>
-                <select required style={{ width: '100%', padding: '0.6rem' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}>
-                  <option value="">-- Selecione o motivo do banco --</option>
-                  {cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label>
-                <textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Cancelamento</button>
-              </div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label><select required style={{ width: '100%', padding: '0.6rem' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}><option value="">-- Selecione --</option>{cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} /></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button><button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar</button></div>
             </form>
           </div>
         </div>
       )}
 
-      {/* FEEDBACK (MENSAGEM) MODAL */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Adicionar Mensagem</h2>
-              <button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
-            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Adicionar Mensagem</h2><button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleSaveFeedback} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                  Deixe uma observação no histórico de <strong>{feedbackCandidate.name}</strong> para o restante da equipe.
-                </p>
-                <textarea 
-                  required
-                  style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} 
-                  placeholder="Sua mensagem..."
-                  value={feedbackText} 
-                  onChange={e => setFeedbackText(e.target.value)}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button>
-                <button type="submit" className="btn-primary">Salvar Mensagem</button>
-              </div>
+              <div><textarea required style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} placeholder="Sua mensagem..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} /></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary">Salvar Mensagem</button></div>
             </form>
           </div>
         </div>
