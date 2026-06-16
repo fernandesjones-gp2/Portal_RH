@@ -6,7 +6,7 @@ import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
-  const [userPermissions, setUserPermissions] = useState({}); // RBAC Dinâmico
+  const [userPermissions, setUserPermissions] = useState({}); 
   
   const [candidates, setCandidates] = useState([]);
   const [allCandidates, setAllCandidates] = useState([]); 
@@ -55,10 +55,9 @@ export default function PipelineAdmissaoPage() {
         api.jobRoles.list(),
         api.cancellationReasons.list().catch(() => []),
         api.users.list(),
-        api.customRoles.list().catch(() => []) // Busca a Matriz Dinâmica
+        api.customRoles.list().catch(() => []) 
       ]);
       
-      // Associa as permissões da matriz ao usuário logado
       if (sessionUser && customRolesData) {
         const myRoleObj = customRolesData.find(r => r.name === roleName);
         if (myRoleObj && myRoleObj.permissions) {
@@ -82,9 +81,11 @@ export default function PipelineAdmissaoPage() {
     }
   }
 
-  const maskCPF = (val) => val.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1');
+  // --- 🛡️ MÁSCARAS E BLINDAGEM CONTRA TELA PRETA NAS DATAS 🛡️ ---
+  const maskCPF = (val) => val ? String(val).replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1') : '';
   const maskPhone = (val) => {
-    let r = val.replace(/\D/g, "");
+    if (!val) return '';
+    let r = String(val).replace(/\D/g, "");
     if (r.length > 11) r = r.slice(0, 11);
     if (r.length > 10) return r.replace(/^(\d{2})(\d{5})(\d{4}).*/, "($1) $2-$3");
     if (r.length > 5) return r.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, "($1) $2-$3");
@@ -92,9 +93,45 @@ export default function PipelineAdmissaoPage() {
     if (r.length > 0) return r.replace(/^(\d{0,2})/, "($1");
     return r;
   };
-  const maskName = (val) => val.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s']/g, "");
-  const getBrazilIsoDate = (val) => { if (!val) return null; if (val.endsWith('Z') || val.match(/[+-]\d\d:\d\d$/)) return val; return `${val}:00-03:00`; };
-  const formatToBrazilDatetimeInput = (isoString) => { if (!isoString) return ''; if (isoString.length === 16 && !isoString.includes('Z') && !isoString.includes('-')) return isoString; const d = new Date(isoString); if (isNaN(d.getTime())) return isoString; const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }); const parts = formatter.formatToParts(d); const val = (type) => parts.find(p => p.type === type)?.value; return `${val('year')}-${val('month')}-${val('day')}T${val('hour')}:${val('minute')}`; };
+  const maskName = (val) => val ? String(val).replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s']/g, "") : '';
+  
+  const getBrazilIsoDate = (val) => { 
+    if (!val) return null; 
+    const str = String(val);
+    if (str.endsWith('Z') || str.match(/[+-]\d\d:\d\d$/)) return str; 
+    return `${str}:00-03:00`; 
+  };
+
+  const handleDateChange = (val) => val ? new Date(val + 'T12:00:00').toISOString() : null;
+
+  // FORMATADOR BLINDADO (Garante que .split() não quebre o React)
+  const formatInputDate = (val) => {
+    if (!val) return '';
+    try {
+      if (val instanceof Date) return val.toISOString().split('T')[0];
+      return String(val).split('T')[0];
+    } catch (e) {
+      return '';
+    }
+  };
+
+  // FORMATADOR DE HORA BLINDADO
+  const formatToBrazilDatetimeInput = (val) => { 
+    if (!val) return ''; 
+    try {
+      let str = val instanceof Date ? val.toISOString() : String(val);
+      if (str.length === 16 && !str.includes('Z') && !str.includes('-')) return str; 
+      const d = new Date(str); 
+      if (isNaN(d.getTime())) return ''; 
+      const formatter = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }); 
+      const parts = formatter.formatToParts(d); 
+      const getP = (type) => parts.find(p => p.type === type)?.value; 
+      return `${getP('year')}-${getP('month')}-${getP('day')}T${getP('hour')}:${getP('minute')}`;
+    } catch(e) {
+      return '';
+    }
+  };
+  // ---------------------------------------------------------------
 
   function validateForm(data) {
     if (!data.name || data.name.trim().length < 3) return alert('❌ VALIDAÇÃO: O Nome Completo é obrigatório.'), false;
@@ -294,13 +331,12 @@ export default function PipelineAdmissaoPage() {
     return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
   };
 
-  // REGRAS BLINDADAS (Hardcoded Roles + Matriz de Permissões)
+  // REGRAS BLINDADAS
   const canExportXLS = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.create;
 
   const renderCard = (c, isBloco3 = false) => {
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
     
-    // Regra Blindada: Apenas ADMIN, RECRUITER_ANALYST ou quem tem permissão 'Delete' na matriz
     const canInterruptProcess = !isPendingCancellation && (
       (!isBloco3 && currentUserRole !== 'DP') || 
       (isBloco3 && (['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.delete))
@@ -431,8 +467,8 @@ export default function PipelineAdmissaoPage() {
                   <select style={{ width: '100%', padding: '0.6rem', marginBottom: '0.75rem' }} value={editingCandidate.medical_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, medical_status: e.target.value})}>
                     <option value="Pendente">Pendente</option><option value="Solicitada">Solicitada</option><option value="Apto">Apto</option><option value="Inapto">Inapto</option>
                   </select>
-                  {['Solicitada', 'Apto', 'Inapto'].includes(editingCandidate.medical_status) && (<div style={{ marginBottom: '0.75rem' }}><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_request_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_request_date: handleDateChange(e.target.value)})} /></div>)}
-                  {['Apto', 'Inapto'].includes(editingCandidate.medical_status) && (<div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data do Resultado:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_result_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_result_date: handleDateChange(e.target.value)})} /></div>)}
+                  {['Solicitada', 'Apto', 'Inapto'].includes(editingCandidate.medical_status || '') && (<div style={{ marginBottom: '0.75rem' }}><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_request_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_request_date: handleDateChange(e.target.value)})} /></div>)}
+                  {['Apto', 'Inapto'].includes(editingCandidate.medical_status || '') && (<div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data do Resultado:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.medical_result_date)} onChange={e => setEditingCandidate({...editingCandidate, medical_result_date: handleDateChange(e.target.value)})} /></div>)}
                 </div>
               </div>
               <div style={{ padding: '1rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
@@ -440,10 +476,10 @@ export default function PipelineAdmissaoPage() {
                 <select style={{ width: '100%', padding: '0.6rem', marginBottom: '0.75rem' }} value={editingCandidate.docs_status || 'Pendente'} onChange={e => setEditingCandidate({...editingCandidate, docs_status: e.target.value})}>
                   <option value="Pendente">Pendente</option><option value="Solicitada">Solicitada</option><option value="Recebida">Recebida</option>
                 </select>
-                {['Solicitada', 'Recebida'].includes(editingCandidate.docs_status) && (
+                {['Solicitada', 'Recebida'].includes(editingCandidate.docs_status || '') && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Solicitação:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_request_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_request_date: handleDateChange(e.target.value)})} /></div>
-                    {['Recebida'].includes(editingCandidate.docs_status) && (<div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data de Recebimento:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_receive_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_receive_date: handleDateChange(e.target.value)})} /></div>)}
+                    {['Recebida'].includes(editingCandidate.docs_status || '') && (<div><label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data de Recebimento:</label><input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem' }} value={formatInputDate(editingCandidate.docs_receive_date)} onChange={e => setEditingCandidate({...editingCandidate, docs_receive_date: handleDateChange(e.target.value)})} /></div>)}
                   </div>
                 )}
               </div>
@@ -461,8 +497,8 @@ export default function PipelineAdmissaoPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Editar Dados Cadastrais</h2><button onClick={() => setEditingBasicData(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleUpdateBasicData} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Tipo de Processo</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.process_type} onChange={e => setEditingBasicData({...editingBasicData, process_type: e.target.value})}><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option></select></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.name} onChange={e => setEditingBasicData({...editingBasicData, name: maskName(e.target.value)})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.mother_name} onChange={e => setEditingBasicData({...editingBasicData, mother_name: maskName(e.target.value)})} /></div></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>WhatsApp</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.phone} onChange={e => setEditingBasicData({...editingBasicData, phone: maskPhone(e.target.value)})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.cpf} onChange={e => setEditingBasicData({...editingBasicData, cpf: maskCPF(e.target.value)})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label><input type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.rg} onChange={e => setEditingBasicData({...editingBasicData, rg: e.target.value})} /></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.name} onChange={e => setEditingBasicData({...editingBasicData, name: maskName(e.target.value)})} placeholder="Apenas letras" /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.mother_name} onChange={e => setEditingBasicData({...editingBasicData, mother_name: maskName(e.target.value)})} placeholder="Apenas letras" /></div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>WhatsApp</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.phone} onChange={e => setEditingBasicData({...editingBasicData, phone: maskPhone(e.target.value)})} placeholder="(00) 00000-0000" /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.cpf} onChange={e => setEditingBasicData({...editingBasicData, cpf: maskCPF(e.target.value)})} placeholder="000.000.000-00" /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label><input type="text" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.rg} onChange={e => setEditingBasicData({...editingBasicData, rg: e.target.value})} placeholder="Número do RG" /></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.gender || ''} onChange={e => setEditingBasicData({...editingBasicData, gender: e.target.value})}><option value="">Selecione...</option><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option></select></div><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem' }}><input type="checkbox" id={`pcd_edit_${editingBasicData.id}`} checked={editingBasicData.is_pcd || false} onChange={e => setEditingBasicData({...editingBasicData, is_pcd: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} /><label htmlFor={`pcd_edit_${editingBasicData.id}`} style={{ fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>Candidato PCD</label></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.job_role_id || ''} onChange={e => setEditingBasicData({...editingBasicData, job_role_id: e.target.value})}><option value="">-- Selecione a função --</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Unidade</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.unit_id || ''} onChange={e => setEditingBasicData({...editingBasicData, unit_id: e.target.value})}><option value="">-- Selecione a unidade --</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label><input required type="datetime-local" style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={formatToBrazilDatetimeInput(editingBasicData.interview_date)} onChange={e => setEditingBasicData({...editingBasicData, interview_date: e.target.value})} /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Responsável pelo Processo</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={editingBasicData.responsible_id || ''} onChange={e => setEditingBasicData({...editingBasicData, responsible_id: e.target.value})}><option value="">Selecione o responsável</option>{responsibles.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}</select></div></div>
@@ -472,7 +508,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- OUTROS MODAIS (Detalhes, Admissão, Rejeição, Feedback) PERMANECEM IDENTICOS --- */}
+      {/* --- MODAL DETALHES COMPLETO DO CANDIDATO --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -490,10 +526,12 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
+      {/* ADMISSION MODAL E REJECT MODAL */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Definir Data de Admissão</h2><button onClick={() => setAdmissionModalCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{admissionModalCandidate.name}</strong> cumpriu todas as exigências. Defina a data da admissão para enviá-lo ao 3º Bloco.</p>
             <form onSubmit={handleGridConfirmAdmission} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Data da Admissão</label><input required type="date" min={getTodayISO()} style={{ width: '100%', fontSize: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }} value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}><button type="button" className="btn-secondary" onClick={() => setAdmissionModalCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary">Confirmar e Mover</button></div>
@@ -506,21 +544,23 @@ export default function PipelineAdmissaoPage() {
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Cancelar Admissão / Interromper</h2><button onClick={() => setRejectCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>O candidato <strong>{rejectCandidate.name}</strong> será desclassificado e enviado à lista de Reprovados/Cancelados.</p>
             <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label><select required style={{ width: '100%', padding: '0.6rem' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}><option value="">-- Selecione --</option>{cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
-              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} /></div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button><button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar</button></div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Motivo do Cancelamento *</label><select required style={{ width: '100%', padding: '0.6rem' }} value={rejectForm.reasonId} onChange={e => setRejectForm({...rejectForm, reasonId: e.target.value})}><option value="">-- Selecione o motivo do banco --</option>{cancellationReasons.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+              <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações Extras (Opcional)</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} placeholder="Detalhes adicionais sobre a interrupção do processo..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} /></div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Voltar</button><button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Cancelamento</button></div>
             </form>
           </div>
         </div>
       )}
 
+      {/* FEEDBACK (MENSAGEM) MODAL */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Adicionar Mensagem</h2><button onClick={() => setFeedbackCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
             <form onSubmit={handleSaveFeedback} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div><textarea required style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} placeholder="Sua mensagem..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} /></div>
+              <div><p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Deixe uma observação no histórico de <strong>{feedbackCandidate.name}</strong> para o restante da equipe.</p><textarea required style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} placeholder="Sua mensagem..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary">Salvar Mensagem</button></div>
             </form>
           </div>
