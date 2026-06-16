@@ -59,7 +59,6 @@ export default function AgendamentosPage() {
     finally { setLoading(false); }
   }
 
-  // --- MÁSCARAS DE ENTRADA DE DADOS ---
   const maskCPF = (val) => {
     return val.replace(/\D/g, '')
       .replace(/(\d{3})(\d)/, '$1.$2')
@@ -79,11 +78,9 @@ export default function AgendamentosPage() {
   };
 
   const maskName = (val) => {
-    // Permite letras, espaços e caracteres acentuados
     return val.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s']/g, "");
   };
 
-  // --- MOTOR DE VALIDAÇÃO GERAL ---
   function validateForm(data) {
     if (!data.name || data.name.trim().length < 3) {
       alert('❌ VALIDAÇÃO: O Nome Completo é obrigatório.');
@@ -115,10 +112,9 @@ export default function AgendamentosPage() {
       alert('❌ VALIDAÇÃO: O campo Unidade é obrigatório.');
       return false;
     }
-    return true; // Se passar por tudo, o formulário é válido
+    return true; 
   }
 
-  // --- MOTOR BLINDADO DE VALIDAÇÃO DE DUPLICIDADE DE CPF ---
   function getDuplicateWarning(cpfToCheck, currentCandidateId = null) {
     if (!cpfToCheck) return null;
     const cleanCpf = String(cpfToCheck).replace(/\D/g, '');
@@ -159,7 +155,6 @@ export default function AgendamentosPage() {
       };
     }
   }
-  // ---------------------------------------------------------
 
   const getBrazilIsoDate = (val) => {
     if (!val) return null;
@@ -205,10 +200,8 @@ export default function AgendamentosPage() {
   async function handleSaveCandidate(e) {
     e.preventDefault();
 
-    // 1. Validação de Formato e Obrigatoriedade
     if (!validateForm(formData)) return;
 
-    // 2. Validação de Duplicidade
     if (['Admissão', 'Readmissão'].includes(formData.process_type) && formData.cpf) {
       const warning = getDuplicateWarning(formData.cpf);
       if (warning) {
@@ -256,12 +249,10 @@ export default function AgendamentosPage() {
   async function handleUpdateCandidate(e) {
     e.preventDefault();
 
-    // 1. Validação de Formato e Obrigatoriedade
     if (!validateForm(editingCandidate)) return;
 
     const { id, process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date, responsible_id, gender, is_pcd } = editingCandidate;
     
-    // 2. Validação de Duplicidade (ignorando o próprio ID)
     if (['Admissão', 'Readmissão'].includes(process_type) && cpf) {
       const warning = getDuplicateWarning(cpf, id);
       if (warning) {
@@ -325,14 +316,30 @@ export default function AgendamentosPage() {
     } catch (e) {}
   }
 
+  // --- MOTOR DE DESVIO DE ROTA: PROMOÇÃO VAI PARA A TELA DE PROMOÇÕES ---
   async function handleApprove(candidate) {
-    if (confirm('Deseja enviar a mensagem de Aprovação e solicitação de documentos no WhatsApp do candidato?')) {
+    if (confirm('Deseja enviar a mensagem de Aprovação no WhatsApp do candidato?')) {
       sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name || candidate.job_role_name, candidate.units?.name || candidate.unit_name, candidate.interview_date);
     }
+    
     try {
-      await api.candidates.update(candidate.id, { status: 'Pré-Admissão (Pendente)', docs_status: 'Solicitada', docs_request_date: new Date().toISOString() });
+      if (candidate.process_type === 'Promoção') {
+        // Se for Promoção, o status muda para estacionar na nova tela de Promoções
+        await api.candidates.update(candidate.id, { 
+          status: 'Promoção (Em Andamento)' 
+        });
+      } else {
+        // Fluxo tradicional de Admissão/Readmissão vai para o Pipeline
+        await api.candidates.update(candidate.id, { 
+          status: 'Pré-Admissão (Pendente)', 
+          docs_status: 'Solicitada', 
+          docs_request_date: new Date().toISOString() 
+        });
+      }
       fetchData();
-    } catch (e) {}
+    } catch (e) {
+      alert('Erro ao aprovar candidato.');
+    }
   }
 
   const sortedFilteredCandidates = candidates.filter(c => {
@@ -420,15 +427,8 @@ export default function AgendamentosPage() {
                 return (
                   <>
                     <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Tipo de Processo</label><select required style={{ width: '100%' }} value={data.process_type} onChange={e => setData({...data, process_type: e.target.value})}><option value="Admissão">Admissão</option><option value="Readmissão">Readmissão</option><option value="Promoção">Promoção</option></select></div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label><input required type="text" style={{ width: '100%' }} value={data.name} onChange={e => setData({...data, name: maskName(e.target.value)})} placeholder="Apenas letras" /></div>
-                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label><input required type="text" style={{ width: '100%' }} value={data.mother_name} onChange={e => setData({...data, mother_name: maskName(e.target.value)})} placeholder="Apenas letras" /></div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Telefone (WhatsApp)</label><input required type="text" style={{ width: '100%' }} value={data.phone} onChange={e => setData({...data, phone: maskPhone(e.target.value)})} placeholder="(00) 00000-0000" /></div>
-                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%' }} value={data.cpf} onChange={e => setData({...data, cpf: maskCPF(e.target.value)})} placeholder="000.000.000-00" /></div>
-                      <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} placeholder="Número do RG" /></div>
-                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome Completo</label><input required type="text" style={{ width: '100%' }} value={data.name} onChange={e => setData({...data, name: maskName(e.target.value)})} placeholder="Apenas letras" /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Nome da Mãe</label><input required type="text" style={{ width: '100%' }} value={data.mother_name} onChange={e => setData({...data, mother_name: maskName(e.target.value)})} placeholder="Apenas letras" /></div></div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Telefone (WhatsApp)</label><input required type="text" style={{ width: '100%' }} value={data.phone} onChange={e => setData({...data, phone: maskPhone(e.target.value)})} placeholder="(00) 00000-0000" /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>CPF</label><input required type="text" style={{ width: '100%' }} value={data.cpf} onChange={e => setData({...data, cpf: maskCPF(e.target.value)})} placeholder="000.000.000-00" /></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>RG (Opcional)</label><input type="text" style={{ width: '100%' }} value={data.rg} onChange={e => setData({...data, rg: e.target.value})} placeholder="Número do RG" /></div></div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'center' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Sexo *</label><select required style={{ width: '100%' }} value={data.gender || ''} onChange={e => setData({...data, gender: e.target.value})}><option value="">Selecione...</option><option value="Masculino">Masculino</option><option value="Feminino">Feminino</option></select></div><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem' }}><input type="checkbox" id={`pcd_${data.id || 'new'}`} checked={data.is_pcd || false} onChange={e => setData({...data, is_pcd: e.target.checked})} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--saritur-orange)' }} /><label htmlFor={`pcd_${data.id || 'new'}`} style={{ fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>Candidato PCD</label></div></div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Função</label><select required style={{ width: '100%' }} value={data.job_role_id || ''} onChange={e => setData({...data, job_role_id: e.target.value})}><option value="">-- Selecione a função --</option>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Unidade</label><select required style={{ width: '100%' }} value={data.unit_id || ''} onChange={e => setData({...data, unit_id: e.target.value})}><option value="">-- Selecione a unidade --</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div></div>
                     <div style={{ display: 'grid', gridTemplateColumns: editingCandidate ? '1fr 1fr' : '1fr', gap: '1rem' }}><div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Data e Hora da Entrevista</label><input required type="datetime-local" style={{ width: '100%' }} value={formatToBrazilDatetimeInput(data.interview_date)} onChange={e => setData({...data, interview_date: e.target.value})} /></div>{editingCandidate && (<div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Responsável pelo Processo</label><select required style={{ width: '100%' }} value={data.responsible_id || ''} onChange={e => setData({...data, responsible_id: e.target.value})}><option value="">Selecione o responsável</option>{responsibles.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}</select></div>)}</div>
