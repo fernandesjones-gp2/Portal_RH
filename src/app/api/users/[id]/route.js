@@ -3,7 +3,8 @@ import { json, requireAdmin } from '@/lib/api-helpers';
 
 export const dynamic = 'force-dynamic';
 
-const ALLOWED = ['name', 'role', 'status', 'unit_id'];
+// ADICIONADO unit_ids PARA PERMITIR MÚLTIPLAS UNIDADES
+  const allowedFields = ['name', 'email', 'role', 'unit_id', 'unit_ids', 'status', 'avatar'];
 
 // Atualiza role/unidade/status/nome de um usuário (ADMIN).
 export async function PATCH(req, ctx) {
@@ -17,7 +18,7 @@ export async function PATCH(req, ctx) {
   const values = fields.map((f) => body[f]);
   values.push(id);
   const { rows } = await query(
-    `UPDATE users SET ${set} WHERE id = $${values.length} RETURNING *`,
+    `UPDATE users SET ${set} WHERE id = $${values.length} RETURNING *`,  
     values
   );
   return json(rows[0] || null);
