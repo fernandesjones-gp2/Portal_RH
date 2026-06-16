@@ -100,8 +100,8 @@ export default function DashboardPage() {
 
       return [
         { name: '1. Total', valor: total, labelStr: `${total}` },
-        { name: '2. Aprovados na Enrtrevista', valor: pipeline, labelStr: `${pipeline} (${pctTotal}% do total)` },
-        { name: '3. Em Análise (Pipeline)', valor: andamento, labelStr: `${andamento} (${pctPrevAndamento}% da etapa anterior)` },
+        { name: '2. Aprovados', valor: pipeline, labelStr: `${pipeline} (${pctTotal}% do total)` },
+        { name: '3. Em Análise', valor: andamento, labelStr: `${andamento} (${pctPrevAndamento}% da etapa anterior)` },
         { name: '4. Admitidos', valor: admitidos, labelStr: `${admitidos} (${pctPrevAdmitidos}% da etapa anterior)` }
       ];
     }
@@ -289,6 +289,7 @@ export default function DashboardPage() {
             const gridColumn = getGridSpan(chart.advanced_config?.size);
             const isFunnel = chart.metric_type === 'smart_funnel';
             
+            // Lógica de Cores do Funil configuráveis
             const funnelColors = chart.advanced_config?.funnelColors || ['#BDBDBD', '#1976D2', '#FB8C00', '#2E7D32'];
 
             return (
@@ -298,6 +299,7 @@ export default function DashboardPage() {
                 <div style={{ height: '300px', width: '100%', marginTop: '1.5rem' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     
+                    {/* BARRAS COMUNS E VERTICAIS */}
                     {chart.chart_type === 'bar' && !isFunnel && (
                       <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -308,25 +310,39 @@ export default function DashboardPage() {
                       </BarChart>
                     )}
 
-                    {(chart.chart_type === 'bar_horizontal' || isFunnel) && (
-                      {/* O gráfico do Funil agora possui a LabelList habilitada e margem aumentada para caber o texto */}
-                      <BarChart data={chartData} layout="vertical" margin={{ left: isFunnel ? 20 : 0, right: isFunnel ? 190 : 20 }}>
+                    {/* BARRAS HORIZONTAIS COMUNS (NÃO-FUNIL) */}
+                    {chart.chart_type === 'bar_horizontal' && !isFunnel && (
+                      <BarChart data={chartData} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
                         <XAxis type="number" tick={{fontSize: 12}} /> 
-                        <YAxis dataKey="name" type="category" width={110} tick={{fontSize: 11, fontWeight: 'bold'}} />
+                        <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 11, fontWeight: 'bold'}} />
                         <Tooltip content={<CustomTooltip />} />
                         {metaX && <ReferenceLine x={metaX} stroke="var(--danger-color)" strokeWidth={2} strokeDasharray="4 4" />}
                         <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
-                          {/* LISTA DE RÓTULOS DETALHADOS COM PORCENTAGEM DE CONVERSÃO */}
-                          {isFunnel && <LabelList dataKey="labelStr" position="right" fill="var(--text-main)" fontSize={12} fontWeight="600" />}
-                          
                           {chartData.map((entry, index) => (
-                             <Cell key={`cell-${index}`} fill={isFunnel ? funnelColors[index % 4] : chart.color} />
+                             <Cell key={`cell-${index}`} fill={chart.color} />
                           ))}
                         </Bar>
                       </BarChart>
                     )}
 
+                    {/* O GRÁFICO DO FUNIL COM MARGENS E LABEL LIST SEGUROS */}
+                    {isFunnel && (
+                      <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 190 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
+                        <XAxis type="number" tick={{fontSize: 12}} /> 
+                        <YAxis dataKey="name" type="category" width={110} tick={{fontSize: 11, fontWeight: 'bold'}} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
+                          <LabelList dataKey="labelStr" position="right" fill="var(--text-main)" fontSize={12} fontWeight="600" />
+                          {chartData.map((entry, index) => (
+                             <Cell key={`cell-${index}`} fill={funnelColors[index % 4]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    )}
+
+                    {/* LINHAS */}
                     {chart.chart_type === 'line' && (
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
@@ -337,6 +353,7 @@ export default function DashboardPage() {
                       </LineChart>
                     )}
 
+                    {/* PIZZA (PIE) */}
                     {chart.chart_type === 'pie' && (
                       <PieChart>
                         <Tooltip content={<CustomTooltip />} />
