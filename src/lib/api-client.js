@@ -44,6 +44,7 @@ export const api = {
   cancellationReasons: crud('/api/cancellation-reasons'),
   messageTemplates: crud('/api/message-templates'), 
   dashboardWidgets: crud('/api/dashboard-widgets'),// <-- NOVA INTEGRAÇÃO
+  customRoles: crud('/api/custom-roles'),
   rolePermissions: {
     list: (role) => req(`/api/role-permissions${role ? `?role=${encodeURIComponent(role)}` : ''}`),
     add: (role, menu_path) => req('/api/role-permissions', { method: 'POST', body: JSON.stringify({ role, menu_path }) }),
