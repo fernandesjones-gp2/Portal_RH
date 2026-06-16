@@ -13,7 +13,7 @@ export default function ConfiguracoesPage() {
   const [usersList, setUsersList] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [widgets, setWidgets] = useState([]); 
-  const [customRoles, setCustomRoles] = useState([]); // Perfis Dinâmicos
+  const [customRoles, setCustomRoles] = useState([]);
 
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
@@ -29,21 +29,22 @@ export default function ConfiguracoesPage() {
 
   const [dashTargets, setDashTargets] = useState({ targetLeadtime: '15', targetApprovalRate: '60' });
 
-  // CONSTRUTOR DE DASHBOARD
   const [editingWidget, setEditingWidget] = useState(null);
   const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
+  
+  const availableRoles = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'MANAGER', 'SUPERINTENDENT', 'GP2', 'DP', 'PSYCHOLOGIST'];
+  const INTERNAL_ROLES = ['ADMIN', 'RECRUITER', 'RECRUITER_ANALYST', 'SUPERINTENDENT', 'PSYCHOLOGIST'];
   const defaultFunnelColors = ['#BDBDBD', '#1976D2', '#FB8C00', '#2E7D32']; 
+
   const [widgetForm, setWidgetForm] = useState({ 
     title: '', chart_type: 'kpi', metric_type: 'count', status_filter: 'Todos', color: '#F37137', roles_visible: [],
     advanced_config: { format: 'integer', size: 'half', groupBy: 'all', funnelColors: defaultFunnelColors }, visibility_type: 'generic'
   });
 
-  // CONSTRUTOR DE PERFIS E PERMISSÕES (RBAC)
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [editingCustomRole, setEditingCustomRole] = useState(null);
   const [roleForm, setRoleForm] = useState({ name: '', permissions: {} });
 
-  // EDIÇÃO MULTI-UNIDADE DE USUÁRIO
   const [isUserAcessModalOpen, setIsUserAcessModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
@@ -85,18 +86,36 @@ export default function ConfiguracoesPage() {
     } catch (err) {}
   }
 
-  // --- MOTOR DO CONSTRUTOR DE PERFIS (RBAC) ---
+  // --- 🛡️ FUNÇÕES DE BLINDAGEM DE DADOS (EVITA TELA PRETA) 🛡️ ---
+  const parseSafeArray = (data) => {
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+      try { 
+        const parsed = JSON.parse(data); 
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { return []; }
+    }
+    return [];
+  };
+
+  const getSafeUserUnits = (user) => {
+    if (!user) return [];
+    const ids = parseSafeArray(user.unit_ids);
+    if (ids.length > 0) return ids;
+    if (user.unit_id) return [user.unit_id];
+    return [];
+  };
+  // ---------------------------------------------------------------
+
   const handleToggleModulePermission = (path, action) => {
     const currentPerms = { ...roleForm.permissions };
     if (!currentPerms[path]) currentPerms[path] = { view: false, create: false, edit: false, delete: false };
     
     currentPerms[path][action] = !currentPerms[path][action];
     
-    // Regra de Ouro: Se tem direito a criar, editar ou excluir, obrigatoriamente tem que conseguir ver.
     if ((action === 'create' || action === 'edit' || action === 'delete') && currentPerms[path][action]) {
       currentPerms[path].view = true;
     }
-    // Regra de Ouro Inversa: Se tirou a permissão de ver, tira todas as outras.
     if (action === 'view' && !currentPerms[path].view) {
       currentPerms[path] = { view: false, create: false, edit: false, delete: false };
     }
@@ -119,11 +138,11 @@ export default function ConfiguracoesPage() {
     try { await api.customRoles.remove(id); fetchAllData(); } catch (err) { alert('Erro ao excluir perfil.'); }
   };
 
-  // --- MOTOR DE MÚLTIPLAS UNIDADES PARA O USUÁRIO ---
+  // --- MOTOR MÚLTIPLAS UNIDADES ---
   const openUserAccessModal = (user) => {
     setEditingUser({
       ...user,
-      unit_ids: user.unit_ids || (user.unit_id ? [user.unit_id] : []) // Pega o array novo ou converte o antigo
+      unit_ids: getSafeUserUnits(user) // Puxa os dados com a blindagem ativada
     });
     setIsUserAcessModalOpen(true);
   };
@@ -140,28 +159,22 @@ export default function ConfiguracoesPage() {
   const handleSaveUserAccess = async (e) => {
     e.preventDefault();
     try {
+      const finalUnitIds = editingUser.unit_ids || [];
       await api.users.update(editingUser.id, { 
         role: editingUser.role, 
-        unit_ids: editingUser.unit_ids,
-        unit_id: editingUser.unit_ids.length > 0 ? editingUser.unit_ids[0] : null // Mantém o primeiro para compatibilidade legada temporária
+        unit_ids: finalUnitIds,
+        unit_id: finalUnitIds.length > 0 ? finalUnitIds[0] : null
       });
       setIsUserAcessModalOpen(false);
       fetchAllData();
     } catch (err) { alert('Erro ao salvar acessos do usuário.'); }
   };
 
-
-  // --- FUNÇÕES BÁSICAS MANTIDAS ---
   function handleVisibilityChange(type) {
     const allRoleNames = customRoles.map(r => r.name);
     const internalRoles = customRoles.filter(r => ['ADMIN', 'RH', 'DP'].some(k => r.name.includes(k))).map(r => r.name);
     if (type === 'generic') setWidgetForm({ ...widgetForm, visibility_type: 'generic', roles_visible: allRoleNames });
     else setWidgetForm({ ...widgetForm, visibility_type: 'internal', roles_visible: internalRoles });
-  }
-
-  function handleRoleToggleWidget(role) {
-    if (widgetForm.roles_visible.includes(role)) setWidgetForm({ ...widgetForm, roles_visible: widgetForm.roles_visible.filter(r => r !== role) });
-    else setWidgetForm({ ...widgetForm, roles_visible: [...widgetForm.roles_visible, role] });
   }
 
   async function handleSaveWidget(e) { e.preventDefault(); if (widgetForm.roles_visible.length === 0) return alert('Selecione ao menos um perfil.'); try { if (editingWidget) await api.dashboardWidgets.update(editingWidget.id, widgetForm); else await api.dashboardWidgets.create(widgetForm); setIsWidgetModalOpen(false); setEditingWidget(null); fetchAllData(); } catch (err) { alert('Erro ao salvar Indicador: ' + err.message); } }
@@ -177,7 +190,11 @@ export default function ConfiguracoesPage() {
   async function handleAddReason(e) { e.preventDefault(); if (!newReason) return; try { await api.cancellationReasons.create({ name: newReason.toUpperCase() }); setNewReason(''); fetchAllData(); } catch (error) {} }
   async function handleUpdateReason() { if (!editingReason.name) return; try { await api.cancellationReasons.update(editingReason.id, { name: editingReason.name.toUpperCase() }); setEditingReason(null); fetchAllData(); } catch (error) {} }
   async function handleDeleteReason(id) { if (!confirm('Excluir motivo?')) return; try { await api.cancellationReasons.remove(id); setSelectedReasonId(''); fetchAllData(); } catch (error) {} }
-  async function handleApproveUser(id) { try { await api.users.update(id, { status: 'Aprovado' }); fetchAllData(); } catch (error) {} }
+  
+  // Aprovar Pendente com compatibilidade de unidade
+  async function handleApproveUser(id) { 
+    try { await api.users.update(id, { status: 'Aprovado' }); fetchAllData(); } catch (error) {} 
+  }
   async function handleDeleteUser(id) { if (!confirm('Deseja bloquear este usuário?')) return; try { await api.users.remove(id); fetchAllData(); } catch (error) {} }
   function handleSaveTargets(e) { e.preventDefault(); localStorage.setItem('portal_rh_targets', JSON.stringify(dashTargets)); alert('Metas atualizadas!'); }
 
@@ -192,7 +209,6 @@ export default function ConfiguracoesPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', paddingBottom: '3rem' }}>
       <div><h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Painel de Governança Integrada</h1></div>
 
-      {/* BLOCO 1: GESTÃO AVANÇADA DE PERFIS (RBAC) */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -227,7 +243,6 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 2: GESTÃO DE USUÁRIOS E MULTI-UNIDADES */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Users size={20} color="var(--saritur-orange)" /> Gestão de Acessos de Colaboradores</h2>
         <div style={{ overflowX: 'auto' }}>
@@ -242,38 +257,40 @@ export default function ConfiguracoesPage() {
               </tr>
             </thead>
             <tbody>
-              {usersList.map(user => (
-                <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '0.75rem' }}>
-                    <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{user.name || 'Sem nome'}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</div>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>
-                    {user.status === 'Pendente' ? <span style={{ backgroundColor: 'var(--saritur-yellow)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Pendente</span> : <span style={{ backgroundColor: 'var(--success-color)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Aprovado</span>}
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{user.role || 'Sem Perfil'}</span>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {(user.unit_ids && user.unit_ids.length > 0) ? `${user.unit_ids.length} Unidade(s)` : (user.unit_id ? '1 Unidade (Legado)' : 'Acesso Geral (Todas)')}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                    <button onClick={() => openUserAccessModal(user)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', fontWeight: 'bold', borderColor: 'var(--saritur-orange)', color: 'var(--saritur-orange)' }}>
-                      <UserCog size={14} style={{ marginRight: '4px' }}/> Configurar
-                    </button>
-                    {user.status === 'Pendente' && <button onClick={() => handleApproveUser(user.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }} title="Aprovar Usuário"><Check size={14} /></button>}
-                    <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }} title="Bloquear / Excluir"><Trash2 size={14} /></button>
-                  </td>
-                </tr>
-              ))}
+              {usersList.map(user => {
+                const safeUnits = getSafeUserUnits(user);
+                return (
+                  <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.75rem' }}>
+                      <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{user.name || 'Sem nome'}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</div>
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      {user.status === 'Pendente' ? <span style={{ backgroundColor: 'var(--saritur-yellow)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Pendente</span> : <span style={{ backgroundColor: 'var(--success-color)', color: 'white', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Aprovado</span>}
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{user.role || 'Sem Perfil'}</span>
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {safeUnits.length > 0 ? `${safeUnits.length} Unidade(s)` : 'Acesso Geral (Todas)'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.75rem', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                      <button onClick={() => openUserAccessModal(user)} className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', fontWeight: 'bold', borderColor: 'var(--saritur-orange)', color: 'var(--saritur-orange)' }}>
+                        <UserCog size={14} style={{ marginRight: '4px' }}/> Configurar
+                      </button>
+                      {user.status === 'Pendente' && <button onClick={() => handleApproveUser(user.id)} className="btn-secondary" style={{ color: 'var(--success-color)', padding: '0.3rem' }} title="Aprovar Usuário"><Check size={14} /></button>}
+                      <button onClick={() => handleDeleteUser(user.id)} className="btn-secondary" style={{ color: 'var(--danger-color)', padding: '0.3rem' }} title="Bloquear / Excluir"><Trash2 size={14} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* BLOCO 3: CONSTRUTOR DE DASHBOARD AVANÇADO */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PieChart size={20} color="var(--saritur-orange)" /> Construtor de Dashboard (Avançado)</h2>
@@ -295,7 +312,8 @@ export default function ConfiguracoesPage() {
                   <button onClick={() => { 
                     setEditingWidget(w); 
                     const safeConfig = w.advanced_config || { format: 'integer', size: 'half', groupBy: 'all', funnelColors: defaultFunnelColors };
-                    setWidgetForm({...w, advanced_config: safeConfig, visibility_type: w.roles_visible?.length > 4 ? 'generic' : 'internal'}); 
+                    const safeRoles = parseSafeArray(w.roles_visible);
+                    setWidgetForm({...w, roles_visible: safeRoles, advanced_config: safeConfig, visibility_type: safeRoles.length > 4 ? 'generic' : 'internal'}); 
                     setIsWidgetModalOpen(true); 
                   }}><Edit2 size={14} color="var(--text-muted)"/></button>
                   <button onClick={() => handleDeleteWidget(w.id)}><Trash2 size={14} color="var(--danger-color)"/></button>
@@ -306,7 +324,6 @@ export default function ConfiguracoesPage() {
         </div>
       </div>
 
-      {/* BLOCO 4: DROPDOWNS */}
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Settings2 size={20} color="var(--saritur-orange)" /> Tabelas Estruturais</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '2rem' }}>
@@ -332,7 +349,7 @@ export default function ConfiguracoesPage() {
       </div>
 
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
-        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de WhatsApp</h2>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MessageSquareText size={20} color="var(--saritur-orange)" /> Modelos de Mensagens (WhatsApp)</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           {templates.map(template => (
             <div key={template.id} style={{ padding: '1.25rem', backgroundColor: 'var(--bg-color)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
@@ -417,12 +434,12 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* --- MODAL DE CONFIGURAÇÃO DE USUÁRIO (MÚLTIPLAS UNIDADES) --- */}
+      {/* --- MODAL DE CONFIGURAÇÃO DE USUÁRIO (MÚLTIPLAS UNIDADES) BLINDADO --- */}
       {isUserAcessModalOpen && editingUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Configurar Acessos: {editingUser.name?.split(' ')[0]}</h2>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Configurar Acessos: {editingUser.name ? editingUser.name.split(' ')[0] : 'Usuário'}</h2>
               <button onClick={() => setIsUserAcessModalOpen(false)}><X size={24} color="var(--text-muted)" /></button>
             </div>
             
@@ -445,7 +462,7 @@ export default function ConfiguracoesPage() {
                     <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer', padding: '0.2rem 0' }}>
                       <input 
                         type="checkbox" 
-                        checked={(editingUser.unit_ids || []).includes(u.id)} 
+                        checked={Array.isArray(editingUser.unit_ids) && editingUser.unit_ids.includes(u.id)} 
                         onChange={() => toggleUserUnit(u.id)} 
                         style={{ width: '18px', height: '18px', accentColor: 'var(--saritur-orange)', cursor: 'pointer' }} 
                       /> 
@@ -464,7 +481,7 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* --- MODAL CONSTRUTOR DE WIDGETS (DASHBOARD) MANTIDO INTACTO --- */}
+      {/* --- MODAL CONSTRUTOR DE WIDGETS (DASHBOARD) --- */}
       {isWidgetModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -525,7 +542,6 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
-              {/* PAINEL DE CORES DO FUNIL QUE SÓ APARECE SE FOR FUNIL */}
               {widgetForm.metric_type === 'smart_funnel' && (
                 <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.05)', border: '1px solid var(--saritur-orange)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--saritur-orange)', marginBottom: '0.75rem' }}>Personalizar Cores do Funil</h4>
@@ -608,7 +624,6 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
-              {/* CHAVE DE VISIBILIDADE SIMPLIFICADA */}
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Visibilidade do Indicador</label>
                 <div style={{ display: 'flex', gap: '1.5rem' }}>
@@ -618,7 +633,7 @@ export default function ConfiguracoesPage() {
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
                     <input type="radio" name="visibility" checked={widgetForm.visibility_type === 'internal'} onChange={() => handleVisibilityChange('internal')} style={{ accentColor: 'var(--saritur-orange)', width: '18px', height: '18px' }} />
-                    <strong>Interno</strong> (Apenas ADMIN e RH/DP)
+                    <strong>Interno</strong> (Apenas ADMIN, RH, DP e Psicólogos)
                   </label>
                 </div>
               </div>
