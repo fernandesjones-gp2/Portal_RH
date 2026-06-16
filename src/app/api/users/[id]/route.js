@@ -3,40 +3,56 @@ import { json, requireAdmin } from '@/lib/api-helpers';
 
 export const dynamic = 'force-dynamic';
 
-// ADICIONADO unit_ids PARA PERMITIR MÚLTIPLAS UNIDADES
+// Lista de campos permitidos (incluindo unit_ids)
 const allowedFields = ['name', 'email', 'role', 'unit_id', 'unit_ids', 'status', 'avatar'];
 
-// Atualiza role/unidade/status/nome de um usuário (ADMIN).
-export async function PATCH(req, ctx) {
+export async function PUT(req, ctx) {
   const g = await requireAdmin();
   if (g.error) return g.error;
   
-  const { id } = await ctx.params;
+  const params = await ctx.params;
+  const id = params.id;
   const body = await req.json();
   
-  // CORREÇÃO AQUI: Trocado ALLOWED por allowedFields
   const fields = allowedFields.filter((k) => k in body);
-  
   if (fields.length === 0) return json({ error: 'no_fields' }, 400);
   
   const set = fields.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
-  const values = fields.map((f) => body[f]);
+  
+  // CORREÇÃO CRÍTICA: Converte o Array de Unidades para String (Exigência do Postgres para JSONB)
+  const values = fields.map((f) => {
+    if (f === 'unit_ids' && Array.isArray(body[f])) {
+      return JSON.stringify(body[f]);
+    }
+    return body[f];
+  });
   values.push(id);
   
-  const { rows } = await query(
-    `UPDATE users SET ${set} WHERE id = $${values.length} RETURNING *`,  
-    values
-  );
-  
-  return json(rows[0] || null);
+  try {
+    const { rows } = await query(
+      `UPDATE users SET ${set} WHERE id = $${values.length} RETURNING *`,  
+      values
+    );
+    return json(rows[0] || null);
+  } catch (err) {
+    console.error("Erro Update User:", err);
+    return json({ error: err.message }, 500);
+  }
 }
 
-// Remove um usuário (ADMIN).
+// Aceita o comando PATCH redirecionando para o PUT
+export const PATCH = PUT;
+
 export async function DELETE(req, ctx) {
   const g = await requireAdmin();
   if (g.error) return g.error;
   
-  const { id } = await ctx.params;
-  await query('DELETE FROM users WHERE id = $1', [id]);
-  return json({ ok: true });
+  const params = await ctx.params;
+  try {
+    await query('DELETE FROM users WHERE id = $1', [params.id]);
+    return json({ ok: true });
+  } catch (err) {
+    console.error("Erro Delete User:", err);
+    return json({ error: err.message }, 500);
+  }
 }
