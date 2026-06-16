@@ -26,20 +26,47 @@ export async function GET(req) {
   const orderBy = sp.get('orderBy') || 'created_at';
   const order = (sp.get('order') || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-  let where = '';
+  let whereClauses = [];
   const params = [];
-  
-  // RESTAURAÇÃO DOS FILTROS (Conserta a tela de Concluídos)
+  let paramCounter = 1;
+
+  // FILTRO DE STATUS (Aba do sistema)
   if (statusIn) {
     params.push(statusIn.split(',').map((s) => s.trim()));
-    where = `WHERE c.status = ANY($1)`;
+    whereClauses.push(`c.status = ANY($${paramCounter})`);
+    paramCounter++;
   } else if (status) {
     params.push(status);
-    where = `WHERE c.status = $1`;
+    whereClauses.push(`c.status = $${paramCounter}`);
+    paramCounter++;
   }
 
+  // --- 🛡️ BLINDAGEM DE ACESSO (MÚLTIPLAS UNIDADES) 🛡️ ---
+  let userUnits = [];
   try {
-    const { rows } = await query(`${CANDIDATE_SELECT} ${where} ORDER BY c."${orderBy}" ${order} NULLS LAST`, params);
+    if (Array.isArray(g.user.unit_ids)) userUnits = g.user.unit_ids;
+    else if (typeof g.user.unit_ids === 'string') userUnits = JSON.parse(g.user.unit_ids);
+  } catch(e) {}
+  
+  // Resgate do sistema legado (caso o array esteja vazio mas o unit_id antigo exista)
+  if (userUnits.length === 0 && g.user.unit_id) {
+    userUnits = [g.user.unit_id];
+  }
+
+  // Se o array de unidades não estiver vazio, significa que ele tem restrição.
+  // Se estiver vazio (length === 0), significa "Acesso Geral" (vê tudo).
+  if (userUnits.length > 0) {
+    params.push(userUnits);
+    // O cast ::uuid[] garante que o banco reconheça a lista de forma nativa e super veloz
+    whereClauses.push(`c.unit_id = ANY($${paramCounter}::uuid[])`);
+    paramCounter++;
+  }
+  // ---------------------------------------------------------
+
+  const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+  try {
+    const { rows } = await query(`${CANDIDATE_SELECT} ${whereString} ORDER BY c."${orderBy}" ${order} NULLS LAST`, params);
     return json(rows);
   } catch (err) {
     console.error("Erro GET Candidates", err);
@@ -53,7 +80,7 @@ export async function POST(req) {
   
   const body = await req.json();
   
-  // COLUNAS PERMITIDAS (Incluindo os novos Gender e PCD)
+  // COLUNAS PERMITIDAS
   const allowedFields = [
     'process_type', 'name', 'mother_name', 'phone', 'cpf', 'rg', 
     'job_role_id', 'unit_id', 'interview_date', 'responsible_id',
