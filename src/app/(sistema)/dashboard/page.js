@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell, Legend, LabelList } from 'recharts';
 import { LayoutDashboard, Filter } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -87,16 +87,22 @@ export default function DashboardPage() {
 
     if (mType === 'count') return [{ name: 'Total', valor: base.length }];
 
+    // --- NOVA INTELIGÊNCIA DO FUNIL COM CÁLCULO DE % E RÓTULOS DETALHADOS ---
     if (mType === 'smart_funnel') {
       const total = base.length;
       const pipeline = base.filter(c => ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)', 'Concluído'].includes(c.status)).length;
       const andamento = base.filter(c => ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].includes(c.status)).length;
       const admitidos = base.filter(c => c.status === 'Concluído').length;
+
+      const pctTotal = total > 0 ? Math.round((pipeline / total) * 100) : 0;
+      const pctPrevAndamento = pipeline > 0 ? Math.round((andamento / pipeline) * 100) : 0;
+      const pctPrevAdmitidos = andamento > 0 ? Math.round((admitidos / andamento) * 100) : 0;
+
       return [
-        { name: '1. Total', valor: total },
-        { name: '2. Entrevista', valor: pipeline },
-        { name: '3. Pipeline', valor: andamento },
-        { name: '4. Admitidos', valor: admitidos }
+        { name: '1. Total', valor: total, labelStr: `${total}` },
+        { name: '2. Aprovados na Enrtrevista', valor: pipeline, labelStr: `${pipeline} (${pctTotal}% do total)` },
+        { name: '3. Em Análise (Pipeline)', valor: andamento, labelStr: `${andamento} (${pctPrevAndamento}% da etapa anterior)` },
+        { name: '4. Admitidos', valor: admitidos, labelStr: `${admitidos} (${pctPrevAdmitidos}% da etapa anterior)` }
       ];
     }
 
@@ -195,7 +201,6 @@ export default function DashboardPage() {
     return 'span 2'; 
   };
 
-  // Cores genéricas para a pizza caso não seja funil
   const DEFAULT_COLORS = ['#F37137', '#057a55', '#e02424', '#888888', '#3b82f6', '#d946ef', '#f59e0b'];
 
   return (
@@ -284,7 +289,6 @@ export default function DashboardPage() {
             const gridColumn = getGridSpan(chart.advanced_config?.size);
             const isFunnel = chart.metric_type === 'smart_funnel';
             
-            // Lógica de Cores do Funil configuráveis
             const funnelColors = chart.advanced_config?.funnelColors || ['#BDBDBD', '#1976D2', '#FB8C00', '#2E7D32'];
 
             return (
@@ -305,13 +309,17 @@ export default function DashboardPage() {
                     )}
 
                     {(chart.chart_type === 'bar_horizontal' || isFunnel) && (
-                      <BarChart data={chartData} layout="vertical" margin={{ left: isFunnel ? 40 : 0 }}>
+                      {/* O gráfico do Funil agora possui a LabelList habilitada e margem aumentada para caber o texto */}
+                      <BarChart data={chartData} layout="vertical" margin={{ left: isFunnel ? 20 : 0, right: isFunnel ? 190 : 20 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
                         <XAxis type="number" tick={{fontSize: 12}} /> 
-                        <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 11, fontWeight: 'bold'}} />
+                        <YAxis dataKey="name" type="category" width={110} tick={{fontSize: 11, fontWeight: 'bold'}} />
                         <Tooltip content={<CustomTooltip />} />
                         {metaX && <ReferenceLine x={metaX} stroke="var(--danger-color)" strokeWidth={2} strokeDasharray="4 4" />}
                         <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
+                          {/* LISTA DE RÓTULOS DETALHADOS COM PORCENTAGEM DE CONVERSÃO */}
+                          {isFunnel && <LabelList dataKey="labelStr" position="right" fill="var(--text-main)" fontSize={12} fontWeight="600" />}
+                          
                           {chartData.map((entry, index) => (
                              <Cell key={`cell-${index}`} fill={isFunnel ? funnelColors[index % 4] : chart.color} />
                           ))}
