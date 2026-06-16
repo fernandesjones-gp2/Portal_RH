@@ -100,8 +100,8 @@ export default function DashboardPage() {
 
       return [
         { name: '1. Total', valor: total, labelStr: `${total}` },
-        { name: '2. Aprovados', valor: pipeline, labelStr: `${pipeline} (${pctTotal}% do total)` },
-        { name: '3. Em Análise', valor: andamento, labelStr: `${andamento} (${pctPrevAndamento}% da etapa anterior)` },
+        { name: '2. Aprovados na Entrevista', valor: pipeline, labelStr: `${pipeline} (${pctTotal}% do total)` },
+        { name: '3. Em Andamento (Pipeline)', valor: andamento, labelStr: `${andamento} (${pctPrevAndamento}% da etapa anterior)` },
         { name: '4. Admitidos', valor: admitidos, labelStr: `${admitidos} (${pctPrevAdmitidos}% da etapa anterior)` }
       ];
     }
