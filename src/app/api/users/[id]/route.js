@@ -3,8 +3,8 @@ import { json, requireAdmin } from '@/lib/api-helpers';
 
 export const dynamic = 'force-dynamic';
 
-// Lista de campos permitidos (incluindo unit_ids)
-const allowedFields = ['name', 'email', 'role', 'unit_id', 'unit_ids', 'status', 'avatar'];
+// Lista de campos permitidos (agora aceitando as datas de férias)
+const allowedFields = ['name', 'email', 'role', 'unit_id', 'unit_ids', 'status', 'avatar', 'vacation_start', 'vacation_end'];
 
 export async function PUT(req, ctx) {
   const g = await requireAdmin();
@@ -19,7 +19,7 @@ export async function PUT(req, ctx) {
   
   const set = fields.map((f, i) => `"${f}" = $${i + 1}`).join(', ');
   
-  // CORREÇÃO CRÍTICA: Converte o Array de Unidades para String (Exigência do Postgres para JSONB)
+  // Converte o Array de Unidades para String (Exigência do Postgres para JSONB)
   const values = fields.map((f) => {
     if (f === 'unit_ids' && Array.isArray(body[f])) {
       return JSON.stringify(body[f]);
