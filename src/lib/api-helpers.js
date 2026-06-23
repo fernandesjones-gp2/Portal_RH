@@ -10,8 +10,8 @@ export async function getSessionUser() {
   const session = await auth();
   if (!session?.user?.email) return null;
   const { rows } = await query(
-    // ADICIONADO unit_ids PARA O SISTEMA SABER QUAIS UNIDADES O USUÁRIO PODE VER
-    'SELECT id, email, name, role, status, unit_id, unit_ids FROM users WHERE lower(email) = $1',
+    // ADICIONADO VACATION START E END AQUI PARA VERIFICAR NO LOGIN
+    'SELECT id, email, name, role, status, unit_id, unit_ids, vacation_start, vacation_end FROM users WHERE lower(email) = $1',
     [session.user.email.toLowerCase()]
   );
   return rows[0] || null;
