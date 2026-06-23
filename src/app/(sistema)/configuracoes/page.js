@@ -105,7 +105,6 @@ export default function ConfiguracoesPage() {
     if (user.unit_id) return [user.unit_id];
     return [];
   };
-  // ---------------------------------------------------------------
 
   const handleToggleModulePermission = (path, action) => {
     const currentPerms = { ...roleForm.permissions };
@@ -142,7 +141,7 @@ export default function ConfiguracoesPage() {
   const openUserAccessModal = (user) => {
     setEditingUser({
       ...user,
-      unit_ids: getSafeUserUnits(user) // Puxa os dados com a blindagem ativada
+      unit_ids: getSafeUserUnits(user)
     });
     setIsUserAcessModalOpen(true);
   };
@@ -163,7 +162,10 @@ export default function ConfiguracoesPage() {
       await api.users.update(editingUser.id, { 
         role: editingUser.role, 
         unit_ids: finalUnitIds,
-        unit_id: finalUnitIds.length > 0 ? finalUnitIds[0] : null
+        unit_id: finalUnitIds.length > 0 ? finalUnitIds[0] : null,
+        // ENVIA OS DADOS DE FÉRIAS (Se for ADMIN, manda nulo para não bloquear)
+        vacation_start: editingUser.role === 'ADMIN' ? null : (editingUser.vacation_start || null),
+        vacation_end: editingUser.role === 'ADMIN' ? null : (editingUser.vacation_end || null)
       });
       setIsUserAcessModalOpen(false);
       fetchAllData();
@@ -191,7 +193,6 @@ export default function ConfiguracoesPage() {
   async function handleUpdateReason() { if (!editingReason.name) return; try { await api.cancellationReasons.update(editingReason.id, { name: editingReason.name.toUpperCase() }); setEditingReason(null); fetchAllData(); } catch (error) {} }
   async function handleDeleteReason(id) { if (!confirm('Excluir motivo?')) return; try { await api.cancellationReasons.remove(id); setSelectedReasonId(''); fetchAllData(); } catch (error) {} }
   
-  // Aprovar Pendente com compatibilidade de unidade
   async function handleApproveUser(id) { 
     try { await api.users.update(id, { status: 'Aprovado' }); fetchAllData(); } catch (error) {} 
   }
@@ -472,6 +473,27 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
+              {/* BLOCO DE FÉRIAS */}
+              {editingUser.role !== 'ADMIN' && (
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--saritur-orange)' }}>Período de Férias (Bloqueio Automático)</label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Durante o período informado, o usuário não conseguirá acessar o sistema e verá uma mensagem de férias.</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Início das Férias</label>
+                      <input type="date" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={editingUser.vacation_start ? editingUser.vacation_start.split('T')[0] : ''} onChange={e => setEditingUser({...editingUser, vacation_start: e.target.value})} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.3rem' }}>Fim das Férias</label>
+                      <input type="date" style={{ width: '100%', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={editingUser.vacation_end ? editingUser.vacation_end.split('T')[0] : ''} onChange={e => setEditingUser({...editingUser, vacation_end: e.target.value})} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                    <button type="button" onClick={() => setEditingUser({...editingUser, vacation_start: null, vacation_end: null})} style={{ fontSize: '0.75rem', color: 'var(--danger-color)', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Limpar Férias</button>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsUserAcessModalOpen(false)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Salvar Permissões da Conta</button>
@@ -542,6 +564,7 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
+              {/* PAINEL DE CORES DO FUNIL QUE SÓ APARECE SE FOR FUNIL */}
               {widgetForm.metric_type === 'smart_funnel' && (
                 <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.05)', border: '1px solid var(--saritur-orange)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--saritur-orange)', marginBottom: '0.75rem' }}>Personalizar Cores do Funil</h4>
