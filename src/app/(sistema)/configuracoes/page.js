@@ -86,7 +86,6 @@ export default function ConfiguracoesPage() {
     } catch (err) {}
   }
 
-  // --- 🛡️ FUNÇÕES DE BLINDAGEM DE DADOS (EVITA TELA PRETA) 🛡️ ---
   const parseSafeArray = (data) => {
     if (Array.isArray(data)) return data;
     if (typeof data === 'string') {
@@ -137,7 +136,6 @@ export default function ConfiguracoesPage() {
     try { await api.customRoles.remove(id); fetchAllData(); } catch (err) { alert('Erro ao excluir perfil.'); }
   };
 
-  // --- MOTOR MÚLTIPLAS UNIDADES ---
   const openUserAccessModal = (user) => {
     setEditingUser({
       ...user,
@@ -163,7 +161,6 @@ export default function ConfiguracoesPage() {
         role: editingUser.role, 
         unit_ids: finalUnitIds,
         unit_id: finalUnitIds.length > 0 ? finalUnitIds[0] : null,
-        // ENVIA OS DADOS DE FÉRIAS (Se for ADMIN, manda nulo para não bloquear)
         vacation_start: editingUser.role === 'ADMIN' ? null : (editingUser.vacation_start || null),
         vacation_end: editingUser.role === 'ADMIN' ? null : (editingUser.vacation_end || null)
       });
@@ -435,7 +432,7 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* --- MODAL DE CONFIGURAÇÃO DE USUÁRIO (MÚLTIPLAS UNIDADES) BLINDADO --- */}
+      {/* --- MODAL DE CONFIGURAÇÃO DE USUÁRIO COM FÉRIAS BLINDADO --- */}
       {isUserAcessModalOpen && editingUser && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px' }}>
@@ -473,8 +470,8 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
 
-              {/* BLOCO DE FÉRIAS */}
-              {editingUser.role !== 'ADMIN' && (
+              {/* BLOCO DE FÉRIAS INCONDICIONALMENTE SEGURO */}
+              {editingUser?.role !== 'ADMIN' && (
                 <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                   <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--saritur-orange)' }}>Período de Férias (Bloqueio Automático)</label>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Durante o período informado, o usuário não conseguirá acessar o sistema e verá uma mensagem de férias.</p>
