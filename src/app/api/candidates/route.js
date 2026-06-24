@@ -84,7 +84,8 @@ export async function POST(req) {
   const allowedFields = [
     'process_type', 'name', 'mother_name', 'phone', 'cpf', 'rg', 
     'job_role_id', 'unit_id', 'interview_date', 'responsible_id',
-    'gender', 'is_pcd', 'status', 'cancellation_reason_id', 'feedback'
+    'gender', 'is_pcd', 'status', 'cancellation_reason_id', 'feedback',
+    'expected_admission_date'
   ];
 
   const columns = [];
