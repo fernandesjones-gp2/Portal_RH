@@ -35,10 +35,23 @@ export default function PipelineAdmissaoPage() {
   const [filterRole, setFilterRole] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
 
-  useEffect(() => { fetchData(); }, []);
+useEffect(() => { 
+    // 1. Carrega a primeira vez mostrando o "Carregando..."
+    fetchData(false); 
 
-  async function fetchData() {
-    setLoading(true);
+    // 2. Cria o "Motor Real-Time" que roda a cada 10 segundos silenciosamente
+    const motorRealTime = setInterval(() => {
+      fetchData(true);
+    }, 10000); // 10.000 milissegundos = 10 segundos
+
+    // Limpa o motor se o usuário mudar de tela
+    return () => clearInterval(motorRealTime);
+  }, []);
+
+  // Adicionamos a variável "silent" para não piscar a tela
+  async function fetchData(silent = false) {
+    if (!silent) setLoading(true); // Só mostra a palavra "Carregando" se não for silencioso
+    
     try {
       const sessionUser = await api.me();
       let roleName = '';
@@ -49,35 +62,37 @@ export default function PipelineAdmissaoPage() {
         setCurrentUserName(name);
       }
 
+      // O _t: Date.now() força a quebra de cache para trazer sempre a novidade
       const [allCandsData, unitsData, rolesData, reasonsData, usersData, customRolesData] = await Promise.all([
         api.candidates.list({ _t: Date.now() }),
-        api.units.list(),
-        api.jobRoles.list(),
-        api.cancellationReasons.list().catch(() => []),
-        api.users.list(),
-        api.customRoles.list().catch(() => []) 
+        !silent ? api.units.list() : Promise.resolve(units), // Otimização: só busca tabelas de apoio na primeira vez
+        !silent ? api.jobRoles.list() : Promise.resolve(roles),
+        !silent ? api.cancellationReasons.list().catch(() => []) : Promise.resolve(cancellationReasons),
+        !silent ? api.users.list() : Promise.resolve(responsibles),
+        !silent ? api.customRoles.list().catch(() => []) : Promise.resolve([]) 
       ]);
       
-      if (sessionUser && customRolesData) {
+      if (!silent && sessionUser && customRolesData) {
         const myRoleObj = customRolesData.find(r => r.name === roleName);
         if (myRoleObj && myRoleObj.permissions) {
           setUserPermissions(myRoleObj.permissions);
         }
       }
       
+      // Essa é a parte que atualiza os cards magicamente!
       if (allCandsData) {
         setAllCandidates(allCandsData);
         setCandidates(allCandsData.filter(c => ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].includes(c.status)));
       }
       
-      if (unitsData) setUnits(unitsData);
-      if (rolesData) setRoles(rolesData);
-      if (reasonsData) setCancellationReasons(reasonsData);
-      if (usersData) setResponsibles(usersData);
+      if (!silent && unitsData) setUnits(unitsData);
+      if (!silent && rolesData) setRoles(rolesData);
+      if (!silent && reasonsData) setCancellationReasons(reasonsData);
+      if (!silent && usersData) setResponsibles(usersData);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
