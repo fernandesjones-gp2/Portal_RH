@@ -35,23 +35,14 @@ export default function PipelineAdmissaoPage() {
   const [filterRole, setFilterRole] = useState('');
   const [filterResponsible, setFilterResponsible] = useState('');
 
-useEffect(() => { 
-    // 1. Carrega a primeira vez mostrando o "Carregando..."
+  useEffect(() => { 
     fetchData(false); 
-
-    // 2. Cria o "Motor Real-Time" que roda a cada 10 segundos silenciosamente
-    const motorRealTime = setInterval(() => {
-      fetchData(true);
-    }, 10000); // 10.000 milissegundos = 10 segundos
-
-    // Limpa o motor se o usuário mudar de tela
+    const motorRealTime = setInterval(() => { fetchData(true); }, 10000);
     return () => clearInterval(motorRealTime);
   }, []);
 
-  // Adicionamos a variável "silent" para não piscar a tela
   async function fetchData(silent = false) {
-    if (!silent) setLoading(true); // Só mostra a palavra "Carregando" se não for silencioso
-    
+    if (!silent) setLoading(true);
     try {
       const sessionUser = await api.me();
       let roleName = '';
@@ -62,24 +53,20 @@ useEffect(() => {
         setCurrentUserName(name);
       }
 
-      // O _t: Date.now() força a quebra de cache para trazer sempre a novidade
       const [allCandsData, unitsData, rolesData, reasonsData, usersData, customRolesData] = await Promise.all([
         api.candidates.list({ _t: Date.now() }),
-        !silent ? api.units.list() : Promise.resolve(units), // Otimização: só busca tabelas de apoio na primeira vez
+        !silent ? api.units.list() : Promise.resolve(units),
         !silent ? api.jobRoles.list() : Promise.resolve(roles),
         !silent ? api.cancellationReasons.list().catch(() => []) : Promise.resolve(cancellationReasons),
         !silent ? api.users.list() : Promise.resolve(responsibles),
-        !silent ? api.customRoles.list().catch(() => []) : Promise.resolve([]) 
+        !silent ? api.customRoles.list().catch(() => []) : Promise.resolve([])
       ]);
       
       if (!silent && sessionUser && customRolesData) {
         const myRoleObj = customRolesData.find(r => r.name === roleName);
-        if (myRoleObj && myRoleObj.permissions) {
-          setUserPermissions(myRoleObj.permissions);
-        }
+        if (myRoleObj && myRoleObj.permissions) setUserPermissions(myRoleObj.permissions);
       }
       
-      // Essa é a parte que atualiza os cards magicamente!
       if (allCandsData) {
         setAllCandidates(allCandsData);
         setCandidates(allCandsData.filter(c => ['Pré-Admissão (Pendente)', 'Pré-Admissão (Pronto)'].includes(c.status)));
@@ -96,7 +83,6 @@ useEffect(() => {
     }
   }
 
-  // --- 🛡️ MÁSCARAS E BLINDAGEM CONTRA TELA PRETA NAS DATAS 🛡️ ---
   const maskCPF = (val) => val ? String(val).replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1') : '';
   const maskPhone = (val) => {
     if (!val) return '';
@@ -109,28 +95,17 @@ useEffect(() => {
     return r;
   };
   const maskName = (val) => val ? String(val).replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s']/g, "") : '';
-  
-  const getBrazilIsoDate = (val) => { 
-    if (!val) return null; 
-    const str = String(val);
-    if (str.endsWith('Z') || str.match(/[+-]\d\d:\d\d$/)) return str; 
-    return `${str}:00-03:00`; 
-  };
-
+  const getBrazilIsoDate = (val) => { if (!val) return null; const str = String(val); if (str.endsWith('Z') || str.match(/[+-]\d\d:\d\d$/)) return str; return `${str}:00-03:00`; };
   const handleDateChange = (val) => val ? new Date(val + 'T12:00:00').toISOString() : null;
 
-  // FORMATADOR BLINDADO (Garante que .split() não quebre o React)
   const formatInputDate = (val) => {
     if (!val) return '';
     try {
       if (val instanceof Date) return val.toISOString().split('T')[0];
       return String(val).split('T')[0];
-    } catch (e) {
-      return '';
-    }
+    } catch (e) { return ''; }
   };
 
-  // FORMATADOR DE HORA BLINDADO
   const formatToBrazilDatetimeInput = (val) => { 
     if (!val) return ''; 
     try {
@@ -142,11 +117,8 @@ useEffect(() => {
       const parts = formatter.formatToParts(d); 
       const getP = (type) => parts.find(p => p.type === type)?.value; 
       return `${getP('year')}-${getP('month')}-${getP('day')}T${getP('hour')}:${getP('minute')}`;
-    } catch(e) {
-      return '';
-    }
+    } catch(e) { return ''; }
   };
-  // ---------------------------------------------------------------
 
   function validateForm(data) {
     if (!data.name || data.name.trim().length < 3) return alert('❌ VALIDAÇÃO: O Nome Completo é obrigatório.'), false;
@@ -190,7 +162,17 @@ useEffect(() => {
   });
 
   const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
-  const bloco2 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida');
+  
+  // BLOCO 2 CLASSIFICADO (DATA PREVISTA > ALFABÉTICA A-Z)
+  const bloco2 = filteredCandidates
+    .filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida')
+    .sort((a, b) => {
+      const dateA = a.expected_admission_date ? new Date(a.expected_admission_date).getTime() : Infinity;
+      const dateB = b.expected_admission_date ? new Date(b.expected_admission_date).getTime() : Infinity;
+      if (dateA !== dateB) return dateA - dateB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    
   const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
 
   const groupedBloco3 = [];
@@ -242,24 +224,42 @@ useEffect(() => {
     for (const c of listToRequest) {
       await api.candidates.update(c.id, { analysis_status: 'Solicitada', analysis_request_date: new Date().toISOString() });
     }
-    fetchData();
+    fetchData(true);
   }
 
+  // --- TRAVA DE MUDANÇA PARA O BLOCO 2 (DATA PREVISTA OBRIGATÓRIA) ---
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
-    const updates = { analysis_status: c.analysis_status, medical_status: c.medical_status, docs_status: c.docs_status, feedback: c.feedback, medical_request_date: c.medical_request_date, medical_result_date: c.medical_result_date, docs_request_date: c.docs_request_date, docs_receive_date: c.docs_receive_date };
+    
+    if (c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida' && !c.expected_admission_date) {
+      return alert('❌ A Data Prevista de Admissão é obrigatória para mover o candidato ao Bloco 2.');
+    }
+
+    const updates = { 
+      analysis_status: c.analysis_status, 
+      medical_status: c.medical_status, 
+      docs_status: c.docs_status, 
+      feedback: c.feedback, 
+      medical_request_date: c.medical_request_date, 
+      medical_result_date: c.medical_result_date, 
+      docs_request_date: c.docs_request_date, 
+      docs_receive_date: c.docs_receive_date,
+      expected_admission_date: c.expected_admission_date 
+    };
+
     const oldC = candidates.find(cand => cand.id === c.id);
     if (oldC && oldC.analysis_status !== c.analysis_status) {
       if (c.analysis_status === 'Solicitada') updates.analysis_request_date = new Date().toISOString();
       else if (c.analysis_status === 'Aprovado' || c.analysis_status === 'Reprovado') updates.analysis_update_date = new Date().toISOString();
     }
     if (oldC && oldC.feedback !== c.feedback && c.status === 'Pré-Admissão (Pronto)') updates.unread_feedback = true;
+    
     if (c.analysis_status === 'Reprovado' || c.medical_status === 'Inapto') {
       if (confirm('Atenção: A Análise foi Reprovada ou Médico deu Inapto. O candidato será movido para Cancelados/Reprovados. Confirmar?')) updates.status = 'Reprovado';
       else return;
     }
-    try { await api.candidates.update(c.id, updates); setEditingCandidate(null); fetchData(); } catch (error) { alert('Erro ao atualizar: ' + error.message); }
+    try { await api.candidates.update(c.id, updates); setEditingCandidate(null); fetchData(true); } catch (error) { alert('Erro ao atualizar: ' + error.message); }
   }
 
   async function handleUpdateBasicData(e) {
@@ -272,7 +272,7 @@ useEffect(() => {
     }
     const interviewIso = getBrazilIsoDate(interview_date);
     try { await api.candidates.update(id, { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd, responsible_id, interview_date: interviewIso }); } catch (err) { return alert('Erro ao atualizar: ' + err.message); }
-    setEditingBasicData(null); fetchData();
+    setEditingBasicData(null); fetchData(true);
   }
 
   async function handleConfirmReject(e) {
@@ -283,7 +283,7 @@ useEffect(() => {
     const cancellationText = `\n[CANCELADO NO PIPELINE] Motivo: ${reasonText}. ${rejectForm.notes ? `Obs: ${rejectForm.notes}` : ''}`;
     try {
       await api.candidates.update(rejectCandidate.id, { status: 'Reprovado', cancellation_reason_id: rejectForm.reasonId, feedback: (rejectCandidate.feedback || '') + cancellationText });
-      setRejectCandidate(null); setRejectForm({ reasonId: '', notes: '' }); fetchData();
+      setRejectCandidate(null); setRejectForm({ reasonId: '', notes: '' }); fetchData(true);
     } catch (error) { alert('Erro ao interromper processo.'); }
   }
 
@@ -291,7 +291,7 @@ useEffect(() => {
     if (confirm(`Confirma o cancelamento definitivo da admissão de ${c.name}?`)) {
       const finalNote = `\n[DP HOMOLOGAÇÃO] Cancelamento concluído e arquivado.`;
       await api.candidates.update(c.id, { status: 'Reprovado', analysis_status: 'Cancelado', feedback: (c.feedback || '') + finalNote });
-      fetchData();
+      fetchData(true);
     }
   }
 
@@ -300,22 +300,38 @@ useEffect(() => {
     setAdmissionModalCandidate(c); setAdmissionDate('');
   };
 
+  // --- TRAVA DE MUDANÇA PARA O BLOCO 3 (ADM DEVE SER >= PREVISTA) ---
   const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
+    
     const selected = new Date(admissionDate + 'T12:00:00');
     const today = new Date(); today.setHours(0, 0, 0, 0); 
+    
     if (selected < today) return alert('❌ BLOQUEIO: A data de admissão não pode ser retroativa (anterior a hoje).');
+
+    if (admissionModalCandidate.expected_admission_date) {
+      const expectedDate = new Date(admissionModalCandidate.expected_admission_date);
+      expectedDate.setHours(0,0,0,0);
+      const selectedDateOnly = new Date(selected);
+      selectedDateOnly.setHours(0,0,0,0);
+      
+      if (selectedDateOnly < expectedDate) {
+        const expectedStr = expectedDate.toLocaleDateString('pt-BR');
+        return alert(`❌ BLOQUEIO: A data de admissão não pode ser anterior à Data Prevista de Admissão (${expectedStr}).`);
+      }
+    }
+
     try {
       await api.candidates.update(admissionModalCandidate.id, { status: 'Pré-Admissão (Pronto)', admission_date: selected.toISOString() });
-      setAdmissionModalCandidate(null); fetchData(); 
+      setAdmissionModalCandidate(null); fetchData(true); 
     } catch (error) { alert('Erro ao confirmar admissão'); }
   };
 
   async function handleConcluirFinal(id) {
     if (confirm('Deseja concluir todo o processo e mover este candidato para a lista de Concluídos?')) {
       await api.candidates.update(id, { status: 'Concluído' });
-      fetchData();
+      fetchData(true);
     }
   }
 
@@ -329,7 +345,7 @@ useEffect(() => {
     const updates = { feedback: (feedbackCandidate.feedback || '') + newNote };
     if (feedbackCandidate.status === 'Pré-Admissão (Pronto)') updates.unread_feedback = true;
     await api.candidates.update(feedbackCandidate.id, updates);
-    setFeedbackCandidate(null); fetchData();
+    setFeedbackCandidate(null); fetchData(true);
   }
 
   const getStatusColor = (status) => {
@@ -346,10 +362,10 @@ useEffect(() => {
     return (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
   };
 
-  // REGRAS BLINDADAS
   const canExportXLS = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.create;
 
-  const renderCard = (c, isBloco3 = false) => {
+  const renderCard = (c, blocoId = 1) => {
+    const isBloco3 = blocoId === 3;
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
     
     const canInterruptProcess = !isPendingCancellation && (
@@ -385,6 +401,14 @@ useEffect(() => {
             )}
           </div>
         </div>
+
+        {/* --- EXIBIÇÃO DA DATA PREVISTA NO BLOCO 2 --- */}
+        {blocoId === 2 && c.expected_admission_date && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'var(--bg-color)', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+            <Calendar size={14} color="var(--saritur-orange)" />
+            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Prevista para: {new Date(c.expected_admission_date).toLocaleDateString('pt-BR')}</span>
+          </div>
+        )}
 
         {expandedNotes.includes(c.id) && (
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
@@ -440,11 +464,11 @@ useEffect(() => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '2rem', alignItems: 'start' }}>
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><AlertCircle size={24} color="var(--saritur-orange)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>1. Em Andamento ({bloco1.length})</h2></div>
-            <div style={{ display: 'grid', gap: '1rem' }}>{bloco1.map(c => renderCard(c, false))}{bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
+            <div style={{ display: 'grid', gap: '1rem' }}>{bloco1.map(c => renderCard(c, 1))}{bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
           </div>
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><Check size={24} color="var(--saritur-yellow)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>2. Pré-Admissão ({bloco2.length})</h2></div>
-            <div style={{ display: 'grid', gap: '1rem' }}>{bloco2.map(c => renderCard(c, false))}{bloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
+            <div style={{ display: 'grid', gap: '1rem' }}>{bloco2.map(c => renderCard(c, 2))}{bloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
           </div>
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><CheckCircle2 size={24} color="var(--success-color)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>3. Prontos para Admitir ({bloco3.length})</h2></div>
@@ -455,7 +479,7 @@ useEffect(() => {
                     <Calendar size={16} color={group.isCancellationSection ? 'var(--danger-color)' : 'var(--saritur-orange)'} />
                     <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>{group.date}</span>
                   </div>
-                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, true))}</div>
+                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, 3))}</div>
                 </div>
               ))}
               {groupedBloco3.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
@@ -464,7 +488,7 @@ useEffect(() => {
         </div>
       )}
 
-      {/* --- MODAL 1: EDITAR ETAPAS (STATUS) --- */}
+      {/* --- MODAL 1: EDITAR ETAPAS (STATUS) COM O NOVO CAMPO DE PREVISÃO --- */}
       {editingCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -498,6 +522,23 @@ useEffect(() => {
                   </div>
                 )}
               </div>
+
+              {/* REQUISIÇÃO OBRIGATÓRIA DA DATA PREVISTA PARA O BLOCO 2 */}
+              {editingCandidate.analysis_status === 'Aprovado' && editingCandidate.docs_status === 'Recebida' && (
+                <div style={{ padding: '1rem', backgroundColor: 'rgba(243, 113, 55, 0.05)', borderRadius: 'var(--radius-md)', border: '1px solid var(--saritur-orange)' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--saritur-orange)' }}>Data Prevista de Admissão *</label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.</p>
+                  <input 
+                    type="date" 
+                    required 
+                    min={getTodayISO()}
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--saritur-orange)' }} 
+                    value={formatInputDate(editingCandidate.expected_admission_date)} 
+                    onChange={e => setEditingCandidate({...editingCandidate, expected_admission_date: handleDateChange(e.target.value)})} 
+                  />
+                </div>
+              )}
+
               <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Observações</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.75rem' }} value={editingCandidate.feedback || ''} onChange={e => setEditingCandidate({...editingCandidate, feedback: e.target.value})} placeholder="Digite as observações aqui..."></textarea></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setEditingCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary" style={{ padding: '0.6rem 1.25rem' }}>Salvar Alterações</button></div>
             </form>
@@ -541,7 +582,7 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ADMISSION MODAL E REJECT MODAL */}
+      {/* --- MODAL DE ADMISSÃO (BLOCO 3) --- */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
