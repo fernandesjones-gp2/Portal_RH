@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye, Edit2, BellRing } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye, Edit2, BellRing, Lock } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -163,8 +163,8 @@ export default function PipelineAdmissaoPage() {
 
   const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
   
-  // BLOCO 2 CLASSIFICADO (DATA PREVISTA > ALFABÉTICA A-Z)
-  const bloco2 = filteredCandidates
+  // --- AGRUPAMENTO BLOCO 2 (POR DATA PREVISTA) ---
+  const bloco2Base = filteredCandidates
     .filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida')
     .sort((a, b) => {
       const dateA = a.expected_admission_date ? new Date(a.expected_admission_date).getTime() : Infinity;
@@ -172,9 +172,17 @@ export default function PipelineAdmissaoPage() {
       if (dateA !== dateB) return dateA - dateB;
       return (a.name || '').localeCompare(b.name || '');
     });
-    
-  const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
 
+  const groupedBloco2 = [];
+  bloco2Base.forEach(c => {
+    const dateStr = c.expected_admission_date ? new Date(c.expected_admission_date).toLocaleDateString('pt-BR') : 'Sem Data Prevista';
+    let group = groupedBloco2.find(g => g.date === dateStr);
+    if (!group) { group = { date: dateStr, candidates: [] }; groupedBloco2.push(group); }
+    group.candidates.push(c);
+  });
+    
+  // --- AGRUPAMENTO BLOCO 3 (POR DATA DE ADMISSÃO) ---
+  const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
   const groupedBloco3 = [];
   const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
   if (cancelamentosSolicitados.length > 0) groupedBloco3.push({ date: '🚨 CANCELAMENTO SOLICITADO (AGUARDANDO DP)', candidates: cancelamentosSolicitados, isCancellationSection: true });
@@ -227,7 +235,7 @@ export default function PipelineAdmissaoPage() {
     fetchData(true);
   }
 
-  // --- TRAVA DE MUDANÇA PARA O BLOCO 2 (DATA PREVISTA OBRIGATÓRIA) ---
+  // --- TRAVA E VERIFICAÇÃO PARA O BLOCO 2 (DATA PREVISTA) ---
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
@@ -300,7 +308,6 @@ export default function PipelineAdmissaoPage() {
     setAdmissionModalCandidate(c); setAdmissionDate('');
   };
 
-  // --- TRAVA DE MUDANÇA PARA O BLOCO 3 (ADM DEVE SER >= PREVISTA) ---
   const handleGridConfirmAdmission = async (e) => {
     e.preventDefault();
     if (!admissionDate) return;
@@ -363,9 +370,12 @@ export default function PipelineAdmissaoPage() {
   };
 
   const canExportXLS = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.create;
+  
+  // VERIFICA SE O CAMPO PODE SER EDITADO NO MODAL (Apenas ADMIN e RECRUITER_ANALYST se já preenchido)
+  const originalEditingCand = editingCandidate ? candidates.find(c => c.id === editingCandidate.id) : null;
+  const isExpectedDateLocked = originalEditingCand?.expected_admission_date && !['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole);
 
-  const renderCard = (c, blocoId = 1) => {
-    const isBloco3 = blocoId === 3;
+  const renderCard = (c, isBloco3 = false) => {
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
     
     const canInterruptProcess = !isPendingCancellation && (
@@ -401,14 +411,6 @@ export default function PipelineAdmissaoPage() {
             )}
           </div>
         </div>
-
-        {/* --- EXIBIÇÃO DA DATA PREVISTA NO BLOCO 2 --- */}
-        {blocoId === 2 && c.expected_admission_date && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'var(--bg-color)', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
-            <Calendar size={14} color="var(--saritur-orange)" />
-            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Prevista para: {new Date(c.expected_admission_date).toLocaleDateString('pt-BR')}</span>
-          </div>
-        )}
 
         {expandedNotes.includes(c.id) && (
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
@@ -462,14 +464,30 @@ export default function PipelineAdmissaoPage() {
 
       {loading ? (<p style={{ color: 'var(--text-muted)' }}>Carregando Pipeline...</p>) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '2rem', alignItems: 'start' }}>
+          
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><AlertCircle size={24} color="var(--saritur-orange)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>1. Em Andamento ({bloco1.length})</h2></div>
-            <div style={{ display: 'grid', gap: '1rem' }}>{bloco1.map(c => renderCard(c, 1))}{bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
+            <div style={{ display: 'grid', gap: '1rem' }}>{bloco1.map(c => renderCard(c))}{bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
           </div>
+          
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><Check size={24} color="var(--saritur-yellow)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>2. Pré-Admissão ({bloco2.length})</h2></div>
-            <div style={{ display: 'grid', gap: '1rem' }}>{bloco2.map(c => renderCard(c, 2))}{bloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><Check size={24} color="var(--saritur-yellow)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>2. Pré-Admissão ({bloco2Base.length})</h2></div>
+            <div style={{ display: 'grid', gap: '1.5rem' }}>
+              {groupedBloco2.map(group => (
+                <div key={group.date}>
+                  <div style={{ padding: '0.5rem 0.75rem', borderBottom: '2px solid var(--border-color)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--surface-color)', boxShadow: 'var(--shadow-sm)' }}>
+                    <Calendar size={16} color="var(--saritur-orange)" />
+                    <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                      {group.date} ({group.candidates.length} candidato{group.candidates.length !== 1 ? 's' : ''})
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c))}</div>
+                </div>
+              ))}
+              {groupedBloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
+            </div>
           </div>
+          
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><CheckCircle2 size={24} color="var(--success-color)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>3. Prontos para Admitir ({bloco3.length})</h2></div>
             <div style={{ display: 'grid', gap: '1.5rem' }}>
@@ -477,18 +495,21 @@ export default function PipelineAdmissaoPage() {
                 <div key={group.date}>
                   <div style={{ padding: '0.5rem 0.75rem', borderBottom: '2px solid var(--border-color)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)', backgroundColor: group.isCancellationSection ? 'rgba(224, 36, 36, 0.1)' : 'var(--surface-color)', boxShadow: 'var(--shadow-sm)' }}>
                     <Calendar size={16} color={group.isCancellationSection ? 'var(--danger-color)' : 'var(--saritur-orange)'} />
-                    <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>{group.date}</span>
+                    <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: group.isCancellationSection ? 'var(--danger-color)' : 'var(--text-main)' }}>
+                      {group.date} ({group.candidates.length} candidato{group.candidates.length !== 1 ? 's' : ''})
+                    </span>
                   </div>
-                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, 3))}</div>
+                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, true))}</div>
                 </div>
               ))}
               {groupedBloco3.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
             </div>
           </div>
+
         </div>
       )}
 
-      {/* --- MODAL 1: EDITAR ETAPAS (STATUS) COM O NOVO CAMPO DE PREVISÃO --- */}
+      {/* --- MODAL 1: EDITAR ETAPAS COM BLOQUEIO DE DATA PREVISTA --- */}
       {editingCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -523,16 +544,22 @@ export default function PipelineAdmissaoPage() {
                 )}
               </div>
 
-              {/* REQUISIÇÃO OBRIGATÓRIA DA DATA PREVISTA PARA O BLOCO 2 */}
+              {/* TRAVA DE SEGURANÇA E EXIBIÇÃO DA DATA PREVISTA */}
               {editingCandidate.analysis_status === 'Aprovado' && editingCandidate.docs_status === 'Recebida' && (
-                <div style={{ padding: '1rem', backgroundColor: 'rgba(243, 113, 55, 0.05)', borderRadius: 'var(--radius-md)', border: '1px solid var(--saritur-orange)' }}>
-                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--saritur-orange)' }}>Data Prevista de Admissão *</label>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.</p>
+                <div style={{ padding: '1rem', backgroundColor: isExpectedDateLocked ? 'var(--bg-color)' : 'rgba(243, 113, 55, 0.05)', borderRadius: 'var(--radius-md)', border: isExpectedDateLocked ? '1px solid var(--border-color)' : '1px solid var(--saritur-orange)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: isExpectedDateLocked ? 'var(--text-main)' : 'var(--saritur-orange)' }}>
+                    Data Prevista de Admissão *
+                    {isExpectedDateLocked && <Lock size={14} color="var(--danger-color)" title="Apenas ADMIN e Analistas podem alterar" />}
+                  </label>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                    {isExpectedDateLocked ? 'A data prevista já foi definida e seu perfil não tem permissão para alterá-la.' : 'Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.'}
+                  </p>
                   <input 
                     type="date" 
                     required 
-                    min={getTodayISO()}
-                    style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--saritur-orange)' }} 
+                    disabled={isExpectedDateLocked}
+                    min={isExpectedDateLocked ? '' : getTodayISO()}
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', borderRadius: '4px', border: isExpectedDateLocked ? '1px solid var(--border-color)' : '1px solid var(--saritur-orange)', opacity: isExpectedDateLocked ? 0.7 : 1, cursor: isExpectedDateLocked ? 'not-allowed' : 'text' }} 
                     value={formatInputDate(editingCandidate.expected_admission_date)} 
                     onChange={e => setEditingCandidate({...editingCandidate, expected_admission_date: handleDateChange(e.target.value)})} 
                   />
@@ -564,7 +591,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAL DETALHES COMPLETO DO CANDIDATO --- */}
+      {/* --- MODAIS DE DETALHES, ADMISSÃO E REJEIÇÃO PERMANECEM IDÊNTICOS --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -582,7 +609,6 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAL DE ADMISSÃO (BLOCO 3) --- */}
       {admissionModalCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
@@ -610,7 +636,6 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* FEEDBACK (MENSAGEM) MODAL */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
