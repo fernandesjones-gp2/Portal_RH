@@ -552,7 +552,7 @@ export default function PipelineAdmissaoPage() {
                     {isExpectedDateLocked && <Lock size={14} color="var(--danger-color)" title="Apenas ADMIN e Analistas podem alterar" />}
                   </label>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                    {isExpectedDateLocked ? 'A data prevista já foi definida e seu perfil não tem permissão para alterá-la.' : 'Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.'}
+                    {isExpectedDateLocked ? 'A data prevista já foi definida e não pode ser alterada. Caso necessário, contate o seu superior.' : 'Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.'}
                   </p>
                   <input 
                     type="date" 
