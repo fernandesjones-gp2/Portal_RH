@@ -31,32 +31,45 @@ export default function AgendamentosPage() {
   const [feedbackText, setFeedbackText] = useState('');
   const [rejectForm, setRejectForm] = useState({ reasonId: '', notes: '' });
 
-  useEffect(() => { fetchData(); }, []);
+ useEffect(() => { 
+    // 1. Carrega a primeira vez com loading
+    fetchData(false); 
+    
+    // 2. Motor Real-Time a cada 10 segundos
+    const motorRealTime = setInterval(() => {
+      fetchData(true);
+    }, 10000);
+    
+    return () => clearInterval(motorRealTime);
+  }, []);
 
-  async function fetchData() {
-    setLoading(true);
+  async function fetchData(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const [allCandsData, unitsRes, rolesRes, usersRes, reasonsRes, templatesRes] = await Promise.all([
         api.candidates.list({ _t: Date.now() }),
-        api.units.list({ _t: Date.now() }),
-        api.jobRoles.list({ _t: Date.now() }),
-        api.users.list({ _t: Date.now() }),
-        api.cancellationReasons.list({ _t: Date.now() }).catch(() => []),
-        api.messageTemplates.list({ _t: Date.now() }).catch(() => []) 
+        !silent ? api.units.list({ _t: Date.now() }) : Promise.resolve(units),
+        !silent ? api.jobRoles.list({ _t: Date.now() }) : Promise.resolve(roles),
+        !silent ? api.users.list({ _t: Date.now() }) : Promise.resolve(responsibles),
+        !silent ? api.cancellationReasons.list({ _t: Date.now() }).catch(() => []) : Promise.resolve(cancellationReasons),
+        !silent ? api.messageTemplates.list({ _t: Date.now() }).catch(() => []) : Promise.resolve(templates)
       ]);
 
       if (allCandsData) {
         setAllCandidates(allCandsData);
         setCandidates(allCandsData.filter(c => ['Agendado', 'Banco de Talentos', 'Reprovado'].includes(c.status)));
       }
-      if (unitsRes) setUnits(unitsRes);
-      if (rolesRes) setRoles(rolesRes);
-      if (usersRes) setResponsibles(usersRes);
-      if (reasonsRes) setCancellationReasons(reasonsRes);
-      if (templatesRes) setTemplates(templatesRes);
+      if (!silent && unitsRes) setUnits(unitsRes);
+      if (!silent && rolesRes) setRoles(rolesRes);
+      if (!silent && usersRes) setResponsibles(usersRes);
+      if (!silent && reasonsRes) setCancellationReasons(reasonsRes);
+      if (!silent && templatesRes) setTemplates(templatesRes);
 
-    } catch (error) { console.error('Error fetching data:', error); } 
-    finally { setLoading(false); }
+    } catch (error) { 
+      console.error('Error fetching data:', error); 
+    } finally { 
+      if (!silent) setLoading(false); 
+    }
   }
 
   const maskCPF = (val) => {
