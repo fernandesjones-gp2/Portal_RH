@@ -16,7 +16,8 @@ export async function PATCH(req, props) {
     'feedback', 'cancellation_reason_id', 'admission_date',
     'medical_request_date', 'medical_result_date', 
     'docs_request_date', 'docs_receive_date', 'analysis_request_date', 
-    'analysis_update_date', 'gender', 'is_pcd', 'unread_feedback'
+    'analysis_update_date', 'gender', 'is_pcd', 'unread_feedback',
+    'expected_admission_date'
   ];
 
   const updates = [];
