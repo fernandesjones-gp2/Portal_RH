@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api-client';
 import { useSession, signOut } from 'next-auth/react';
-import { LayoutDashboard, Users, UserCheck, CheckCircle, Settings, LogOut, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, UserCheck, CheckCircle, Settings, LogOut, ShieldAlert, Palmtree } from 'lucide-react';
 
 export default function SistemaLayout({ children }) {
   const pathname = usePathname();
@@ -15,6 +15,7 @@ export default function SistemaLayout({ children }) {
   const [userName, setUserName] = useState('Carregando...');
   const [userRole, setUserRole] = useState('');
   const [userStatus, setUserStatus] = useState(''); 
+  const [userVacation, setUserVacation] = useState(null); // ESTADO DE FÉRIAS
 
   const menuItems = [
     { name: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
@@ -25,7 +26,7 @@ export default function SistemaLayout({ children }) {
     { name: 'Configurações', icon: <Settings size={20} />, path: '/configuracoes' },
   ];
 
-  // Reage a logout: quando a sessão deixar de estar autenticada, volta para "/"
+  // Reage a logout
   useEffect(() => {
     if (sessionStatus === 'unauthenticated') {
       router.push('/');
@@ -41,12 +42,19 @@ export default function SistemaLayout({ children }) {
           return;
         }
 
-        const user = { name: me.name, role: me.role, status: me.status };
+        const user = { 
+          name: me.name, 
+          role: me.role, 
+          status: me.status,
+          vacation_start: me.vacation_start,
+          vacation_end: me.vacation_end
+        };
 
         if (user) {
           setUserName(user.name || me.email);
           setUserRole(user.role);
           setUserStatus(user.status);
+          setUserVacation({ start: user.vacation_start, end: user.vacation_end });
 
           // CONEXÃO COM A NOVA MATRIZ DE PERMISSÕES DINÂMICA
           try {
@@ -54,13 +62,12 @@ export default function SistemaLayout({ children }) {
             const myRoleObj = customRoles.find(r => r.name === user.role);
             
             if (myRoleObj && myRoleObj.permissions) {
-              // Extrai apenas as rotas onde a permissão de "Visualizar" (view) é verdadeira
               const allowed = Object.keys(myRoleObj.permissions).filter(
                 path => myRoleObj.permissions[path].view === true
               );
               setAllowedPaths(allowed);
             } else {
-              setAllowedPaths([]); // Sem acesso se o perfil não existir na matriz
+              setAllowedPaths([]); 
             }
           } catch (err) {
             console.error('Erro ao buscar a Matriz de Perfis:', err);
@@ -94,6 +101,44 @@ export default function SistemaLayout({ children }) {
     );
   }
 
+  // --- MOTOR DE FÉRIAS (BLOQUEIO AUTOMÁTICO) ---
+  let isVacationActive = false;
+  if (userVacation?.start && userVacation?.end && userRole !== 'ADMIN') {
+    try {
+      const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+      const todayStr = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+      const startStr = String(userVacation.start).split('T')[0];
+      const endStr = String(userVacation.end).split('T')[0];
+      
+      if (todayStr >= startStr && todayStr <= endStr) {
+        isVacationActive = true;
+      }
+    } catch (e) {
+      console.error("Erro ao validar datas de férias", e);
+    }
+  }
+
+  if (isVacationActive) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif', padding: '2rem' }}>
+        <div className="glass-panel" style={{ padding: '3rem', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+          <Palmtree size={64} color="#057a55" style={{ marginBottom: '1.5rem' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--text-main)' }}>
+            Boas Férias, {userName.split(' ')[0]}! 🌴
+          </h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', lineHeight: '1.6' }}>
+            Identificamos que você está em seu período de descanso programado.<br/><br/>
+            <strong>De {String(userVacation.start).split('T')[0].split('-').reverse().join('/')} até {String(userVacation.end).split('T')[0].split('-').reverse().join('/')}</strong><br/><br/>
+            Aproveite bastante! Seu acesso ao sistema ficará bloqueado automaticamente até o seu retorno para garantir a sua tranquilidade e a segurança do portal.
+          </p>
+          <button onClick={handleLogout} className="btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+            <LogOut size={18} /> Sair do Sistema
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // --- TELA DE BLOQUEIO (AGUARDANDO APROVAÇÃO) ---
   if (userStatus === 'Pendente') {
     return (
@@ -117,13 +162,11 @@ export default function SistemaLayout({ children }) {
 
   const isAllowed = allowedPaths.includes(pathname);
   
-  // Se ele não pode ver a tela atual, mas tem outras telas, joga ele para a primeira disponível
   if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
     router.push(allowedPaths[0]);
     return null;
   }
 
-  // Se não tem permissão de ver absolutamente NENHUMA TELA
   if (allowedPaths.length === 0 && pathname !== '/') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif', padding: '2rem' }}>
