@@ -163,7 +163,6 @@ export default function PipelineAdmissaoPage() {
 
   const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
   
-  // --- AGRUPAMENTO BLOCO 2 (POR DATA PREVISTA) ---
   const bloco2Base = filteredCandidates
     .filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida')
     .sort((a, b) => {
@@ -181,7 +180,6 @@ export default function PipelineAdmissaoPage() {
     group.candidates.push(c);
   });
     
-  // --- AGRUPAMENTO BLOCO 3 (POR DATA DE ADMISSÃO) ---
   const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
   const groupedBloco3 = [];
   const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
@@ -235,7 +233,7 @@ export default function PipelineAdmissaoPage() {
     fetchData(true);
   }
 
-  // --- TRAVA E VERIFICAÇÃO PARA O BLOCO 2 (DATA PREVISTA) ---
+  // --- MOTOR DE AUDITORIA E TRAVAS DE DATA ---
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
@@ -248,7 +246,7 @@ export default function PipelineAdmissaoPage() {
       analysis_status: c.analysis_status, 
       medical_status: c.medical_status, 
       docs_status: c.docs_status, 
-      feedback: c.feedback, 
+      feedback: c.feedback || '', 
       medical_request_date: c.medical_request_date, 
       medical_result_date: c.medical_result_date, 
       docs_request_date: c.docs_request_date, 
@@ -257,17 +255,50 @@ export default function PipelineAdmissaoPage() {
     };
 
     const oldC = candidates.find(cand => cand.id === c.id);
-    if (oldC && oldC.analysis_status !== c.analysis_status) {
-      if (c.analysis_status === 'Solicitada') updates.analysis_request_date = new Date().toISOString();
-      else if (c.analysis_status === 'Aprovado' || c.analysis_status === 'Reprovado') updates.analysis_update_date = new Date().toISOString();
+    
+    if (oldC) {
+      // 🕵️ AUDITORIA DE DATA PREVISTA
+      const oldDateFmt = formatInputDate(oldC.expected_admission_date);
+      const newDateFmt = formatInputDate(c.expected_admission_date);
+
+      if (oldDateFmt !== newDateFmt) {
+        const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const formatBR = (iso) => iso ? iso.split('-').reverse().join('/') : '';
+        
+        let auditMsg = '';
+        if (!oldDateFmt && newDateFmt) {
+          auditMsg = `\n📅 [AUDITORIA] Data Prevista de Admissão definida para ${formatBR(newDateFmt)}.\n   Por: ${currentUserName} em ${timestamp}.\n`;
+        } else if (oldDateFmt && newDateFmt) {
+          auditMsg = `\n🔄 [AUDITORIA] Data Prevista alterada de ${formatBR(oldDateFmt)} para ${formatBR(newDateFmt)}.\n   Por: ${currentUserName} em ${timestamp}.\n`;
+        } else if (oldDateFmt && !newDateFmt) {
+          auditMsg = `\n🗑️ [AUDITORIA] Data Prevista de Admissão (${formatBR(oldDateFmt)}) removida.\n   Por: ${currentUserName} em ${timestamp}.\n`;
+        }
+        
+        updates.feedback = updates.feedback + auditMsg;
+      }
+
+      if (oldC.analysis_status !== c.analysis_status) {
+        if (c.analysis_status === 'Solicitada') updates.analysis_request_date = new Date().toISOString();
+        else if (c.analysis_status === 'Aprovado' || c.analysis_status === 'Reprovado') updates.analysis_update_date = new Date().toISOString();
+      }
+      
+      if (oldC.feedback !== updates.feedback && c.status === 'Pré-Admissão (Pronto)') {
+        updates.unread_feedback = true;
+      }
     }
-    if (oldC && oldC.feedback !== c.feedback && c.status === 'Pré-Admissão (Pronto)') updates.unread_feedback = true;
     
     if (c.analysis_status === 'Reprovado' || c.medical_status === 'Inapto') {
       if (confirm('Atenção: A Análise foi Reprovada ou Médico deu Inapto. O candidato será movido para Cancelados/Reprovados. Confirmar?')) updates.status = 'Reprovado';
       else return;
     }
-    try { await api.candidates.update(c.id, updates); setEditingCandidate(null); fetchData(true); } catch (error) { alert('Erro ao atualizar: ' + error.message); }
+    
+    try { 
+      await api.candidates.update(c.id, updates); 
+      setEditingCandidate(null); 
+      fetchData(true); 
+    } catch (error) { 
+      alert('Erro ao atualizar: ' + error.message); 
+    }
   }
 
   async function handleUpdateBasicData(e) {
@@ -371,11 +402,11 @@ export default function PipelineAdmissaoPage() {
 
   const canExportXLS = ['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole) || userPermissions['/pre-admissao']?.create;
   
-  // VERIFICA SE O CAMPO PODE SER EDITADO NO MODAL (Apenas ADMIN e RECRUITER_ANALYST se já preenchido)
   const originalEditingCand = editingCandidate ? candidates.find(c => c.id === editingCandidate.id) : null;
   const isExpectedDateLocked = originalEditingCand?.expected_admission_date && !['ADMIN', 'RECRUITER_ANALYST'].includes(currentUserRole);
 
-  const renderCard = (c, isBloco3 = false) => {
+  const renderCard = (c, blocoId = 1) => {
+    const isBloco3 = blocoId === 3;
     const isPendingCancellation = c.analysis_status === 'Cancelamento Pendente';
     
     const canInterruptProcess = !isPendingCancellation && (
@@ -411,6 +442,13 @@ export default function PipelineAdmissaoPage() {
             )}
           </div>
         </div>
+
+        {blocoId === 2 && c.expected_admission_date && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: 'var(--bg-color)', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+            <Calendar size={14} color="var(--saritur-orange)" />
+            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Prevista para: {new Date(c.expected_admission_date).toLocaleDateString('pt-BR')}</span>
+          </div>
+        )}
 
         {expandedNotes.includes(c.id) && (
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', border: '1px solid var(--border-color)', whiteSpace: 'pre-wrap' }}>
@@ -467,7 +505,7 @@ export default function PipelineAdmissaoPage() {
           
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}><AlertCircle size={24} color="var(--saritur-orange)" /><h2 style={{ fontSize: '1.15rem', fontWeight: 'bold' }}>1. Em Andamento ({bloco1.length})</h2></div>
-            <div style={{ display: 'grid', gap: '1rem' }}>{bloco1.map(c => renderCard(c))}{bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
+            <div style={{ display: 'grid', gap: '1rem' }}>{bloco1.map(c => renderCard(c, 1))}{bloco1.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}</div>
           </div>
           
           <div style={{ backgroundColor: 'var(--bg-color)', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
@@ -481,7 +519,7 @@ export default function PipelineAdmissaoPage() {
                       {group.date} ({group.candidates.length} candidato{group.candidates.length !== 1 ? 's' : ''})
                     </span>
                   </div>
-                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c))}</div>
+                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, 2))}</div>
                 </div>
               ))}
               {groupedBloco2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
@@ -499,7 +537,7 @@ export default function PipelineAdmissaoPage() {
                       {group.date} ({group.candidates.length} candidato{group.candidates.length !== 1 ? 's' : ''})
                     </span>
                   </div>
-                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, true))}</div>
+                  <div style={{ display: 'grid', gap: '1rem' }}>{group.candidates.map(c => renderCard(c, 3))}</div>
                 </div>
               ))}
               {groupedBloco3.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>Nenhum candidato.</p>}
@@ -509,7 +547,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAL 1: EDITAR ETAPAS COM BLOQUEIO DE DATA PREVISTA --- */}
+      {/* --- MODAL 1: EDITAR ETAPAS COM BLOQUEIO E AUDITORIA DE DATA PREVISTA --- */}
       {editingCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -544,7 +582,6 @@ export default function PipelineAdmissaoPage() {
                 )}
               </div>
 
-              {/* TRAVA DE SEGURANÇA E EXIBIÇÃO DA DATA PREVISTA */}
               {editingCandidate.analysis_status === 'Aprovado' && editingCandidate.docs_status === 'Recebida' && (
                 <div style={{ padding: '1rem', backgroundColor: isExpectedDateLocked ? 'var(--bg-color)' : 'rgba(243, 113, 55, 0.05)', borderRadius: 'var(--radius-md)', border: isExpectedDateLocked ? '1px solid var(--border-color)' : '1px solid var(--saritur-orange)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem', color: isExpectedDateLocked ? 'var(--text-main)' : 'var(--saritur-orange)' }}>
@@ -591,7 +628,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAIS DE DETALHES, ADMISSÃO E REJEIÇÃO PERMANECEM IDÊNTICOS --- */}
+      {/* --- MODAIS DE DETALHES, ADMISSÃO E REJEIÇÃO --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -636,6 +673,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
+      {/* FEEDBACK (MENSAGEM) MODAL */}
       {feedbackCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '400px' }}>
