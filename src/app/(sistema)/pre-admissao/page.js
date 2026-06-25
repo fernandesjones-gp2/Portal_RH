@@ -161,8 +161,12 @@ export default function PipelineAdmissaoPage() {
     return true;
   });
 
-  const bloco1 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'));
+  // --- NOVA REGRA DE ORDENAÇÃO BLOCO 1 (ALFABÉTICA A-Z) ---
+  const bloco1 = filteredCandidates
+    .filter(c => c.status === 'Pré-Admissão (Pendente)' && !(c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida'))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   
+  // --- NOVA REGRA DE ORDENAÇÃO BLOCO 2 (DATA PREVISTA > ALFABÉTICA) ---
   const bloco2Base = filteredCandidates
     .filter(c => c.status === 'Pré-Admissão (Pendente)' && c.analysis_status === 'Aprovado' && c.docs_status === 'Recebida')
     .sort((a, b) => {
@@ -180,7 +184,16 @@ export default function PipelineAdmissaoPage() {
     group.candidates.push(c);
   });
     
-  const bloco3 = filteredCandidates.filter(c => c.status === 'Pré-Admissão (Pronto)').sort((a, b) => new Date(a.admission_date) - new Date(b.admission_date));
+  // --- NOVA REGRA DE ORDENAÇÃO BLOCO 3 (DATA DE ADMISSÃO > ALFABÉTICA) ---
+  const bloco3 = filteredCandidates
+    .filter(c => c.status === 'Pré-Admissão (Pronto)')
+    .sort((a, b) => {
+      const dateA = a.admission_date ? new Date(a.admission_date).getTime() : Infinity;
+      const dateB = b.admission_date ? new Date(b.admission_date).getTime() : Infinity;
+      if (dateA !== dateB) return dateA - dateB;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
   const groupedBloco3 = [];
   const cancelamentosSolicitados = bloco3.filter(c => c.analysis_status === 'Cancelamento Pendente');
   if (cancelamentosSolicitados.length > 0) groupedBloco3.push({ date: '🚨 CANCELAMENTO SOLICITADO (AGUARDANDO DP)', candidates: cancelamentosSolicitados, isCancellationSection: true });
@@ -233,7 +246,6 @@ export default function PipelineAdmissaoPage() {
     fetchData(true);
   }
 
-  // --- MOTOR DE AUDITORIA E TRAVAS DE DATA ---
   async function handleSaveEditingStages(e) {
     e.preventDefault();
     const c = editingCandidate;
@@ -257,7 +269,6 @@ export default function PipelineAdmissaoPage() {
     const oldC = candidates.find(cand => cand.id === c.id);
     
     if (oldC) {
-      // 🕵️ AUDITORIA DE DATA PREVISTA
       const oldDateFmt = formatInputDate(oldC.expected_admission_date);
       const newDateFmt = formatInputDate(c.expected_admission_date);
 
@@ -547,7 +558,7 @@ export default function PipelineAdmissaoPage() {
         </div>
       )}
 
-      {/* --- MODAL 1: EDITAR ETAPAS COM BLOQUEIO E AUDITORIA DE DATA PREVISTA --- */}
+      {/* --- MODAL 1: EDITAR ETAPAS --- */}
       {editingCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -589,7 +600,7 @@ export default function PipelineAdmissaoPage() {
                     {isExpectedDateLocked && <Lock size={14} color="var(--danger-color)" title="Apenas ADMIN e Analistas podem alterar" />}
                   </label>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                    {isExpectedDateLocked ? 'A data prevista já foi definida e não pode ser alterada. Caso necessário, contate o seu superior.' : 'Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.'}
+                    {isExpectedDateLocked ? 'A data prevista já foi definida e seu perfil não tem permissão para alterá-la.' : 'Obrigatório ao mover para o Bloco 2. Deve ser hoje ou uma data futura.'}
                   </p>
                   <input 
                     type="date" 
