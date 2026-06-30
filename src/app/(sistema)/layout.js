@@ -15,7 +15,7 @@ export default function SistemaLayout({ children }) {
   const [userName, setUserName] = useState('Carregando...');
   const [userRole, setUserRole] = useState('');
   const [userStatus, setUserStatus] = useState(''); 
-  const [userVacation, setUserVacation] = useState(null); // ESTADO DE FÉRIAS
+  const [userVacation, setUserVacation] = useState(null);
 
   const menuItems = [
     { name: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
@@ -26,7 +26,6 @@ export default function SistemaLayout({ children }) {
     { name: 'Configurações', icon: <Settings size={20} />, path: '/configuracoes' },
   ];
 
-  // Reage a logout
   useEffect(() => {
     if (sessionStatus === 'unauthenticated') {
       router.push('/');
@@ -56,7 +55,6 @@ export default function SistemaLayout({ children }) {
           setUserStatus(user.status);
           setUserVacation({ start: user.vacation_start, end: user.vacation_end });
 
-          // CONEXÃO COM A NOVA MATRIZ DE PERMISSÕES DINÂMICA
           try {
             const customRoles = await api.customRoles.list();
             const myRoleObj = customRoles.find(r => r.name === user.role);
@@ -101,7 +99,6 @@ export default function SistemaLayout({ children }) {
     );
   }
 
-  // --- MOTOR DE FÉRIAS (BLOQUEIO AUTOMÁTICO) ---
   let isVacationActive = false;
   if (userVacation?.start && userVacation?.end && userRole !== 'ADMIN') {
     try {
@@ -139,7 +136,6 @@ export default function SistemaLayout({ children }) {
     );
   }
 
-  // --- TELA DE BLOQUEIO (AGUARDANDO APROVAÇÃO) ---
   if (userStatus === 'Pendente') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontFamily: 'sans-serif', padding: '2rem' }}>
@@ -157,9 +153,7 @@ export default function SistemaLayout({ children }) {
     );
   }
 
-  // --- CONTINUAÇÃO NORMAL DO SISTEMA SE ESTIVER APROVADO ---
   const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
-
   const isAllowed = allowedPaths.includes(pathname);
   
   if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
@@ -188,32 +182,29 @@ export default function SistemaLayout({ children }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }}>
-     {/* Sidebar */}
+      {/* Sidebar */}
       <aside style={{ width: '250px', backgroundColor: 'var(--surface-color)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
+        
+        {/* CABEÇALHO DO MENU LATERAL (LOGÓTIPO + TÍTULO) */}
         <div style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          
-          {/* --- LOGÓTIPO DA EMPRESA AQUI --- */}
           <img 
             src="/logo.png" 
-            alt="Logótipo da Empresa" 
-            style={{ height: '32px', width: 'auto', objectFit: 'contain' }} 
+            alt="Logo" 
+            style={{ height: '36px', width: 'auto', objectFit: 'contain' }} 
+            onError={(e) => e.target.style.display = 'none'} // Esconde a imagem se ela não for encontrada
           />
-
-          {/* Opcional: Pode manter o texto ou apagá-lo se o logótipo já tiver o nome */}
-          <h2 style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: '700', letterSpacing: '-0.02em', display: 'none' }}>Portal RH</h2>
-          
-          <span style={{ fontSize: '0.65rem', backgroundColor: 'var(--saritur-orange)', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 'bold' }}>
-            {userRole}
-          </span>
+          <h2 style={{ color: 'var(--text-main)', fontSize: '1.25rem', fontWeight: '700', letterSpacing: '-0.02em', margin: 0 }}>
+            Portal RH
+          </h2>
         </div>
 
         <nav style={{ padding: '1rem', flex: 1 }}>
-          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', margin: 0, padding: 0 }}>
             {filteredMenuItems.map((item) => {
               const isActive = pathname === item.path;
               return (
                 <li key={item.path}>
-                  <Link href={item.path} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', color: isActive ? 'var(--text-main)' : 'var(--text-muted)', backgroundColor: isActive ? 'var(--bg-color)' : 'transparent', fontWeight: isActive ? '500' : '400', fontSize: '0.9rem', transition: 'all 0.1s ease' }}>
+                  <Link href={item.path} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', color: isActive ? 'var(--text-main)' : 'var(--text-muted)', backgroundColor: isActive ? 'var(--bg-color)' : 'transparent', fontWeight: isActive ? '500' : '400', fontSize: '0.9rem', transition: 'all 0.1s ease', textDecoration: 'none' }}>
                     {item.icon}
                     {item.name}
                   </Link>
@@ -234,7 +225,7 @@ export default function SistemaLayout({ children }) {
       {/* Main Content */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <header style={{ backgroundColor: 'var(--surface-color)', padding: '1.25rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: '600' }}>
+          <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: '600', margin: 0 }}>
             {menuItems.find(i => i.path === pathname)?.name || 'Sistema'}
           </h2>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -242,8 +233,8 @@ export default function SistemaLayout({ children }) {
               {initials}
             </div>
             <div>
-              <p style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)' }}>{userName}</p>
-              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{userRole}</p>
+              <p style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)', margin: 0 }}>{userName}</p>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0 }}>{userRole}</p>
             </div>
           </div>
         </header>
