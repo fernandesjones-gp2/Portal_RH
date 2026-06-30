@@ -188,10 +188,20 @@ export default function SistemaLayout({ children }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }}>
-      {/* Sidebar */}
+     {/* Sidebar */}
       <aside style={{ width: '250px', backgroundColor: 'var(--surface-color)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <h2 style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: '700', letterSpacing: '-0.02em' }}>Portal RH</h2>
+        <div style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          
+          {/* --- LOGÓTIPO DA EMPRESA AQUI --- */}
+          <img 
+            src="/logo.png" 
+            alt="Logótipo da Empresa" 
+            style={{ height: '32px', width: 'auto', objectFit: 'contain' }} 
+          />
+
+          {/* Opcional: Pode manter o texto ou apagá-lo se o logótipo já tiver o nome */}
+          <h2 style={{ color: 'var(--text-main)', fontSize: '1.1rem', fontWeight: '700', letterSpacing: '-0.02em', display: 'none' }}>Portal RH</h2>
+          
           <span style={{ fontSize: '0.65rem', backgroundColor: 'var(--saritur-orange)', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 'bold' }}>
             {userRole}
           </span>
