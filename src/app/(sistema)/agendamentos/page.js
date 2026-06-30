@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw } from 'lucide-react';
+import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw, Eye } from 'lucide-react';
 
 export default function AgendamentosPage() {
   const [candidates, setCandidates] = useState([]);
@@ -31,15 +31,11 @@ export default function AgendamentosPage() {
   const [feedbackText, setFeedbackText] = useState('');
   const [rejectForm, setRejectForm] = useState({ reasonId: '', notes: '' });
 
- useEffect(() => { 
-    // 1. Carrega a primeira vez com loading
+  useEffect(() => { 
     fetchData(false); 
-    
-    // 2. Motor Real-Time a cada 10 segundos
     const motorRealTime = setInterval(() => {
       fetchData(true);
     }, 10000);
-    
     return () => clearInterval(motorRealTime);
   }, []);
 
@@ -256,7 +252,7 @@ export default function AgendamentosPage() {
 
     setIsModalOpen(false);
     setFormData({ process_type: 'Admissão', name: '', mother_name: '', phone: '', cpf: '', rg: '', job_role_id: '', unit_id: '', interview_date: '', gender: '', is_pcd: false });
-    fetchData(); 
+    fetchData(true); 
   }
 
   async function handleUpdateCandidate(e) {
@@ -283,7 +279,7 @@ export default function AgendamentosPage() {
     try { await api.candidates.update(id, { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, interview_date: interviewIso, responsible_id, gender, is_pcd }); } 
     catch (e) { return alert('Erro ao atualizar: ' + e.message); }
     setEditingCandidate(null);
-    fetchData();
+    fetchData(true);
   }
 
   function openFeedbackModal(c) { setFeedbackCandidate(c); setFeedbackText(''); }
@@ -297,7 +293,7 @@ export default function AgendamentosPage() {
     const newNote = `\n--- Adicionado em ${timestamp} por ${userDisplay} ---\n${feedbackText}\n`;
     try {
       await api.candidates.update(feedbackCandidate.id, { feedback: (feedbackCandidate.feedback || '') + newNote });
-      setFeedbackCandidate(null); setFeedbackText(''); fetchData();
+      setFeedbackCandidate(null); setFeedbackText(''); fetchData(true);
     } catch (e) { alert('Erro ao salvar parecer.'); }
   }
 
@@ -315,7 +311,7 @@ export default function AgendamentosPage() {
     try {
       await api.candidates.update(rejectCandidate.id, { status: 'Reprovado', cancellation_reason_id: rejectForm.reasonId, feedback: (rejectCandidate.feedback || '') + auditingBlock });
       if (confirm('Deseja enviar a mensagem de aviso (Reprovação/Banco) no WhatsApp do candidato?')) sendWhatsAppMessage(rejectCandidate, 'reprovacao', rejectCandidate.job_roles?.name || rejectCandidate.job_role_name, rejectCandidate.units?.name || rejectCandidate.unit_name, rejectCandidate.interview_date);
-      setRejectCandidate(null); setRejectForm({ reasonId: '', notes: '' }); fetchData();
+      setRejectCandidate(null); setRejectForm({ reasonId: '', notes: '' }); fetchData(true);
     } catch (e) { alert('Erro ao arquivar processo.'); }
   }
 
@@ -325,11 +321,10 @@ export default function AgendamentosPage() {
       if (newStatus === 'Banco de Talentos' && confirm('Deseja avisar o candidato pelo WhatsApp que ele foi para o Banco de Talentos?')) {
         sendWhatsAppMessage(candidate, 'reprovacao', candidate.job_roles?.name || candidate.job_role_name, candidate.units?.name || candidate.unit_name, candidate.interview_date);
       }
-      fetchData();
+      fetchData(true);
     } catch (e) {}
   }
 
-  // --- MOTOR DE DESVIO DE ROTA: PROMOÇÃO VAI PARA A TELA DE PROMOÇÕES ---
   async function handleApprove(candidate) {
     if (confirm('Deseja enviar a mensagem de Aprovação no WhatsApp do candidato?')) {
       sendWhatsAppMessage(candidate, 'aprovacao', candidate.job_roles?.name || candidate.job_role_name, candidate.units?.name || candidate.unit_name, candidate.interview_date);
@@ -337,19 +332,15 @@ export default function AgendamentosPage() {
     
     try {
       if (candidate.process_type === 'Promoção') {
-        // Se for Promoção, o status muda para estacionar na nova tela de Promoções
-        await api.candidates.update(candidate.id, { 
-          status: 'Promoção (Em Andamento)' 
-        });
+        await api.candidates.update(candidate.id, { status: 'Promoção (Em Andamento)' });
       } else {
-        // Fluxo tradicional de Admissão/Readmissão vai para o Pipeline
         await api.candidates.update(candidate.id, { 
           status: 'Pré-Admissão (Pendente)', 
           docs_status: 'Solicitada', 
           docs_request_date: new Date().toISOString() 
         });
       }
-      fetchData();
+      fetchData(true);
     } catch (e) {
       alert('Erro ao aprovar candidato.');
     }
@@ -411,21 +402,104 @@ export default function AgendamentosPage() {
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', marginLeft: '1rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button className="btn-secondary" onClick={() => openFeedbackModal(c)} title="Parecer / Histórico"><MessageSquare size={16} /></button>
-                {currentTab === 'Reprovado' && <button className="btn-secondary" onClick={() => setDetailsCandidate(c)} style={{ fontWeight: '600', borderColor: 'var(--danger-color)', color: 'var(--danger-color)' }}>Ver Detalhes</button>}
+                
+                {/* NOVO: BOTÃO DE DETALHES PARA REPROVADO E BANCO DE TALENTOS */}
+                {(currentTab === 'Reprovado' || currentTab === 'Banco de Talentos') && (
+                  <button className="btn-secondary" onClick={() => setDetailsCandidate(c)} title="Ver Detalhes Completos">
+                    <Eye size={16} style={{ marginRight: '4px' }}/> Ver Detalhes
+                  </button>
+                )}
+
                 {currentTab === 'Agendado' && (<><button className="btn-secondary" onClick={() => setEditingCandidate(c)} title="Editar Cadastro"><Edit2 size={16} /></button><button className="btn-secondary" onClick={() => changeStatus(c, 'Banco de Talentos')} title="Mover para Banco de Talentos"><Database size={16} /></button><button className="btn-secondary" onClick={() => handleApprove(c)} style={{ color: 'var(--success-color)', borderColor: 'var(--success-color)' }} title="Aprovar (Avançar)"><ThumbsUp size={16} /></button><button className="btn-secondary" onClick={() => setRejectCandidate(c)} style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Reprovar / Cancelar"><ThumbsDown size={16} /></button></>)}
-                {(currentTab === 'Banco de Talentos' || currentTab === 'Reprovado') && <button className="btn-primary" onClick={() => changeStatus(c, 'Agendado')} style={{ backgroundColor: 'var(--saritur-orange)' }} title="Retomar Processo"><RotateCcw size={16} /> Retomar Processo</button>}
+                {(currentTab === 'Banco de Talentos' || currentTab === 'Reprovado') && <button className="btn-primary" onClick={() => changeStatus(c, 'Agendado')} style={{ backgroundColor: 'var(--saritur-orange)' }} title="Retomar Processo"><RotateCcw size={16} style={{ marginRight: '4px' }}/> Retomar Processo</button>}
               </div>
             </div>
           ))}
         </div>
       )}
 
+      {/* --- NOVO: MODAL DETALHES COMPLETO DO CANDIDATO --- */}
       {detailsCandidate && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '550px', maxHeight: '85vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}><h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--danger-color)' }}>Detalhamento do Processo</h2><button onClick={() => setDetailsCandidate(null)}><X size={24} color="var(--text-muted)" /></button></div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}><div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Candidato</span><p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>{detailsCandidate.name}{detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}</p><p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{detailsCandidate.job_roles?.name || detailsCandidate.job_role_name} • {detailsCandidate.units?.name || detailsCandidate.unit_name} • Sexo: {detailsCandidate.gender || 'Não informado'}</p></div><div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Histórico e Motivações</span><div style={{ marginTop: '0.5rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.6' }}>{detailsCandidate.feedback || 'Nenhum histórico detalhado registrado para este cancelamento.'}</div></div></div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}><button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Detalhes</button></div>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Detalhamento do Candidato</h2>
+              <button onClick={() => setDetailsCandidate(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome Completo</span>
+                  <p style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                    {detailsCandidate.name}
+                    {detailsCandidate.is_pcd && <span style={{ fontSize: '0.7rem', backgroundColor: '#0284c7', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.5rem', verticalAlign: 'middle' }}>PCD</span>}
+                  </p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tipo de Processo</span>
+                  <p style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: '500' }}>{detailsCandidate.process_type}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.cpf}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>RG</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.rg || '-'}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sexo</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.gender || '-'}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Função Designada</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.job_roles?.name || detailsCandidate.job_role_name || '-'}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Unidade de Lotação</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.units?.name || detailsCandidate.unit_name || '-'}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Telefone (WhatsApp)</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.phone}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Nome da Mãe</span>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{detailsCandidate.mother_name}</p>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Datas Importantes</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
+                  <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Data da Entrevista</span>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsCandidate.interview_date ? new Date(detailsCandidate.interview_date).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '1rem' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Histórico Completo</span>
+                <div style={{ marginTop: '0.5rem', backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: '1.6' }}>
+                  {detailsCandidate.feedback || 'Nenhuma observação registrada neste processo.'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+              <button className="btn-secondary" onClick={() => setDetailsCandidate(null)}>Fechar Visualização</button>
+            </div>
           </div>
         </div>
       )}
