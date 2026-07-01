@@ -1,7 +1,57 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X, Download, Eraser } from 'lucide-react';
+import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X, Download, Eraser, ChevronDown } from 'lucide-react';
+
+// --- COMPONENTE CUSTOMIZADO: DROPDOWN COM CHECKBOX ---
+const MultiSelect = ({ label, options, selectedValues, onChange, placeholder = "Todas..." }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleToggle = (val) => {
+    if (selectedValues.includes(val)) {
+      onChange(selectedValues.filter(v => v !== val));
+    } else {
+      onChange([...selectedValues, val]);
+    }
+  };
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>{label}</label>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: selectedValues.length > 0 ? 'var(--text-main)' : 'var(--text-muted)' }}>
+          {selectedValues.length === 0 ? placeholder : `${selectedValues.length} selecionada(s)`}
+        </span>
+        <ChevronDown size={14} color="var(--text-muted)" />
+      </div>
+      
+      {isOpen && (
+        <>
+          {/* Fundo invisível para fechar ao clicar fora */}
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setIsOpen(false)} />
+          
+          {/* Lista suspensa */}
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '4px', boxShadow: 'var(--shadow-md)', zIndex: 100, maxHeight: '200px', overflowY: 'auto' }}>
+            {options.map(opt => (
+              <label key={opt.value} style={{ display: 'flex', alignItems: 'center', padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', gap: '0.5rem', margin: 0 }}>
+                <input 
+                  type="checkbox" 
+                  checked={selectedValues.includes(opt.value)} 
+                  onChange={() => handleToggle(opt.value)} 
+                  style={{ accentColor: 'var(--saritur-orange)', width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
+                />
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export default function ConcluidosPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -16,7 +66,7 @@ export default function ConcluidosPage() {
   const [cancelCandidate, setCancelCandidate] = useState(null);
   const [cancelForm, setCancelForm] = useState({ reason: '', notes: '' });
 
-  // --- ESTADOS DE FILTRO AGORA SÃO ARRAYS PARA MÚLTIPLA ESCOLHA ---
+  // ESTADOS DE FILTRO
   const [filterProcessType, setFilterProcessType] = useState([]);
   const [filterUnit, setFilterUnit] = useState([]);
   const [filterRole, setFilterRole] = useState([]);
@@ -66,7 +116,6 @@ export default function ConcluidosPage() {
     }
   }
 
-  // --- MÁSCARA DE CPF PARA O EXCEL ---
   const maskCPF = (val) => {
     if (!val) return '';
     return val.replace(/\D/g, '')
@@ -98,7 +147,7 @@ export default function ConcluidosPage() {
     }
   }
 
-  // --- NOVA LÓGICA DE FILTRO (Aceita Array) ---
+  // LÓGICA DE FILTRO MÚLTIPLO
   const filteredCandidates = candidates.filter(c => {
     if (filterProcessType.length > 0 && !filterProcessType.includes(c.process_type)) return false;
     if (filterUnit.length > 0 && !filterUnit.includes(c.unit_id)) return false;
@@ -123,13 +172,13 @@ export default function ConcluidosPage() {
     return admDate >= today;
   };
 
-  // --- EXPORTAÇÃO DE EXCEL AGORA COM A COLUNA DE CPF ---
+  // EXPORTAÇÃO
   function handleExportExcel() {
     if (filteredCandidates.length === 0) return alert('Nenhum candidato encontrado com os filtros atuais.');
     const exportColumns = [
       { label: 'Nº', value: (c, index) => index + 1 },
       { label: 'Nome Completo', value: (c) => c.name || '' },
-      { label: 'CPF', value: (c) => maskCPF(c.cpf) }, // <-- COLUNA NOVA AQUI
+      { label: 'CPF', value: (c) => maskCPF(c.cpf) },
       { label: 'Função', value: (c) => roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || '' },
       { label: 'Unidade', value: (c) => units.find(u => u.id === c.unit_id)?.name || c.unit_name || '' },
       { label: 'Data de Admissão', value: (c) => c.admission_date ? new Date(c.admission_date).toLocaleDateString('pt-BR') : '' },
@@ -172,7 +221,7 @@ export default function ConcluidosPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Filter size={20} color="var(--saritur-orange)" />
-            <h2 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Filtros de Pesquisa (Múltipla Escolha)</h2>
+            <h2 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Filtros Avançados</h2>
           </div>
           <button onClick={clearFilters} className="btn-secondary" style={{ fontSize: '0.75rem', padding: '0.3rem 0.8rem' }}>
             <Eraser size={14} style={{ marginRight: '4px' }} /> Limpar Filtros
@@ -181,48 +230,50 @@ export default function ConcluidosPage() {
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
           
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Tipo de Processo</label>
-            <select multiple size={4} style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={filterProcessType} onChange={e => setFilterProcessType(Array.from(e.target.selectedOptions, o => o.value))}>
-              <option value="Admissão">Admissão</option>
-              <option value="Readmissão">Readmissão</option>
-              <option value="Promoção">Promoção</option>
-            </select>
-            <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>*Segure Ctrl para vários</span>
-          </div>
+          <MultiSelect 
+            label="Tipo de Processo" 
+            options={[
+              {value: 'Admissão', label: 'Admissão'}, 
+              {value: 'Readmissão', label: 'Readmissão'}, 
+              {value: 'Promoção', label: 'Promoção'}
+            ]}
+            selectedValues={filterProcessType}
+            onChange={setFilterProcessType}
+            placeholder="Todos os Tipos"
+          />
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Unidade</label>
-            <select multiple size={4} style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={filterUnit} onChange={e => setFilterUnit(Array.from(e.target.selectedOptions, o => o.value))}>
-              {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-            <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>*Segure Ctrl para vários</span>
-          </div>
+          <MultiSelect 
+            label="Unidade" 
+            options={units.map(u => ({ value: u.id, label: u.name }))}
+            selectedValues={filterUnit}
+            onChange={setFilterUnit}
+            placeholder="Todas as Unidades"
+          />
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Função</label>
-            <select multiple size={4} style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={filterRole} onChange={e => setFilterRole(Array.from(e.target.selectedOptions, o => o.value))}>
-              {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-            <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>*Segure Ctrl para vários</span>
-          </div>
+          <MultiSelect 
+            label="Função" 
+            options={roles.map(r => ({ value: r.id, label: r.name }))}
+            selectedValues={filterRole}
+            onChange={setFilterRole}
+            placeholder="Todas as Funções"
+          />
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Responsável</label>
-            <select multiple size={4} style={{ width: '100%', fontSize: '0.85rem', padding: '0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={filterResponsible} onChange={e => setFilterResponsible(Array.from(e.target.selectedOptions, o => o.value))}>
-              {responsibles.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
-            </select>
-            <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>*Segure Ctrl para vários</span>
-          </div>
+          <MultiSelect 
+            label="Responsável" 
+            options={responsibles.map(user => ({ value: user.id, label: user.name || user.email }))}
+            selectedValues={filterResponsible}
+            onChange={setFilterResponsible}
+            placeholder="Todos"
+          />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (De)</label>
-              <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
+              <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (Até)</label>
-              <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
+              <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
             </div>
           </div>
 
