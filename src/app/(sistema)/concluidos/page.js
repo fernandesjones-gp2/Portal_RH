@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
 import { Filter, CheckCircle, Calendar, UserCheck, SearchX, ThumbsDown, X, Download, Eraser, ChevronDown } from 'lucide-react';
 
-// --- COMPONENTE CUSTOMIZADO: DROPDOWN COM CHECKBOX ---
+// --- COMPONENTE CUSTOMIZADO: DROPDOWN COM CHECKBOX CORRIGIDO ---
 const MultiSelect = ({ label, options, selectedValues, onChange, placeholder = "Todas..." }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -16,39 +16,42 @@ const MultiSelect = ({ label, options, selectedValues, onChange, placeholder = "
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div style={{ width: '100%' }}>
       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>{label}</label>
-      <div 
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: selectedValues.length > 0 ? 'var(--text-main)' : 'var(--text-muted)' }}>
-          {selectedValues.length === 0 ? placeholder : `${selectedValues.length} selecionada(s)`}
-        </span>
-        <ChevronDown size={14} color="var(--text-muted)" />
-      </div>
       
-      {isOpen && (
-        <>
-          {/* Fundo invisível para fechar ao clicar fora */}
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setIsOpen(false)} />
-          
-          {/* Lista suspensa */}
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '4px', boxShadow: 'var(--shadow-md)', zIndex: 100, maxHeight: '200px', overflowY: 'auto' }}>
-            {options.map(opt => (
-              <label key={opt.value} style={{ display: 'flex', alignItems: 'center', padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', gap: '0.5rem', margin: 0 }}>
-                <input 
-                  type="checkbox" 
-                  checked={selectedValues.includes(opt.value)} 
-                  onChange={() => handleToggle(opt.value)} 
-                  style={{ accentColor: 'var(--saritur-orange)', width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
-                />
-                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        </>
-      )}
+      {/* CORREÇÃO DO CADEADO DE POSIÇÃO: Ancorado estritamente ao redor do botão */}
+      <div style={{ position: 'relative', width: '100%' }}>
+        <div 
+          onClick={() => setIsOpen(!isOpen)}
+          style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', cursor: 'pointer', display: 'flex', justify: 'space-between', alignItems: 'center' }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: selectedValues.length > 0 ? 'var(--text-main)' : 'var(--text-muted)' }}>
+            {selectedValues.length === 0 ? placeholder : `${selectedValues.length} selecionada(s)`}
+          </span>
+          <ChevronDown size={14} color="var(--text-muted)" />
+        </div>
+        
+        {isOpen && (
+          <>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 }} onClick={() => setIsOpen(false)} />
+            
+            {/* Menu suspenso agora colado perfeitamente embaixo do botão */}
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '4px', boxShadow: 'var(--shadow-md)', zIndex: 100, maxHeight: '200px', overflowY: 'auto' }}>
+              {options.map(opt => (
+                <label key={opt.value} style={{ display: 'flex', alignItems: 'center', padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', gap: '0.5rem', margin: 0 }}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedValues.includes(opt.value)} 
+                    onChange={() => handleToggle(opt.value)} 
+                    style={{ accentColor: 'var(--saritur-orange)', width: '16px', height: '16px', cursor: 'pointer', margin: 0 }}
+                  />
+                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };
@@ -147,7 +150,6 @@ export default function ConcluidosPage() {
     }
   }
 
-  // LÓGICA DE FILTRO MÚLTIPLO
   const filteredCandidates = candidates.filter(c => {
     if (filterProcessType.length > 0 && !filterProcessType.includes(c.process_type)) return false;
     if (filterUnit.length > 0 && !filterUnit.includes(c.unit_id)) return false;
@@ -172,7 +174,6 @@ export default function ConcluidosPage() {
     return admDate >= today;
   };
 
-  // EXPORTAÇÃO
   function handleExportExcel() {
     if (filteredCandidates.length === 0) return alert('Nenhum candidato encontrado com os filtros atuais.');
     const exportColumns = [
@@ -218,7 +219,7 @@ export default function ConcluidosPage() {
       </div>
 
       <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem', backgroundColor: 'var(--surface-color)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Filter size={20} color="var(--saritur-orange)" />
             <h2 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Filtros Avançados</h2>
@@ -228,50 +229,60 @@ export default function ConcluidosPage() {
           </button>
         </div>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem' }}>
+        {/* DESIGN ATUALIZADO: Usando flex row com alinhamento por baixo */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', alignItems: 'flex-end' }}>
           
-          <MultiSelect 
-            label="Tipo de Processo" 
-            options={[
-              {value: 'Admissão', label: 'Admissão'}, 
-              {value: 'Readmissão', label: 'Readmissão'}, 
-              {value: 'Promoção', label: 'Promoção'}
-            ]}
-            selectedValues={filterProcessType}
-            onChange={setFilterProcessType}
-            placeholder="Todos os Tipos"
-          />
+          <div style={{ flex: '1 1 180px' }}>
+            <MultiSelect 
+              label="Tipo de Processo" 
+              options={[
+                {value: 'Admissão', label: 'Admissão'}, 
+                {value: 'Readmissão', label: 'Readmissão'}, 
+                {value: 'Promoção', label: 'Promoção'}
+              ]}
+              selectedValues={filterProcessType}
+              onChange={setFilterProcessType}
+              placeholder="Todos os Tipos"
+            />
+          </div>
 
-          <MultiSelect 
-            label="Unidade" 
-            options={units.map(u => ({ value: u.id, label: u.name }))}
-            selectedValues={filterUnit}
-            onChange={setFilterUnit}
-            placeholder="Todas as Unidades"
-          />
+          <div style={{ flex: '1 1 180px' }}>
+            <MultiSelect 
+              label="Unidade" 
+              options={units.map(u => ({ value: u.id, label: u.name }))}
+              selectedValues={filterUnit}
+              onChange={setFilterUnit}
+              placeholder="Todas as Unidades"
+            />
+          </div>
 
-          <MultiSelect 
-            label="Função" 
-            options={roles.map(r => ({ value: r.id, label: r.name }))}
-            selectedValues={filterRole}
-            onChange={setFilterRole}
-            placeholder="Todas as Funções"
-          />
+          <div style={{ flex: '1 1 180px' }}>
+            <MultiSelect 
+              label="Função" 
+              options={roles.map(r => ({ value: r.id, label: r.name }))}
+              selectedValues={filterRole}
+              onChange={setFilterRole}
+              placeholder="Todas as Funções"
+            />
+          </div>
 
-          <MultiSelect 
-            label="Responsável" 
-            options={responsibles.map(user => ({ value: user.id, label: user.name || user.email }))}
-            selectedValues={filterResponsible}
-            onChange={setFilterResponsible}
-            placeholder="Todos"
-          />
+          <div style={{ flex: '1 1 180px' }}>
+            <MultiSelect 
+              label="Responsável" 
+              options={responsibles.map(user => ({ value: user.id, label: user.name || user.email }))}
+              selectedValues={filterResponsible}
+              onChange={setFilterResponsible}
+              placeholder="Todos"
+            />
+          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div>
+          {/* CORREÇÃO: SELETORES DE DATA LADO A LADO NUM BLOCO ÚNICO */}
+          <div style={{ display: 'flex', gap: '0.75rem', flex: '2 1 320px' }}>
+            <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (De)</label>
               <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
             </div>
-            <div>
+            <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.25rem' }}>Admissão (Até)</label>
               <input type="date" style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem', borderRadius: '4px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
             </div>
