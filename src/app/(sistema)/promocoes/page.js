@@ -171,10 +171,11 @@ export default function PromocoesPage() {
   const isPsiTab = activeTab === 'aprovados_psi';
   const displayList = isPsiTab ? approvedCandidates : filteredPromotions;
 
-  // VERIFICAÇÃO DE PERFIS PARA EXIBIR BOTÕES
-  const isUserLeadership = ['ADMIN', 'SUPERINTENDENT', 'MANAGER'].includes(currentUserRole);
-  const isUserGP2 = ['ADMIN', 'GP²', 'RECRUITER', 'RECRUITER_ANALYST'].includes(currentUserRole);
-  const isUserDP = ['ADMIN', 'DP'].includes(currentUserRole);
+// VERIFICAÇÃO DE PERFIS PARA EXIBIR BOTÕES (Agora case-insensitive)
+  const roleSafe = (currentUserRole || '').toUpperCase();
+  const isUserLeadership = ['ADMIN', 'SUPERINTENDENT', 'MANAGER'].includes(roleSafe);
+  const isUserGP2 = ['ADMIN', 'GP²', 'GP2', 'RECRUITER', 'RECRUITER_ANALYST'].includes(roleSafe);
+  const isUserDP = ['ADMIN', 'DP'].includes(roleSafe);
 
   return (
     <div>
