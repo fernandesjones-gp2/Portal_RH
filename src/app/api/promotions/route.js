@@ -30,6 +30,8 @@ export async function POST(req) {
   if (g.error) return g.error;
   
   const body = await req.json();
+  
+  // AQUI ESTÁ O SEGREDO: Lista completa de todos os campos autorizados a entrar no banco
   const allowedFields = [
     'type', 'collaborator_name', 'collaborator_cpf', 'admission_date', 
     'current_role', 'proposed_role', 'current_salary', 'proposed_salary', 
@@ -43,7 +45,8 @@ export async function POST(req) {
   let i = 1;
 
   for (const key of Object.keys(body)) {
-    if (allowedFields.includes(key) && body[key] !== undefined) {
+    // Adicionei uma trava extra: body[key] !== '' para evitar enviar strings vazias que quebram UUIDs ou Datas
+    if (allowedFields.includes(key) && body[key] !== undefined && body[key] !== '') {
       columns.push(`"${key}"`);
       placeholders.push(`$${i}`);
       values.push(body[key]);
