@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { TrendingUp, Clock, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, ThumbsUp, ThumbsDown, PenTool, MessageSquare, RotateCcw } from 'lucide-react';
+import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, ThumbsUp, ThumbsDown, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock } from 'lucide-react';
 
 export default function PromocoesPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -14,11 +14,15 @@ export default function PromocoesPage() {
   const [units, setUnits] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingPromotionId, setEditingPromotionId] = useState(null); // Controla se é edição/reajuste
-  const [activeTab, setActiveTab] = useState('minhas');
+  const [editingPromotionId, setEditingPromotionId] = useState(null); 
   
-  // MODAIS DE PARECER / JUSTIFICATIVA
-  const [actionModal, setActionModal] = useState(null); // { type: 'reject_leader' | 'reject_gp2', promo: p }
+  // VISTAS E FILTROS
+  const [currentView, setCurrentView] = useState('pipeline'); // 'pipeline' | 'historico' | 'banco'
+  const [filterUnit, setFilterUnit] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+  const [filterOnlyMine, setFilterOnlyMine] = useState(false);
+  
+  const [actionModal, setActionModal] = useState(null); 
   const [feedbackText, setFeedbackText] = useState('');
 
   const initialForm = {
@@ -41,7 +45,6 @@ export default function PromocoesPage() {
         setCurrentUserName(sessionUser.name || sessionUser.data?.name || 'Usuário');
       }
 
-      // Faz a listagem usando o fetch nativo para quebrar cache e garantir sincronia real-time
       const resPromo = await fetch('/api/promotions?_t=' + Date.now());
       const promosRes = await resPromo.json();
 
@@ -85,7 +88,6 @@ export default function PromocoesPage() {
   };
   const formatMonthYear = (val) => val.replace(/\D/g, '').replace(/^(\d{2})(\d)/, '$1/$2').slice(0, 7);
 
-  // --- SUBMISSÃO E REINÍCIO DO FLUXO ---
   async function handleSavePromotion(e) {
     e.preventDefault();
 
@@ -113,21 +115,15 @@ export default function PromocoesPage() {
 
     try {
       if (editingPromotionId) {
-        // Se for reinício de fluxo, atualiza a linha existente usando PUT dinâmico
-        await fetch(`/api/promotions/${editingPromotionId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        await fetch(`/api/promotions/${editingPromotionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       } else {
-        // Nova solicitação
         await api.promotions.create(payload);
         if (linkedCandidateId) {
           await api.candidates.update(linkedCandidateId, { status: 'Promoção (Em Análise)' });
         }
       }
 
-      alert('Solicitação de Promoção gravada com sucesso! Enviada para análise da Liderança.');
+      alert('Solicitação de Promoção gravada com sucesso!');
       setFormData(initialForm);
       setEditingPromotionId(null);
       setIsModalOpen(false);
@@ -137,7 +133,6 @@ export default function PromocoesPage() {
     }
   }
 
-  // --- EXECUÇÃO DAS APROVAÇÕES DO FLUXO (PUT) ---
   async function executeWorkflowAction(promoId, statusName, extraPayload = {}) {
     try {
       const response = await fetch(`/api/promotions/${promoId}`, {
@@ -145,7 +140,6 @@ export default function PromocoesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: statusName, ...extraPayload })
       });
-
       if (response.ok) {
         alert(`Operação realizada com sucesso! Status atualizado para: ${statusName}`);
         setActionModal(null);
@@ -159,199 +153,271 @@ export default function PromocoesPage() {
     }
   }
 
-  const filteredPromotions = promotions.filter(p => {
-    if (activeTab === 'minhas') return p.requester_id === currentUserId;
-    if (activeTab === 'lideranca') return p.status === 'Aguardando Liderança';
-    if (activeTab === 'gp2') return p.status === 'Aguardando GP2';
-    if (activeTab === 'dp') return p.status === 'Aguardando DP';
-    if (activeTab === 'concluidas') return p.status === 'Concluído' || p.status === 'Cancelado' || p.status === 'Reprovado pela Liderança';
-    return true;
-  });
-
-  const isPsiTab = activeTab === 'aprovados_psi';
-  const displayList = isPsiTab ? approvedCandidates : filteredPromotions;
-
-// VERIFICAÇÃO DE PERFIS PARA EXIBIR BOTÕES (Agora case-insensitive)
   const roleSafe = (currentUserRole || '').toUpperCase();
   const isUserLeadership = ['ADMIN', 'SUPERINTENDENT', 'MANAGER'].includes(roleSafe);
   const isUserGP2 = ['ADMIN', 'GP²', 'GP2', 'RECRUITER', 'RECRUITER_ANALYST'].includes(roleSafe);
   const isUserDP = ['ADMIN', 'DP'].includes(roleSafe);
 
+  // --- LÓGICA DE FILTROS ---
+  const filteredAll = promotions.filter(p => {
+    if (filterUnit && p.current_unit_id !== filterUnit && p.proposed_unit_id !== filterUnit) return false;
+    if (filterOnlyMine && p.requester_id !== currentUserId) return false;
+    if (filterDate && p.created_at) {
+      const d = new Date(p.created_at);
+      const tzOffset = d.getTimezoneOffset() * 60000;
+      const localStr = new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+      if (localStr !== filterDate) return false;
+    }
+    return true;
+  });
+
+  const historyPromos = filteredAll.filter(p => ['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(p.status));
+  const activePromos = filteredAll.filter(p => !['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(p.status));
+
+  const blocoLideranca = activePromos.filter(p => p.status === 'Aguardando Liderança' || p.status === 'Recusado pelo GP2 (Ajustes)');
+  const blocoGP2 = activePromos.filter(p => p.status === 'Aguardando GP2');
+  const blocoDP = activePromos.filter(p => p.status === 'Aguardando DP');
+
+  const filteredPsi = approvedCandidates.filter(c => {
+    if (filterUnit && c.unit_id !== filterUnit) return false;
+    if (filterDate && c.created_at) {
+      const d = new Date(c.created_at);
+      const tzOffset = d.getTimezoneOffset() * 60000;
+      const localStr = new Date(d.getTime() - tzOffset).toISOString().split('T')[0];
+      if (localStr !== filterDate) return false;
+    }
+    return true;
+  });
+
+  // --- RENDERIZAÇÃO DO CARD KANBAN/HISTÓRICO ---
+  const renderPromoCard = (p) => (
+    <div key={p.id} className="glass-panel" style={{ padding: '1.25rem', borderRadius: 'var(--radius-md)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <TrendingUp size={16} color={p.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} />
+          <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>{p.type}</span>
+        </div>
+        <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: currentView === 'historico' ? 'var(--text-muted)' : 'var(--saritur-orange)' }}>{p.status}</span>
+      </div>
+      
+      <h3 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)' }}>{p.collaborator_name}</h3>
+      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', lineHeight: '1.4' }}>
+        <strong>De:</strong> {p.current_role} <br/>
+        <strong>Para:</strong> {p.proposed_role}
+      </div>
+
+      <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+        <Calendar size={14} color="var(--text-muted)" />
+        <span>Efetivação: 01/{p.promotion_month_year}</span>
+      </div>
+
+      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
+        <p>👤 Solicitação: {p.requester_name || 'Gestor'} ({p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : ''})</p>
+        {p.leadership_signature_date && <p style={{ color: '#057a55' }}>✍️ Liderança: {new Date(p.leadership_signature_date).toLocaleDateString('pt-BR')}</p>}
+        {p.gp2_signature_date && <p style={{ color: '#057a55' }}>✅ GP²: {new Date(p.gp2_signature_date).toLocaleDateString('pt-BR')}</p>}
+      </div>
+
+      {p.feedback && (
+        <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.03)', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.7rem', whiteSpace: 'pre-wrap', maxHeight: '60px', overflowY: 'auto' }}>
+          <strong>Pareceres:</strong> {p.feedback}
+        </div>
+      )}
+
+      {currentView === 'pipeline' && (
+        <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {p.status === 'Aguardando Liderança' && isUserLeadership && (
+            <>
+              <button onClick={() => executeWorkflowAction(p.id, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
+                <PenTool size={14} style={{ marginRight: '4px' }}/> Assinar/Aprovar
+              </button>
+              <button onClick={() => executeWorkflowAction(p.id, 'Reprovado pela Liderança')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Reprovar</button>
+            </>
+          )}
+
+          {p.status === 'Aguardando GP2' && isUserGP2 && (
+            <>
+              <button onClick={() => executeWorkflowAction(p.id, 'Aguardando DP', { gp2_approver_id: currentUserId, gp2_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
+                <CheckCircle size={14} style={{ marginRight: '4px' }}/> Validar
+              </button>
+              <button onClick={() => setActionModal({ type: 'reject_gp2', promo: p })} className="btn-secondary" style={{ color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', fontSize: '0.75rem', padding: '0.4rem' }}>Ajustes</button>
+            </>
+          )}
+
+          {p.status === 'Aguardando DP' && isUserDP && (
+            <button onClick={() => executeWorkflowAction(p.id, 'Concluído', { dp_approver_id: currentUserId, dp_signature_date: new Date().toISOString() })} className="btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '0.5rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
+              <CheckCircle size={16} style={{ marginRight: '6px' }}/> Efetivar no DP
+            </button>
+          )}
+
+          {p.status === 'Recusado pelo GP2 (Ajustes)' && p.requester_id === currentUserId && (
+            <>
+              <button 
+                onClick={() => {
+                  setFormData({
+                    type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? p.admission_date.split('T')[0] : '',
+                    current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary),
+                    current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id,
+                    promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id
+                  });
+                  setEditingPromotionId(p.id);
+                  setIsModalOpen(true);
+                }}
+                className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center', backgroundColor: 'var(--saritur-orange)' }}
+              >
+                <RotateCcw size={14} style={{ marginRight: '4px' }}/> Corrigir
+              </button>
+              <button onClick={() => executeWorkflowAction(p.id, 'Cancelado')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Cancelar</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Gestão de Promoções</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhamento, assinaturas digitais e esteira de aprovação unificada.</p>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Pipeline de Promoções</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhamento, assinaturas e esteira de aprovação.</p>
         </div>
         <button className="btn-primary" onClick={() => { setFormData(initialForm); setEditingPromotionId(null); setIsModalOpen(true); }}>
           <Plus size={20} style={{ marginRight: '8px' }}/> Abrir Solicitação
         </button>
       </div>
 
-      {/* SELETOR DE ABAS */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
-        <button className={activeTab === 'minhas' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('minhas')}>Minhas Solicitações</button>
-        <button className={activeTab === 'aprovados_psi' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('aprovados_psi')} style={{ backgroundColor: activeTab === 'aprovados_psi' ? 'var(--saritur-orange)' : '', color: activeTab === 'aprovados_psi' ? 'white' : '' }}>
-          Banco de Aprovados (Psicólogo) ({approvedCandidates.length})
-        </button>
-        <button className={activeTab === 'lideranca' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('lideranca')}>Pendentes Liderança</button>
-        <button className={activeTab === 'gp2' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('gp2')}>Validação GP²</button>
-        <button className={activeTab === 'dp' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('dp')}>Efetivação DP</button>
-        <button className={activeTab === 'concluidas' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('concluidas')}>Histórico / Concluídas</button>
+      {/* BARRA DE CONTROLES: VISTAS E FILTROS */}
+      <div className="glass-panel" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)' }}>
+        
+        <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '4px' }}>
+          <button className={currentView === 'pipeline' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('pipeline')}>
+            <LayoutGrid size={16} style={{ marginRight: '6px' }}/> Quadro (Kanban)
+          </button>
+          <button className={currentView === 'historico' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('historico')} style={{ backgroundColor: currentView === 'historico' ? 'var(--text-main)' : '' }}>
+            <Archive size={16} style={{ marginRight: '6px' }}/> Histórico
+          </button>
+          <button className={currentView === 'banco' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('banco')} style={{ backgroundColor: currentView === 'banco' ? 'var(--saritur-orange)' : '', color: currentView === 'banco' ? 'white' : '' }}>
+            <Users size={16} style={{ marginRight: '6px' }}/> Banco do Psicólogo
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <Filter size={18} color="var(--saritur-orange)" />
+          <input type="date" title="Data da Solicitação" style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
+          <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
+            <option value="">Todas Unidades</option>
+            {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500' }}>
+            <input type="checkbox" checked={filterOnlyMine} onChange={e => setFilterOnlyMine(e.target.checked)} style={{ accentColor: 'var(--saritur-orange)', width: '16px', height: '16px' }}/> Minhas
+          </label>
+        </div>
       </div>
 
       {loading ? (
-        <p style={{ color: 'var(--text-muted)' }}>Sincronizando fluxo em tempo real...</p>
-      ) : displayList.length === 0 ? (
-        <div style={{ padding: '4rem 2rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <SearchX size={48} color="var(--border-color)" style={{ marginBottom: '1rem' }} />
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-            {isPsiTab ? 'Nenhum colaborador aguardando abertura de processo' : 'Nenhuma solicitação nesta etapa'}
-          </h3>
-        </div>
+        <p style={{ color: 'var(--text-muted)' }}>Sincronizando fluxo...</p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
-          
-          {isPsiTab ? (
-            approvedCandidates.map(c => (
-              <div key={c.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: '4px solid var(--saritur-yellow)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                    <CheckCircle size={18} color="var(--success-color)" />
-                    <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Apto na Avaliação</span>
-                  </div>
-                  <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5' }}>
-                    <strong>Cargo Destino:</strong> {c.job_roles?.name || c.job_role_name || 'N/A'} <br/>
-                    <strong>Unidade:</strong> {c.units?.name || c.unit_name || 'N/A'} <br/>
-                    <strong>CPF:</strong> {c.cpf}
-                  </p>
+        <>
+          {/* VISÃO 1: KANBAN (PIPELINE) */}
+          {currentView === 'pipeline' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
+              
+              <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                  <PenTool size={20} color="var(--saritur-orange)" />
+                  <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>1. Em Aprovação (Liderança) ({blocoLideranca.length})</h2>
                 </div>
-                <div>
-                  <button 
-                    onClick={() => {
-                      setFormData({
-                        ...initialForm, type: 'Vertical', collaborator_name: c.name || '', collaborator_cpf: c.cpf || '',
-                        proposed_role: c.job_roles?.name || c.job_role_name || '', proposed_unit_id: c.unit_id || '', candidate_id: c.id
-                      });
-                      setEditingPromotionId(null);
-                      setIsModalOpen(true);
-                    }}
-                    className="btn-primary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem' }}
-                  >
-                    Iniciar Formulário Vertical
-                  </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {blocoLideranca.map(renderPromoCard)}
+                  {blocoLideranca.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
                 </div>
               </div>
-            ))
-          ) : (
-            // RENDERIZAÇÃO COMPLETA DOS FORMULÁRIOS COM BOTÕES DE AÇÃO INTERATIVOS
-            filteredPromotions.map(p => (
-              <div key={p.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <TrendingUp size={18} color={p.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} />
-                    <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>{p.type}</span>
-                  </div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--saritur-orange)' }}>{p.status}</span>
+
+              <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                  <CheckCircle size={20} color="var(--saritur-yellow)" />
+                  <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>2. Em Validação (GP²) ({blocoGP2.length})</h2>
                 </div>
-                
-                <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)' }}>{p.collaborator_name}</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-                  <strong>De:</strong> {p.current_role} (R$ {Number(p.current_salary).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})<br/>
-                  <strong>Para:</strong> {p.proposed_role} (R$ {Number(p.proposed_salary).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
-                </p>
-
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                  <strong>Unidade Origem:</strong> {p.current_unit_name || 'N/A'}<br/>
-                  <strong>Unidade Destino:</strong> {p.proposed_unit_name || 'N/A'}
-                </p>
-
-                <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
-                  <Calendar size={14} color="var(--text-muted)" />
-                  <span>Mês de Efetivação: 01/{p.promotion_month_year}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {blocoGP2.map(renderPromoCard)}
+                  {blocoGP2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
                 </div>
+              </div>
 
-                {/* HISTÓRICO DE ASSINATURAS COLETADAS NO CARD */}
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
-                  <p>👤 Solicitante: {p.requester_name || 'Gestor'} ({p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : ''})</p>
-                  {p.leadership_signature_date && <p style={{ color: '#057a55' }}>✍️ Liderança Assinado em: {new Date(p.leadership_signature_date).toLocaleDateString('pt-BR')}</p>}
-                  {p.gp2_signature_date && <p style={{ color: '#057a55' }}>✅ Validado GP² em: {new Date(p.gp2_signature_date).toLocaleDateString('pt-BR')}</p>}
+              <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                  <CheckCircle size={20} color="var(--success-color)" />
+                  <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>3. À Efetivar (DP) ({blocoDP.length})</h2>
                 </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {blocoDP.map(renderPromoCard)}
+                  {blocoDP.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
+                </div>
+              </div>
 
-                {p.feedback && (
-                  <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.03)', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem', whiteSpace: 'pre-wrap' }}>
-                    <strong>Histórico de Pareceres:</strong> {p.feedback}
-                  </div>
-                )}
+            </div>
+          )}
 
-                {/* --- DINÂMICA DE BOTÕES DA ESTEIRA DE DECISÃO --- */}
-                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  
-                  {/* 1. AÇÕES DA LIDERANÇA */}
-                  {p.status === 'Aguardando Liderança' && isUserLeadership && (
-                    <>
-                      <button onClick={() => executeWorkflowAction(p.id, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.8rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-                        <PenTool size={14} style={{ marginRight: '4px' }}/> Assinar e Aprovar
-                      </button>
-                      <button onClick={() => executeWorkflowAction(p.id, 'Reprovado pela Liderança')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.8rem', padding: '0.4rem' }}>
-                        <ThumbsDown size={14} /> Reprovar
-                      </button>
-                    </>
-                  )}
+          {/* VISÃO 2: HISTÓRICO */}
+          {currentView === 'historico' && (
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Archive size={20}/> Histórico (Concluídas e Canceladas)</h2>
+              {historyPromos.length === 0 ? (
+                <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)' }}>
+                  <SearchX size={48} color="var(--border-color)" style={{ marginBottom: '1rem', margin: '0 auto' }} />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Nenhum histórico encontrado.</h3>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+                  {historyPromos.map(renderPromoCard)}
+                </div>
+              )}
+            </div>
+          )}
 
-                  {/* 2. AÇÕES DO GP2 */}
-                  {p.status === 'Aguardando GP2' && isUserGP2 && (
-                    <>
-                      <button onClick={() => executeWorkflowAction(p.id, 'Aguardando DP', { gp2_approver_id: currentUserId, gp2_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.8rem', padding: '0.4rem', justifyContent: 'center' }}>
-                        <CheckCircle size={14} style={{ marginRight: '4px' }}/> Validar e Avançar
-                      </button>
-                      <button onClick={() => setActionModal({ type: 'reject_gp2', promo: p })} className="btn-secondary" style={{ color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', fontSize: '0.8rem', padding: '0.4rem' }}>
-                        <MessageSquare size={14} /> Pedir Ajustes
-                      </button>
-                    </>
-                  )}
-
-                  {/* 3. AÇÕES DO DP */}
-                  {p.status === 'Aguardando DP' && isUserDP && (
-                    <button onClick={() => executeWorkflowAction(p.id, 'Concluído', { dp_approver_id: currentUserId, dp_signature_date: new Date().toISOString() })} className="btn-primary" style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-                      <CheckCircle size={16} style={{ marginRight: '6px' }}/> Concluir e Efetivar no Sistema
-                    </button>
-                  )}
-
-                  {/* 4. REAÇÃO DE AJUSTES DO GESTOR SOLICITANTE */}
-                  {p.status === 'Recusado pelo GP2 (Ajustes)' && p.requester_id === currentUserId && (
-                    <>
+          {/* VISÃO 3: BANCO DO PSICÓLOGO */}
+          {currentView === 'banco' && (
+            <div>
+               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Users size={20}/> Aguardando Formulário Vertical</h2>
+               {filteredPsi.length === 0 ? (
+                <div style={{ padding: '3rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)' }}>
+                  <SearchX size={48} color="var(--border-color)" style={{ marginBottom: '1rem', margin: '0 auto' }} />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Nenhum colaborador na fila.</h3>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+                  {filteredPsi.map(c => (
+                    <div key={c.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: '4px solid var(--saritur-yellow)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <CheckCircle size={18} color="var(--success-color)" />
+                        <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Apto na Avaliação</span>
+                      </div>
+                      <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)' }}>{c.name}</h3>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
+                        <strong>Destino:</strong> {c.job_roles?.name || c.job_role_name || 'N/A'} <br/>
+                        <strong>Unidade:</strong> {c.units?.name || c.unit_name || 'N/A'} <br/>
+                        <strong>CPF:</strong> {c.cpf}
+                      </p>
                       <button 
                         onClick={() => {
-                          setFormData({
-                            type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? p.admission_date.split('T')[0] : '',
-                            current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary),
-                            current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id,
-                            promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id
-                          });
-                          setEditingPromotionId(p.id);
+                          setFormData({ ...initialForm, type: 'Vertical', collaborator_name: c.name || '', collaborator_cpf: c.cpf || '', proposed_role: c.job_roles?.name || c.job_role_name || '', proposed_unit_id: c.unit_id || '', candidate_id: c.id });
+                          setEditingPromotionId(null);
                           setIsModalOpen(true);
                         }}
-                        className="btn-primary" style={{ flex: 1, fontSize: '0.8rem', padding: '0.4rem', justifyContent: 'center', backgroundColor: 'var(--saritur-orange)' }}
+                        className="btn-primary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem', marginTop: 'auto' }}
                       >
-                        <RotateCcw size={14} style={{ marginRight: '4px' }}/> Corrigir e Reiniciar
+                        Iniciar Formulário Vertical
                       </button>
-                      <button onClick={() => executeWorkflowAction(p.id, 'Cancelado')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.8rem', padding: '0.4rem' }}>
-                        Cancelar Processo
-                      </button>
-                    </>
-                  )}
-
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* MODAL 1: FORMULÁRIO DE CADASTRO / AJUSTE */}
+      {/* MODAL 1: FORMULÁRIO */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -415,36 +481,19 @@ export default function PromocoesPage() {
         </div>
       )}
 
-      {/* MODAL 2: JUSTIFICATIVA DE RECUSA / PEDIDO DE AJUSTES */}
+      {/* MODAL 2: JUSTIFICATIVA DE RECUSA */}
       {actionModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '450px' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--saritur-orange)', marginBottom: '1rem' }}>Recusar para Ajustes</h2>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Insira abaixo os motivos ou correções necessárias. O processo retornará imediatamente para o painel do Gestor solicitante.</p>
-            <textarea 
-              required
-              style={{ width: '100%', minHeight: '100px', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}
-              placeholder="Ex: Salário proposto fora das tabelas de cargos e salários vigentes..."
-              value={feedbackText}
-              onChange={e => setFeedbackText(e.target.value)}
-            />
+            <textarea required style={{ width: '100%', minHeight: '100px', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }} placeholder="Descreva os motivos..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
               <button className="btn-secondary" onClick={() => setActionModal(null)}>Voltar</button>
-              <button 
-                onClick={() => {
-                  if (!feedbackText.trim()) return alert('Insira uma justificativa.');
-                  const note = `\n❌ [RECUSADO GP²] Por: ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${feedbackText}"\n`;
-                  executeWorkflowAction(actionModal.promo.id, 'Recusado pelo GP2 (Ajustes)', { feedback: (actionModal.promo.feedback || '') + note });
-                }}
-                className="btn-primary" style={{ backgroundColor: 'var(--saritur-orange)' }}
-              >
-                Confirmar Recusa
-              </button>
+              <button onClick={() => { if (!feedbackText.trim()) return alert('Insira uma justificativa.'); const note = `\n❌ [RECUSADO GP²] Por: ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${feedbackText}"\n`; executeWorkflowAction(actionModal.promo.id, 'Recusado pelo GP2 (Ajustes)', { feedback: (actionModal.promo.feedback || '') + note }); }} className="btn-primary" style={{ backgroundColor: 'var(--saritur-orange)' }}>Confirmar</button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }
