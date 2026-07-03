@@ -30,8 +30,16 @@ export async function POST(req) {
   if (g.error) return g.error;
   
   const body = await req.json();
+
+  // 1. BARREIRA DE SEGURANÇA: Verifica se as datas obrigatórias chegaram
+  if (!body.admission_date) {
+    return json({ error: 'A Data de Admissão atual do colaborador é obrigatória e não foi recebida pelo servidor.' }, 400);
+  }
+  if (!body.promotion_month_year) {
+    return json({ error: 'A Data da Promoção (Mês/Ano) é obrigatória.' }, 400);
+  }
   
-  // AQUI ESTÁ O SEGREDO: Lista completa de todos os campos autorizados a entrar no banco
+  // 2. LISTA DE CAMPOS PERMITIDOS
   const allowedFields = [
     'type', 'collaborator_name', 'collaborator_cpf', 'admission_date', 
     'current_role', 'proposed_role', 'current_salary', 'proposed_salary', 
@@ -44,10 +52,10 @@ export async function POST(req) {
   const values = [];
   let i = 1;
 
-  for (const key of Object.keys(body)) {
-    // Adicionei uma trava extra: body[key] !== '' para evitar enviar strings vazias que quebram UUIDs ou Datas
-    if (allowedFields.includes(key) && body[key] !== undefined && body[key] !== '') {
-      columns.push(`"${key}"`);
+  // 3. CONSTRÓI A QUERY DE FORMA SEGURA (E FORÇA AS ASPAS DUPLAS NOS NOMES DAS COLUNAS)
+  for (const key of allowedFields) {
+    if (body[key] !== undefined && body[key] !== null && body[key] !== '') {
+      columns.push(`"${key}"`); // Aspas duplas previnem conflitos com palavras reservadas como current_role
       placeholders.push(`$${i}`);
       values.push(body[key]);
       i++;
@@ -55,9 +63,11 @@ export async function POST(req) {
   }
 
   try {
-    const { rows } = await query(`INSERT INTO promotions (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`, values);
+    const queryStr = `INSERT INTO promotions (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
+    const { rows } = await query(queryStr, values);
     return json(rows[0], 201);
   } catch (err) {
+    console.error("Erro no DB:", err);
     return json({ error: err.message }, 500);
   }
 }
