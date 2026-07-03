@@ -9,13 +9,12 @@ export default function PromocoesPage() {
   const [loading, setLoading] = useState(true);
 
   const [promotions, setPromotions] = useState([]);
-  const [approvedCandidates, setApprovedCandidates] = useState([]); // Banco de validados (Psicólogo)
+  const [approvedCandidates, setApprovedCandidates] = useState([]); 
   const [units, setUnits] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('minhas');
   
-  // FORMULÁRIO PADRÃO
   const initialForm = {
     type: 'Horizontal', collaborator_name: '', collaborator_cpf: '', admission_date: '',
     current_role: '', proposed_role: '', current_salary: '', proposed_salary: '',
@@ -41,18 +40,20 @@ export default function PromocoesPage() {
         api.units.list()
       ]);
 
-      setPromotions(promosRes || []);
+      const activePromotions = promosRes || [];
+      setPromotions(activePromotions);
       setUnits(unitsRes || []);
 
-      // MOTOR DE VALIDAÇÃO: Filtra candidatos do tipo Promoção aprovados nos últimos 6 meses
       if (candsRes) {
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         
+        // FILTRO BLINDADO: Puxa só quem está "Em Andamento" e que AINDA NÃO possui uma promoção atrelada
         const validados = candsRes.filter(c => 
           c.process_type === 'Promoção' && 
           c.status === 'Promoção (Em Andamento)' && 
-          new Date(c.created_at) >= sixMonthsAgo
+          new Date(c.created_at) >= sixMonthsAgo &&
+          !activePromotions.some(p => p.candidate_id === c.id) // <-- MÁGICA AQUI: Se já tem form, não mostra no banco
         );
         setApprovedCandidates(validados);
       }
@@ -64,7 +65,6 @@ export default function PromocoesPage() {
     }
   }
 
-  // Máscaras de Input
   const maskCPF = (val) => val.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1');
   const maskCurrency = (val) => {
     let v = val.replace(/\D/g, '');
@@ -79,7 +79,6 @@ export default function PromocoesPage() {
   async function handleSavePromotion(e) {
     e.preventDefault();
 
-    // TRAVA DE SEGURANÇA: VALIDAÇÃO DA PROMOÇÃO VERTICAL (FLUXO 2)
     let linkedCandidateId = null;
     if (formData.type === 'Vertical') {
       const cleanCpf = formData.collaborator_cpf.replace(/\D/g, '');
@@ -103,6 +102,12 @@ export default function PromocoesPage() {
 
     try {
       await api.promotions.create(payload);
+      
+      // ALTERAÇÃO: Atualiza o status do candidato para limpar a tabela original
+      if (linkedCandidateId) {
+        await api.candidates.update(linkedCandidateId, { status: 'Promoção (Em Análise)' });
+      }
+
       alert('Solicitação de Promoção aberta com sucesso! Enviada para o fluxo de aprovação.');
       setFormData(initialForm);
       setIsModalOpen(false);
@@ -112,7 +117,6 @@ export default function PromocoesPage() {
     }
   }
 
-  // Visibilidade baseada na aba ativa
   const filteredPromotions = promotions.filter(p => {
     if (activeTab === 'minhas') return p.requester_id === currentUserId;
     if (activeTab === 'lideranca') return p.status === 'Aguardando Liderança';
@@ -137,7 +141,6 @@ export default function PromocoesPage() {
         </button>
       </div>
 
-      {/* ABAS DO FLUXO COM A NOVA INCLUSÃO DA ABA DO PSICÓLOGO */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
         <button className={activeTab === 'minhas' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('minhas')}>Minhas Solicitações</button>
         <button className={activeTab === 'aprovados_psi' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('aprovados_psi')} style={{ backgroundColor: activeTab === 'aprovados_psi' ? 'var(--saritur-orange)' : '', color: activeTab === 'aprovados_psi' ? 'white' : '' }}>
@@ -162,7 +165,6 @@ export default function PromocoesPage() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.5rem' }}>
           
-          {/* RENDERIZAÇÃO DA ABA DE APROVADOS DO PSICÓLOGO */}
           {isPsiTab ? (
             approvedCandidates.map(c => (
               <div key={c.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: '4px solid var(--saritur-yellow)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}>
@@ -210,7 +212,6 @@ export default function PromocoesPage() {
               </div>
             ))
           ) : (
-            // EXIBIÇÃO DOS FORMULÁRIOS JÁ INICIADOS NO FLUXO
             filteredPromotions.map(p => (
               <div key={p.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
@@ -238,7 +239,6 @@ export default function PromocoesPage() {
         </div>
       )}
 
-      {/* MODAL DE SOLICITAÇÃO */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
