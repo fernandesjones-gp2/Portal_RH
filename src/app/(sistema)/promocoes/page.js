@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { TrendingUp, Clock, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Clock, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar } from 'lucide-react';
 
 export default function PromocoesPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -9,7 +9,7 @@ export default function PromocoesPage() {
   const [loading, setLoading] = useState(true);
 
   const [promotions, setPromotions] = useState([]);
-  const [approvedCandidates, setApprovedCandidates] = useState([]); // Banco de validados
+  const [approvedCandidates, setApprovedCandidates] = useState([]); // Banco de validados (Psicólogo)
   const [units, setUnits] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,27 +44,27 @@ export default function PromocoesPage() {
       setPromotions(promosRes || []);
       setUnits(unitsRes || []);
 
-      // MOTOR DE VALIDAÇÃO: Puxa candidatos de promoção aprovados nos últimos 6 meses
+      // MOTOR DE VALIDAÇÃO: Filtra candidatos do tipo Promoção aprovados nos últimos 6 meses
       if (candsRes) {
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         
         const validados = candsRes.filter(c => 
           c.process_type === 'Promoção' && 
-          c.status === 'Promoção (Em Andamento)' && // É o status que definimos na tela de agendamentos
+          c.status === 'Promoção (Em Andamento)' && 
           new Date(c.created_at) >= sixMonthsAgo
         );
         setApprovedCandidates(validados);
       }
 
     } catch (error) {
-      console.error('Erro:', error);
+      console.error('Erro ao sincronizar dados:', error);
     } finally {
       setLoading(false);
     }
   }
 
-  // Máscaras
+  // Máscaras de Input
   const maskCPF = (val) => val.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1');
   const maskCurrency = (val) => {
     let v = val.replace(/\D/g, '');
@@ -79,14 +79,14 @@ export default function PromocoesPage() {
   async function handleSavePromotion(e) {
     e.preventDefault();
 
-    // TRAVA DE SEGURANÇA: FLUXO 2 (PROMOÇÃO VERTICAL)
+    // TRAVA DE SEGURANÇA: VALIDAÇÃO DA PROMOÇÃO VERTICAL (FLUXO 2)
     let linkedCandidateId = null;
     if (formData.type === 'Vertical') {
       const cleanCpf = formData.collaborator_cpf.replace(/\D/g, '');
       const validCandidate = approvedCandidates.find(c => c.cpf && c.cpf.replace(/\D/g, '') === cleanCpf);
       
       if (!validCandidate) {
-        alert('❌ BLOQUEIO: Este colaborador NÃO possui uma entrevista de promoção válida aprovada nos últimos 6 meses pelo psicólogo. Solicite a entrevista antes de prosseguir.');
+        alert('❌ BLOQUEIO: Este colaborador NÃO possui uma entrevista de promoção válida aprovada nos últimos 6 meses pelo psicólogo. Solicite a entrevista na tela de Agendamentos antes de prosseguir.');
         return;
       }
       linkedCandidateId = validCandidate.id;
@@ -98,12 +98,12 @@ export default function PromocoesPage() {
       proposed_salary: parseFloat(formData.proposed_salary.replace(/\./g, '').replace(',', '.')),
       requester_id: currentUserId,
       candidate_id: linkedCandidateId,
-      status: 'Aguardando Liderança' // Fluxo 1 inicia aqui
+      status: 'Aguardando Liderança'
     };
 
     try {
       await api.promotions.create(payload);
-      alert('Solicitação de Promoção aberta com sucesso! Enviada para assinatura da Liderança.');
+      alert('Solicitação de Promoção aberta com sucesso! Enviada para o fluxo de aprovação.');
       setFormData(initialForm);
       setIsModalOpen(false);
       fetchData();
@@ -112,7 +112,7 @@ export default function PromocoesPage() {
     }
   }
 
-  // Visibilidade por perfil
+  // Visibilidade baseada na aba ativa
   const filteredPromotions = promotions.filter(p => {
     if (activeTab === 'minhas') return p.requester_id === currentUserId;
     if (activeTab === 'lideranca') return p.status === 'Aguardando Liderança';
@@ -122,6 +122,9 @@ export default function PromocoesPage() {
     return true;
   });
 
+  const isPsiTab = activeTab === 'aprovados_psi';
+  const displayList = isPsiTab ? approvedCandidates : filteredPromotions;
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -129,14 +132,17 @@ export default function PromocoesPage() {
           <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Gestão de Promoções</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Fluxo unificado de solicitações, assinaturas e efetivação no DP.</p>
         </div>
-        <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+        <button className="btn-primary" onClick={() => { setFormData(initialForm); setIsModalOpen(true); }}>
           <Plus size={20} style={{ marginRight: '8px' }}/> Abrir Solicitação
         </button>
       </div>
 
-      {/* TABS DE FLUXO */}
+      {/* ABAS DO FLUXO COM A NOVA INCLUSÃO DA ABA DO PSICÓLOGO */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
         <button className={activeTab === 'minhas' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('minhas')}>Minhas Solicitações</button>
+        <button className={activeTab === 'aprovados_psi' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('aprovados_psi')} style={{ backgroundColor: activeTab === 'aprovados_psi' ? 'var(--saritur-orange)' : '', color: activeTab === 'aprovados_psi' ? 'white' : '' }}>
+          Banco de Aprovados (Psicólogo) ({approvedCandidates.length})
+        </button>
         <button className={activeTab === 'lideranca' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('lideranca')}>Pendentes Liderança</button>
         <button className={activeTab === 'gp2' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('gp2')}>Validação GP²</button>
         <button className={activeTab === 'dp' ? 'btn-primary' : 'btn-secondary'} onClick={() => setActiveTab('dp')}>Efetivação DP</button>
@@ -145,40 +151,94 @@ export default function PromocoesPage() {
 
       {loading ? (
         <p style={{ color: 'var(--text-muted)' }}>Sincronizando fluxo...</p>
-      ) : filteredPromotions.length === 0 ? (
+      ) : displayList.length === 0 ? (
         <div style={{ padding: '4rem 2rem', textAlign: 'center', backgroundColor: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', border: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <SearchX size={48} color="var(--border-color)" style={{ marginBottom: '1rem' }} />
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Nenhuma solicitação nesta etapa</h3>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+            {isPsiTab ? 'Nenhum colaborador aguardando abertura de processo' : 'Nenhuma solicitação nesta etapa'}
+          </h3>
+          {isPsiTab && <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Os colaboradores internos aprovados na triagem psicológica aparecerão aqui.</p>}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.5rem' }}>
-          {filteredPromotions.map(p => (
-            <div key={p.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <TrendingUp size={18} color={p.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} />
-                  <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                    {p.type}
-                  </span>
+          
+          {/* RENDERIZAÇÃO DA ABA DE APROVADOS DO PSICÓLOGO */}
+          {isPsiTab ? (
+            approvedCandidates.map(c => (
+              <div key={c.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: '4px solid var(--saritur-yellow)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <CheckCircle size={18} color="var(--success-color)" />
+                    <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                      Apto na Avaliação
+                    </span>
+                  </div>
+                  
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{c.name}</h3>
+                  
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5' }}>
+                    <strong>Cargo Destino:</strong> {c.job_roles?.name || c.job_role_name || 'N/A'} <br/>
+                    <strong>Unidade:</strong> {c.units?.name || c.unit_name || 'N/A'} <br/>
+                    <strong>CPF:</strong> {c.cpf}
+                  </p>
                 </div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--saritur-yellow)' }}>{p.status}</span>
-              </div>
-              
-              <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{p.collaborator_name}</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                De: {p.current_role} <br/>Para: {p.proposed_role}
-              </p>
 
-              <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Calendar size={14} color="var(--text-muted)" />
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Efetivação: 01/{p.promotion_month_year}</span>
+                <div>
+                  <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <Clock size={14} color="var(--text-muted)" />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Aguardando formulário do Gestor</span>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setFormData({
+                        ...initialForm,
+                        type: 'Vertical',
+                        collaborator_name: c.name || '',
+                        collaborator_cpf: c.cpf || '',
+                        proposed_role: c.job_roles?.name || c.job_role_name || '',
+                        proposed_unit_id: c.unit_id || ''
+                      });
+                      setIsModalOpen(true);
+                    }}
+                    className="btn-primary" 
+                    style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem', padding: '0.5rem' }}
+                  >
+                    Iniciar Formulário Vertical
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            // EXIBIÇÃO DOS FORMULÁRIOS JÁ INICIADOS NO FLUXO
+            filteredPromotions.map(p => (
+              <div key={p.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <TrendingUp size={18} color={p.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} />
+                    <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                      {p.type}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--saritur-orange)' }}>{p.status}</span>
+                </div>
+                
+                <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.25rem' }}>{p.collaborator_name}</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                  De: {p.current_role} <br/>Para: {p.proposed_role}
+                </p>
+
+                <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Calendar size={14} color="var(--text-muted)" />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Efetivação: 01/{p.promotion_month_year}</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 
-      {/* MODAL DE NOVA SOLICITAÇÃO COM TRAVAS */}
+      {/* MODAL DE SOLICITAÇÃO */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
