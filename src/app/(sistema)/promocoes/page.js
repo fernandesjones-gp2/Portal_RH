@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock, Eye } from 'lucide-react';
+import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock, Eye, Download } from 'lucide-react';
 
 export default function PromocoesPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -24,6 +24,9 @@ export default function PromocoesPage() {
   
   const [actionModal, setActionModal] = useState(null); 
   const [feedbackText, setFeedbackText] = useState('');
+  
+  // ESTADO PARA OBSERVAÇÕES OPCIONAIS DOS CARDS
+  const [observations, setObservations] = useState({});
 
   const initialForm = {
     type: 'Horizontal', collaborator_name: '', collaborator_cpf: '', admission_date: '',
@@ -133,17 +136,34 @@ export default function PromocoesPage() {
     }
   }
 
-  async function executeWorkflowAction(promoId, statusName, extraPayload = {}) {
+  // --- NOVA FUNÇÃO COM CAPTURA DE OBSERVAÇÕES OPCIONAIS ---
+  async function executeWorkflowAction(promo, statusName, extraPayload = {}) {
     try {
-      const response = await fetch(`/api/promotions/${promoId}`, {
+      const obs = observations[promo.id];
+      let newFeedback = promo.feedback || '';
+
+      if (extraPayload.feedback) {
+        newFeedback = extraPayload.feedback;
+        delete extraPayload.feedback; 
+      }
+
+      if (obs && obs.trim()) {
+        newFeedback += `\n💬 [OBSERVAÇÃO] Por ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${obs}"\n`;
+      }
+
+      const payload = { status: statusName, feedback: newFeedback, ...extraPayload };
+
+      const response = await fetch(`/api/promotions/${promo.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: statusName, ...extraPayload })
+        body: JSON.stringify(payload)
       });
+
       if (response.ok) {
         alert(`Operação realizada com sucesso! Status atualizado para: ${statusName}`);
         setActionModal(null);
         setFeedbackText('');
+        setObservations(prev => ({ ...prev, [promo.id]: '' })); // Limpa o campo após sucesso
         fetchData();
       } else {
         alert('Erro ao processar alteração no servidor.');
@@ -152,6 +172,102 @@ export default function PromocoesPage() {
       alert('Erro de comunicação.');
     }
   }
+
+  // --- GERADOR DE PDF ---
+  const handleExportPDF = (p) => {
+    const printWindow = window.open('', '', 'width=900,height=700');
+    const html = `
+      <html>
+        <head>
+          <title>Relatório de Promoção - ${p.collaborator_name}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; color: #333; line-height: 1.6; }
+            h1 { color: #057a55; border-bottom: 2px solid #057a55; padding-bottom: 0.5rem; margin-bottom: 1.5rem; font-size: 1.5rem; text-transform: uppercase; }
+            h2 { color: #444; font-size: 1.2rem; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; }
+            .grid { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
+            .col { flex: 1; }
+            p { margin: 0.4rem 0; font-size: 0.95rem; }
+            .label { font-weight: bold; color: #555; display: inline-block; width: 140px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; }
+            th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; }
+            th { background-color: #f9fafb; font-weight: bold; color: #333; }
+            .audit-timeline { background: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #eee; }
+            .audit-item { margin-bottom: 0.75rem; font-size: 0.9rem; }
+            .obs-box { background: #fffbeb; border: 1px solid #fde68a; padding: 1.5rem; border-radius: 8px; white-space: pre-wrap; font-size: 0.9rem; margin-top: 1rem; line-height: 1.8; }
+            .footer { margin-top: 4rem; text-align: center; color: #999; font-size: 0.8rem; border-top: 1px solid #eee; padding-top: 1rem; }
+          </style>
+        </head>
+        <body>
+          <h1>📄 Documento Oficial de Promoção - ${p.type}</h1>
+          <div class="grid">
+            <div class="col">
+              <p><span class="label">Colaborador:</span> ${p.collaborator_name}</p>
+              <p><span class="label">CPF:</span> ${p.collaborator_cpf}</p>
+              <p><span class="label">Admissão Original:</span> ${p.admission_date ? new Date(p.admission_date).toLocaleDateString('pt-BR') : 'N/A'}</p>
+            </div>
+            <div class="col">
+              <p><span class="label">Status Final:</span> <strong>${p.status}</strong></p>
+              <p><span class="label">Mês de Efetivação:</span> 01/${p.promotion_month_year}</p>
+              <p><span class="label">Emitido em:</span> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+            </div>
+          </div>
+
+          <h2>Comparativo de Mudança</h2>
+          <table>
+            <tr>
+              <th>Campo</th>
+              <th>Situação Anterior</th>
+              <th>Situação Proposta/Aprovada</th>
+            </tr>
+            <tr>
+              <td><strong>Cargo</strong></td>
+              <td>${p.current_role}</td>
+              <td>${p.proposed_role}</td>
+            </tr>
+            <tr>
+              <td><strong>Salário</strong></td>
+              <td>R$ ${Number(p.current_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+              <td>R$ ${Number(p.proposed_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+            </tr>
+            <tr>
+              <td><strong>Setor</strong></td>
+              <td>${p.current_sector}</td>
+              <td>${p.proposed_sector}</td>
+            </tr>
+            <tr>
+              <td><strong>Unidade</strong></td>
+              <td>${p.current_unit_name || 'N/A'}</td>
+              <td>${p.proposed_unit_name || 'N/A'}</td>
+            </tr>
+          </table>
+
+          <h2>Linha do Tempo de Auditoria e Assinaturas</h2>
+          <div class="audit-timeline">
+            <div class="audit-item">➕ <strong>Abertura do Processo:</strong> ${p.requester_name || 'Gestor'} - ${p.created_at ? new Date(p.created_at).toLocaleString('pt-BR') : 'N/A'}</div>
+            ${p.leadership_signature_date ? `<div class="audit-item">✍️ <strong>Assinatura Liderança:</strong> ${p.leadership_approver_name || 'Aprovador'} - ${new Date(p.leadership_signature_date).toLocaleString('pt-BR')}</div>` : ''}
+            ${p.gp2_signature_date ? `<div class="audit-item">✅ <strong>Validação GP²:</strong> ${p.gp2_approver_name || 'Aprovador'} - ${new Date(p.gp2_signature_date).toLocaleString('pt-BR')}</div>` : ''}
+            ${p.dp_signature_date ? `<div class="audit-item">✅ <strong>Efetivação DP:</strong> ${p.dp_approver_name || 'Aprovador'} - ${new Date(p.dp_signature_date).toLocaleString('pt-BR')}</div>` : ''}
+          </div>
+
+          <h2>Histórico Completo de Observações e Pareceres</h2>
+          <div class="obs-box">${p.feedback || 'Nenhuma observação extra registrada neste processo.'}</div>
+
+          <div class="footer">
+            Portal RH - Gestão de Promoções | Documento gerado e validado eletronicamente
+          </div>
+          <script>
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 500);
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+  };
 
   const roleSafe = (currentUserRole || '').toUpperCase();
   const isUserLeadership = ['ADMIN', 'SUPERINTENDENT', 'MANAGER'].includes(roleSafe);
@@ -188,90 +304,116 @@ export default function PromocoesPage() {
     return true;
   });
 
-  const renderPromoCard = (p) => (
-    <div key={p.id} className="glass-panel" style={{ padding: '1.25rem', borderRadius: 'var(--radius-md)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <TrendingUp size={16} color={p.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} />
-          <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>{p.type}</span>
+  const renderPromoCard = (p) => {
+    const canActOnLideranca = p.status === 'Aguardando Liderança' && isUserLeadership;
+    const canActOnGP2 = p.status === 'Aguardando GP2' && isUserGP2;
+    const canActOnDP = p.status === 'Aguardando DP' && isUserDP;
+    const canActOnAjustes = p.status === 'Recusado pelo GP2 (Ajustes)' && p.requester_id === currentUserId;
+    const hasActions = canActOnLideranca || canActOnGP2 || canActOnDP || canActOnAjustes;
+
+    return (
+      <div key={p.id} className="glass-panel" style={{ padding: '1.25rem', borderRadius: 'var(--radius-md)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <TrendingUp size={16} color={p.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} />
+            <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 'bold' }}>{p.type}</span>
+          </div>
+          <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: currentView === 'historico' ? 'var(--text-muted)' : 'var(--saritur-orange)' }}>{p.status}</span>
         </div>
-        <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: currentView === 'historico' ? 'var(--text-muted)' : 'var(--saritur-orange)' }}>{p.status}</span>
-      </div>
-      
-      <h3 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)' }}>{p.collaborator_name}</h3>
-      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', lineHeight: '1.4' }}>
-        <strong>De:</strong> {p.current_role} <br/>
-        <strong>Para:</strong> {p.proposed_role}
-      </div>
+        
+        <h3 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)' }}>{p.collaborator_name}</h3>
+        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', lineHeight: '1.4' }}>
+          <strong>De:</strong> {p.current_role} <br/>
+          <strong>Para:</strong> {p.proposed_role}
+        </div>
 
-      <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
-        <Calendar size={14} color="var(--text-muted)" />
-        <span>Efetivação: 01/{p.promotion_month_year}</span>
-      </div>
+        <div style={{ backgroundColor: 'var(--bg-color)', padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+          <Calendar size={14} color="var(--text-muted)" />
+          <span>Efetivação: 01/{p.promotion_month_year}</span>
+        </div>
 
-      {/* HISTÓRICO RÁPIDO DO CARD AGORA MOSTRA O NOME DOS APROVADORES */}
-      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
-        <p>👤 Solicitado por: <strong>{p.requester_name || 'Gestor'}</strong> em {p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : ''}</p>
-        {p.leadership_signature_date && <p style={{ color: '#057a55' }}>✍️ Liderança: <strong>{p.leadership_approver_name || 'Aprovador'}</strong> ({new Date(p.leadership_signature_date).toLocaleDateString('pt-BR')})</p>}
-        {p.gp2_signature_date && <p style={{ color: '#057a55' }}>✅ GP²: <strong>{p.gp2_approver_name || 'Aprovador'}</strong> ({new Date(p.gp2_signature_date).toLocaleDateString('pt-BR')})</p>}
-      </div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
+          <p>👤 Solicitado por: <strong>{p.requester_name || 'Gestor'}</strong></p>
+          {p.gp2_signature_date && <p style={{ color: '#057a55' }}>✅ Validação Concluída no GP²</p>}
+        </div>
 
-      <div style={{ marginTop: '0.25rem' }}>
-        <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem' }}>
-          <Eye size={14} style={{ marginRight: '4px' }} /> Ver Detalhes Completos
-        </button>
-      </div>
+        <div style={{ marginTop: '0.25rem' }}>
+          <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem' }}>
+            <Eye size={14} style={{ marginRight: '4px' }} /> Ver Raio-X Detalhado
+          </button>
+        </div>
 
-      {currentView === 'pipeline' && (
-        <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {p.status === 'Aguardando Liderança' && isUserLeadership && (
-            <>
-              <button onClick={() => executeWorkflowAction(p.id, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-                <PenTool size={14} style={{ marginRight: '4px' }}/> Aprovar
-              </button>
-              <button onClick={() => executeWorkflowAction(p.id, 'Reprovado pela Liderança')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Reprovar</button>
-            </>
-          )}
+        {/* ÁREA DE AÇÕES COM CAMPO DE OBSERVAÇÃO OPCIONAL */}
+        {currentView === 'pipeline' && hasActions && (
+          <div style={{ marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+            <textarea 
+              placeholder="Adicionar observação (Opcional)..."
+              style={{ width: '100%', minHeight: '50px', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem', marginBottom: '0.75rem', resize: 'vertical', fontFamily: 'inherit' }}
+              value={observations[p.id] || ''}
+              onChange={e => setObservations({...observations, [p.id]: e.target.value})}
+            />
+            
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {canActOnLideranca && (
+                <>
+                  <button onClick={() => executeWorkflowAction(p, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
+                    <PenTool size={14} style={{ marginRight: '4px' }}/> Aprovar
+                  </button>
+                  <button onClick={() => executeWorkflowAction(p, 'Reprovado pela Liderança')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Reprovar</button>
+                </>
+              )}
 
-          {p.status === 'Aguardando GP2' && isUserGP2 && (
-            <>
-              <button onClick={() => executeWorkflowAction(p.id, 'Aguardando DP', { gp2_approver_id: currentUserId, gp2_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
-                <CheckCircle size={14} style={{ marginRight: '4px' }}/> Validar
-              </button>
-              <button onClick={() => setActionModal({ type: 'reject_gp2', promo: p })} className="btn-secondary" style={{ color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', fontSize: '0.75rem', padding: '0.4rem' }}>Ajustes</button>
-            </>
-          )}
+              {canActOnGP2 && (
+                <>
+                  <button onClick={() => executeWorkflowAction(p, 'Aguardando DP', { gp2_approver_id: currentUserId, gp2_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
+                    <CheckCircle size={14} style={{ marginRight: '4px' }}/> Validar
+                  </button>
+                  <button onClick={() => setActionModal({ type: 'reject_gp2', promo: p })} className="btn-secondary" style={{ color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', fontSize: '0.75rem', padding: '0.4rem' }}>Ajustes</button>
+                </>
+              )}
 
-          {p.status === 'Aguardando DP' && isUserDP && (
-            <button onClick={() => executeWorkflowAction(p.id, 'Concluído', { dp_approver_id: currentUserId, dp_signature_date: new Date().toISOString() })} className="btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '0.5rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-              <CheckCircle size={16} style={{ marginRight: '6px' }}/> Efetivar no DP
+              {canActOnDP && (
+                <button onClick={() => executeWorkflowAction(p, 'Concluído', { dp_approver_id: currentUserId, dp_signature_date: new Date().toISOString() })} className="btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '0.5rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
+                  <CheckCircle size={16} style={{ marginRight: '6px' }}/> Efetivar no DP
+                </button>
+              )}
+
+              {canActOnAjustes && (
+                <>
+                  <button 
+                    onClick={() => {
+                      setFormData({
+                        type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? String(p.admission_date).split('T')[0] : '',
+                        current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary),
+                        current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id,
+                        promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id
+                      });
+                      setEditingPromotionId(p.id);
+                      setIsModalOpen(true);
+                    }}
+                    className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center', backgroundColor: 'var(--saritur-orange)' }}
+                  >
+                    <RotateCcw size={14} style={{ marginRight: '4px' }}/> Corrigir
+                  </button>
+                  <button onClick={() => executeWorkflowAction(p, 'Cancelado')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Cancelar</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* BOTÃO PDF EM PROCESSOS FINALIZADOS OU HISTÓRICO */}
+        {['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(p.status) && (
+          <div style={{ marginTop: '0.25rem' }}>
+            <button onClick={() => handleExportPDF(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem', color: '#057a55', borderColor: '#057a55' }}>
+              <Download size={14} style={{ marginRight: '4px' }} /> Gerar Documento PDF
             </button>
-          )}
+          </div>
+        )}
 
-          {p.status === 'Recusado pelo GP2 (Ajustes)' && p.requester_id === currentUserId && (
-            <>
-              <button 
-                onClick={() => {
-                  setFormData({
-                    type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? String(p.admission_date).split('T')[0] : '',
-                    current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary),
-                    current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id,
-                    promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id
-                  });
-                  setEditingPromotionId(p.id);
-                  setIsModalOpen(true);
-                }}
-                className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center', backgroundColor: 'var(--saritur-orange)' }}
-              >
-                <RotateCcw size={14} style={{ marginRight: '4px' }}/> Corrigir
-              </button>
-              <button onClick={() => executeWorkflowAction(p.id, 'Cancelado')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Cancelar</button>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -291,7 +433,7 @@ export default function PromocoesPage() {
             <LayoutGrid size={16} style={{ marginRight: '6px' }}/> Quadro (Kanban)
           </button>
           <button className={currentView === 'historico' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('historico')} style={{ backgroundColor: currentView === 'historico' ? 'var(--text-main)' : '' }}>
-            <Archive size={16} style={{ marginRight: '6px' }}/> Histórico
+            <Archive size={16} style={{ marginRight: '6px' }}/> Histórico e Finalizados
           </button>
           <button className={currentView === 'banco' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('banco')} style={{ backgroundColor: currentView === 'banco' ? 'var(--saritur-orange)' : '', color: currentView === 'banco' ? 'white' : '' }}>
             <Users size={16} style={{ marginRight: '6px' }}/> Banco do Psicólogo
@@ -411,7 +553,7 @@ export default function PromocoesPage() {
         </>
       )}
 
-      {/* --- NOVO MODAL DE DETALHES COMPLETOS (RAIO-X) COM NOMES DOS APROVADORES --- */}
+      {/* --- MODAL DE DETALHES COMPLETOS (RAIO-X) --- */}
       {detailsPromotion && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -475,8 +617,6 @@ export default function PromocoesPage() {
                 </h3>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                  
-                  {/* EXIBIÇÃO CLARA DOS NOMES DOS APROVADORES */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
                     <Plus size={16} color="var(--text-muted)" />
                     <span><strong>Solicitado por:</strong> {detailsPromotion.requester_name || 'Gestor'} em {detailsPromotion.created_at ? new Date(detailsPromotion.created_at).toLocaleString('pt-BR') : 'N/A'}</span>
@@ -505,7 +645,7 @@ export default function PromocoesPage() {
 
                   {detailsPromotion.feedback && (
                     <div style={{ marginTop: '0.75rem', padding: '1rem', backgroundColor: 'var(--surface-color)', border: '1px dashed var(--border-color)', borderRadius: '4px', fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                      <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Logs e Interações (Recusas/Ajustes):</strong>
+                      <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Logs e Interações (Recusas/Ajustes/Observações):</strong>
                       <span style={{ color: 'var(--text-muted)' }}>{detailsPromotion.feedback}</span>
                     </div>
                   )}
@@ -594,7 +734,7 @@ export default function PromocoesPage() {
             <textarea required style={{ width: '100%', minHeight: '100px', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }} placeholder="Descreva os motivos..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
               <button className="btn-secondary" onClick={() => setActionModal(null)}>Voltar</button>
-              <button onClick={() => { if (!feedbackText.trim()) return alert('Insira uma justificativa.'); const note = `\n❌ [RECUSADO GP²] Por: ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${feedbackText}"\n`; executeWorkflowAction(actionModal.promo.id, 'Recusado pelo GP2 (Ajustes)', { feedback: (actionModal.promo.feedback || '') + note }); }} className="btn-primary" style={{ backgroundColor: 'var(--saritur-orange)' }}>Confirmar</button>
+              <button onClick={() => { if (!feedbackText.trim()) return alert('Insira uma justificativa.'); const note = `\n❌ [RECUSADO GP²] Por: ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${feedbackText}"\n`; executeWorkflowAction(actionModal.promo, 'Recusado pelo GP2 (Ajustes)', { feedback: (actionModal.promo.feedback || '') + note }); }} className="btn-primary" style={{ backgroundColor: 'var(--saritur-orange)' }}>Confirmar</button>
             </div>
           </div>
         </div>
