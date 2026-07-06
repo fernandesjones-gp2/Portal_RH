@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, ThumbsUp, ThumbsDown, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock, Eye } from 'lucide-react';
+import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock, Eye } from 'lucide-react';
 
 export default function PromocoesPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -15,7 +15,7 @@ export default function PromocoesPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPromotionId, setEditingPromotionId] = useState(null); 
-  const [detailsPromotion, setDetailsPromotion] = useState(null); // <-- NOVO: Controle do modal de detalhes
+  const [detailsPromotion, setDetailsPromotion] = useState(null); 
   
   // VISTAS E FILTROS
   const [currentView, setCurrentView] = useState('pipeline'); 
@@ -50,15 +50,15 @@ export default function PromocoesPage() {
       const promosRes = await resPromo.json();
 
       const [candsRes, unitsRes] = await Promise.all([
-        api.candidates.list({ _t: Date.now() }),
-        api.units.list()
+        api.candidates.list({ _t: Date.now() }).catch(() => []),
+        api.units.list().catch(() => [])
       ]);
 
       const activePromotions = Array.isArray(promosRes) ? promosRes : [];
       setPromotions(activePromotions);
       setUnits(unitsRes || []);
 
-      if (candsRes) {
+      if (candsRes && Array.isArray(candsRes)) {
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         
@@ -80,7 +80,7 @@ export default function PromocoesPage() {
 
   const maskCPF = (val) => val.replace(/\D/g, '').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})/, '$1-$2').replace(/(-\d{2})\d+?$/, '$1');
   const maskCurrency = (val) => {
-    let v = val.replace(/\D/g, '');
+    let v = String(val).replace(/\D/g, '');
     v = (v / 100).toFixed(2) + '';
     v = v.replace(".", ",");
     v = v.replace(/(\d)(\d{3})(\d{3}),/g, "$1.$2.$3,");
@@ -95,7 +95,7 @@ export default function PromocoesPage() {
     let linkedCandidateId = formData.candidate_id || null;
     if (formData.type === 'Vertical' && !linkedCandidateId) {
       const cleanCpf = formData.collaborator_cpf.replace(/\D/g, '');
-      const validCandidate = approvedCandidates.find(c => c.cpf && c.cpf.replace(/\D/g, '') === cleanCpf);
+      const validCandidate = approvedCandidates.find(c => c.cpf && String(c.cpf).replace(/\D/g, '') === cleanCpf);
       
       if (!validCandidate) {
         alert('❌ BLOQUEIO: Este colaborador NÃO possui uma entrevista de promoção válida aprovada nos últimos 6 meses pelo psicólogo.');
@@ -159,7 +159,6 @@ export default function PromocoesPage() {
   const isUserGP2 = ['ADMIN', 'GP²', 'GP2', 'RECRUITER', 'RECRUITER_ANALYST'].includes(roleSafe);
   const isUserDP = ['ADMIN', 'DP'].includes(roleSafe);
 
-  // --- LÓGICA DE FILTROS ---
   const filteredAll = promotions.filter(p => {
     if (filterUnit && p.current_unit_id !== filterUnit && p.proposed_unit_id !== filterUnit) return false;
     if (filterOnlyMine && p.requester_id !== currentUserId) return false;
@@ -190,7 +189,6 @@ export default function PromocoesPage() {
     return true;
   });
 
-  // --- RENDERIZAÇÃO DO CARD KANBAN/HISTÓRICO ---
   const renderPromoCard = (p) => (
     <div key={p.id} className="glass-panel" style={{ padding: '1.25rem', borderRadius: 'var(--radius-md)', borderTop: p.type === 'Vertical' ? '4px solid #0284c7' : '4px solid var(--saritur-orange)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -212,7 +210,6 @@ export default function PromocoesPage() {
         <span>Efetivação: 01/{p.promotion_month_year}</span>
       </div>
 
-      {/* NOVO: Botão de Detalhes sempre visível */}
       <div style={{ marginTop: '0.25rem' }}>
         <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem' }}>
           <Eye size={14} style={{ marginRight: '4px' }} /> Ver Detalhes Completos
@@ -224,7 +221,7 @@ export default function PromocoesPage() {
           {p.status === 'Aguardando Liderança' && isUserLeadership && (
             <>
               <button onClick={() => executeWorkflowAction(p.id, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-                <PenTool size={14} style={{ marginRight: '4px' }}/> Assinar/Aprovar
+                <PenTool size={14} style={{ marginRight: '4px' }}/> Aprovar
               </button>
               <button onClick={() => executeWorkflowAction(p.id, 'Reprovado pela Liderança')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Reprovar</button>
             </>
@@ -250,7 +247,7 @@ export default function PromocoesPage() {
               <button 
                 onClick={() => {
                   setFormData({
-                    type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? p.admission_date.split('T')[0] : '',
+                    type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? String(p.admission_date).split('T')[0] : '',
                     current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary),
                     current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id,
                     promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id
@@ -434,7 +431,6 @@ export default function PromocoesPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
-              {/* SESSÃO 1: DADOS BÁSICOS */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colaborador</span>
@@ -447,17 +443,16 @@ export default function PromocoesPage() {
                 <div>
                   <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Data Admissão</span>
                   <p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>
-                    {detailsPromotion.admission_date ? detailsPromotion.admission_date.split('T')[0].split('-').reverse().join('/') : 'N/A'}
+                    {detailsPromotion.admission_date ? String(detailsPromotion.admission_date).split('T')[0].split('-').reverse().join('/') : 'N/A'}
                   </p>
                 </div>
               </div>
 
-              {/* SESSÃO 2: COMPARATIVO */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Situação Atual</h4>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Cargo:</strong> {detailsPromotion.current_role}</p>
-                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Salário:</strong> {Number(detailsPromotion.current_salary).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Salário:</strong> {Number(detailsPromotion.current_salary || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Setor:</strong> {detailsPromotion.current_sector}</p>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0' }}><strong>Unidade:</strong> {detailsPromotion.current_unit_name || 'N/A'}</p>
                 </div>
@@ -465,13 +460,12 @@ export default function PromocoesPage() {
                 <div style={{ border: '1px solid var(--success-color)', borderRadius: 'var(--radius-md)', padding: '1rem', backgroundColor: 'rgba(5, 122, 85, 0.03)' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid rgba(5, 122, 85, 0.2)', paddingBottom: '0.5rem' }}>Situação Proposta</h4>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Cargo:</strong> {detailsPromotion.proposed_role}</p>
-                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Salário:</strong> {Number(detailsPromotion.proposed_salary).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Salário:</strong> {Number(detailsPromotion.proposed_salary || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Setor:</strong> {detailsPromotion.proposed_sector}</p>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0' }}><strong>Unidade:</strong> {detailsPromotion.proposed_unit_name || 'N/A'}</p>
                 </div>
               </div>
 
-              {/* SESSÃO 3: AUDITORIA / HISTÓRICO */}
               <div>
                 <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
                   Auditoria e Linha do Tempo
@@ -504,7 +498,6 @@ export default function PromocoesPage() {
                     </div>
                   )}
 
-                  {/* CAIXA DE LOGS E PARECERES */}
                   {detailsPromotion.feedback && (
                     <div style={{ marginTop: '0.75rem', padding: '1rem', backgroundColor: 'var(--surface-color)', border: '1px dashed var(--border-color)', borderRadius: '4px', fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
                       <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Logs e Interações (Recusas/Ajustes):</strong>
