@@ -48,7 +48,8 @@ export async function POST(req) {
     'type', 'collaborator_name', 'collaborator_cpf', 'admission_date', 
     'current_role', 'proposed_role', 'current_salary', 'proposed_salary', 
     'current_sector', 'proposed_sector', 'current_unit_id', 'proposed_unit_id', 
-    'promotion_month_year', 'requester_id', 'candidate_id', 'status'
+    'promotion_month_year', 'requester_id', 'candidate_id', 'status',
+    'current_role_id', 'proposed_role_id' // <-- Adicionados aqui    
   ];
 
   const columns = [];
