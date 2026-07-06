@@ -343,7 +343,7 @@ export default function PromocoesPage() {
 
         <div style={{ marginTop: '0.25rem' }}>
           <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem' }}>
-            <Eye size={14} style={{ marginRight: '4px' }} /> Ver Raio-X Detalhado
+            <Eye size={14} style={{ marginRight: '4px' }} /> Ver Detalhes
           </button>
         </div>
 
