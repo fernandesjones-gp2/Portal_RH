@@ -17,7 +17,6 @@ export default function PromocoesPage() {
   const [editingPromotionId, setEditingPromotionId] = useState(null); 
   const [detailsPromotion, setDetailsPromotion] = useState(null); 
   
-  // VISTAS E FILTROS
   const [currentView, setCurrentView] = useState('pipeline'); 
   const [filterUnit, setFilterUnit] = useState('');
   const [filterDate, setFilterDate] = useState('');
@@ -210,6 +209,13 @@ export default function PromocoesPage() {
         <span>Efetivação: 01/{p.promotion_month_year}</span>
       </div>
 
+      {/* HISTÓRICO RÁPIDO DO CARD AGORA MOSTRA O NOME DOS APROVADORES */}
+      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
+        <p>👤 Solicitado por: <strong>{p.requester_name || 'Gestor'}</strong> em {p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : ''}</p>
+        {p.leadership_signature_date && <p style={{ color: '#057a55' }}>✍️ Liderança: <strong>{p.leadership_approver_name || 'Aprovador'}</strong> ({new Date(p.leadership_signature_date).toLocaleDateString('pt-BR')})</p>}
+        {p.gp2_signature_date && <p style={{ color: '#057a55' }}>✅ GP²: <strong>{p.gp2_approver_name || 'Aprovador'}</strong> ({new Date(p.gp2_signature_date).toLocaleDateString('pt-BR')})</p>}
+      </div>
+
       <div style={{ marginTop: '0.25rem' }}>
         <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem' }}>
           <Eye size={14} style={{ marginRight: '4px' }} /> Ver Detalhes Completos
@@ -280,7 +286,6 @@ export default function PromocoesPage() {
       </div>
 
       <div className="glass-panel" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)' }}>
-        
         <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '4px' }}>
           <button className={currentView === 'pipeline' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('pipeline')}>
             <LayoutGrid size={16} style={{ marginRight: '6px' }}/> Quadro (Kanban)
@@ -406,7 +411,7 @@ export default function PromocoesPage() {
         </>
       )}
 
-      {/* --- NOVO MODAL DE DETALHES COMPLETOS (RAIO-X) --- */}
+      {/* --- NOVO MODAL DE DETALHES COMPLETOS (RAIO-X) COM NOMES DOS APROVADORES --- */}
       {detailsPromotion && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -414,7 +419,6 @@ export default function PromocoesPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
               <div>
                 <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
-                  <SearchX size={24} color={detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} style={{ display: 'none' }}/> 
                   Detalhes da Solicitação
                 </h2>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
@@ -430,7 +434,6 @@ export default function PromocoesPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colaborador</span>
@@ -472,29 +475,31 @@ export default function PromocoesPage() {
                 </h3>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  
+                  {/* EXIBIÇÃO CLARA DOS NOMES DOS APROVADORES */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
                     <Plus size={16} color="var(--text-muted)" />
-                    <span><strong>Solicitação aberta por:</strong> {detailsPromotion.requester_name || 'Gestor'} em {detailsPromotion.created_at ? new Date(detailsPromotion.created_at).toLocaleString('pt-BR') : 'N/A'}</span>
+                    <span><strong>Solicitado por:</strong> {detailsPromotion.requester_name || 'Gestor'} em {detailsPromotion.created_at ? new Date(detailsPromotion.created_at).toLocaleString('pt-BR') : 'N/A'}</span>
                   </div>
 
                   {detailsPromotion.leadership_signature_date && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
                       <PenTool size={16} />
-                      <span><strong>Aprovado pela Liderança em:</strong> {new Date(detailsPromotion.leadership_signature_date).toLocaleString('pt-BR')}</span>
+                      <span><strong>Aprovado na Liderança por:</strong> {detailsPromotion.leadership_approver_name || 'Usuário'} em {new Date(detailsPromotion.leadership_signature_date).toLocaleString('pt-BR')}</span>
                     </div>
                   )}
 
                   {detailsPromotion.gp2_signature_date && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
                       <CheckCircle size={16} />
-                      <span><strong>Validado pelo GP² em:</strong> {new Date(detailsPromotion.gp2_signature_date).toLocaleString('pt-BR')}</span>
+                      <span><strong>Validado no GP² por:</strong> {detailsPromotion.gp2_approver_name || 'Usuário'} em {new Date(detailsPromotion.gp2_signature_date).toLocaleString('pt-BR')}</span>
                     </div>
                   )}
 
                   {detailsPromotion.dp_signature_date && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
                       <CheckCircle size={16} />
-                      <span><strong>Efetivado no DP em:</strong> {new Date(detailsPromotion.dp_signature_date).toLocaleString('pt-BR')}</span>
+                      <span><strong>Efetivado no DP por:</strong> {detailsPromotion.dp_approver_name || 'Usuário'} em {new Date(detailsPromotion.dp_signature_date).toLocaleString('pt-BR')}</span>
                     </div>
                   )}
 
