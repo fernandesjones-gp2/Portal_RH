@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, ThumbsUp, ThumbsDown, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock } from 'lucide-react';
+import { TrendingUp, SearchX, Plus, X, CheckCircle, FileText, AlertTriangle, Calendar, ThumbsUp, ThumbsDown, PenTool, MessageSquare, RotateCcw, LayoutGrid, Archive, Users, Filter, Clock, Eye } from 'lucide-react';
 
 export default function PromocoesPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -15,9 +15,10 @@ export default function PromocoesPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPromotionId, setEditingPromotionId] = useState(null); 
+  const [detailsPromotion, setDetailsPromotion] = useState(null); // <-- NOVO: Controle do modal de detalhes
   
   // VISTAS E FILTROS
-  const [currentView, setCurrentView] = useState('pipeline'); // 'pipeline' | 'historico' | 'banco'
+  const [currentView, setCurrentView] = useState('pipeline'); 
   const [filterUnit, setFilterUnit] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [filterOnlyMine, setFilterOnlyMine] = useState(false);
@@ -211,17 +212,12 @@ export default function PromocoesPage() {
         <span>Efetivação: 01/{p.promotion_month_year}</span>
       </div>
 
-      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)' }}>
-        <p>👤 Solicitação: {p.requester_name || 'Gestor'} ({p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR') : ''})</p>
-        {p.leadership_signature_date && <p style={{ color: '#057a55' }}>✍️ Liderança: {new Date(p.leadership_signature_date).toLocaleDateString('pt-BR')}</p>}
-        {p.gp2_signature_date && <p style={{ color: '#057a55' }}>✅ GP²: {new Date(p.gp2_signature_date).toLocaleDateString('pt-BR')}</p>}
+      {/* NOVO: Botão de Detalhes sempre visível */}
+      <div style={{ marginTop: '0.25rem' }}>
+        <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem' }}>
+          <Eye size={14} style={{ marginRight: '4px' }} /> Ver Detalhes Completos
+        </button>
       </div>
-
-      {p.feedback && (
-        <div style={{ backgroundColor: 'rgba(243, 113, 55, 0.03)', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.7rem', whiteSpace: 'pre-wrap', maxHeight: '60px', overflowY: 'auto' }}>
-          <strong>Pareceres:</strong> {p.feedback}
-        </div>
-      )}
 
       {currentView === 'pipeline' && (
         <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -286,7 +282,6 @@ export default function PromocoesPage() {
         </button>
       </div>
 
-      {/* BARRA DE CONTROLES: VISTAS E FILTROS */}
       <div className="glass-panel" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)' }}>
         
         <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '4px' }}>
@@ -318,7 +313,6 @@ export default function PromocoesPage() {
         <p style={{ color: 'var(--text-muted)' }}>Sincronizando fluxo...</p>
       ) : (
         <>
-          {/* VISÃO 1: KANBAN (PIPELINE) */}
           {currentView === 'pipeline' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
               
@@ -358,7 +352,6 @@ export default function PromocoesPage() {
             </div>
           )}
 
-          {/* VISÃO 2: HISTÓRICO */}
           {currentView === 'historico' && (
             <div>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Archive size={20}/> Histórico (Concluídas e Canceladas)</h2>
@@ -375,7 +368,6 @@ export default function PromocoesPage() {
             </div>
           )}
 
-          {/* VISÃO 3: BANCO DO PSICÓLOGO */}
           {currentView === 'banco' && (
             <div>
                <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Users size={20}/> Aguardando Formulário Vertical</h2>
@@ -417,7 +409,122 @@ export default function PromocoesPage() {
         </>
       )}
 
-      {/* MODAL 1: FORMULÁRIO */}
+      {/* --- NOVO MODAL DE DETALHES COMPLETOS (RAIO-X) --- */}
+      {detailsPromotion && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
+                  <SearchX size={24} color={detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'} style={{ display: 'none' }}/> 
+                  Detalhes da Solicitação
+                </h2>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <span style={{ backgroundColor: detailsPromotion.type === 'Vertical' ? 'rgba(2, 132, 199, 0.1)' : 'rgba(243, 113, 55, 0.1)', color: detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', border: `1px solid ${detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'}` }}>
+                    {detailsPromotion.type}
+                  </span>
+                  <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
+                    Status: {detailsPromotion.status}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setDetailsPromotion(null)}><X size={24} color="var(--text-muted)" /></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              
+              {/* SESSÃO 1: DADOS BÁSICOS */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colaborador</span>
+                  <p style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.collaborator_name}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span>
+                  <p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.collaborator_cpf}</p>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Data Admissão</span>
+                  <p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>
+                    {detailsPromotion.admission_date ? detailsPromotion.admission_date.split('T')[0].split('-').reverse().join('/') : 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* SESSÃO 2: COMPARATIVO */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Situação Atual</h4>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Cargo:</strong> {detailsPromotion.current_role}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Salário:</strong> {Number(detailsPromotion.current_salary).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Setor:</strong> {detailsPromotion.current_sector}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0' }}><strong>Unidade:</strong> {detailsPromotion.current_unit_name || 'N/A'}</p>
+                </div>
+
+                <div style={{ border: '1px solid var(--success-color)', borderRadius: 'var(--radius-md)', padding: '1rem', backgroundColor: 'rgba(5, 122, 85, 0.03)' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid rgba(5, 122, 85, 0.2)', paddingBottom: '0.5rem' }}>Situação Proposta</h4>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Cargo:</strong> {detailsPromotion.proposed_role}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Salário:</strong> {Number(detailsPromotion.proposed_salary).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Setor:</strong> {detailsPromotion.proposed_sector}</p>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '0' }}><strong>Unidade:</strong> {detailsPromotion.proposed_unit_name || 'N/A'}</p>
+                </div>
+              </div>
+
+              {/* SESSÃO 3: AUDITORIA / HISTÓRICO */}
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+                  Auditoria e Linha do Tempo
+                </h3>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                    <Plus size={16} color="var(--text-muted)" />
+                    <span><strong>Solicitação aberta por:</strong> {detailsPromotion.requester_name || 'Gestor'} em {detailsPromotion.created_at ? new Date(detailsPromotion.created_at).toLocaleString('pt-BR') : 'N/A'}</span>
+                  </div>
+
+                  {detailsPromotion.leadership_signature_date && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
+                      <PenTool size={16} />
+                      <span><strong>Aprovado pela Liderança em:</strong> {new Date(detailsPromotion.leadership_signature_date).toLocaleString('pt-BR')}</span>
+                    </div>
+                  )}
+
+                  {detailsPromotion.gp2_signature_date && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
+                      <CheckCircle size={16} />
+                      <span><strong>Validado pelo GP² em:</strong> {new Date(detailsPromotion.gp2_signature_date).toLocaleString('pt-BR')}</span>
+                    </div>
+                  )}
+
+                  {detailsPromotion.dp_signature_date && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
+                      <CheckCircle size={16} />
+                      <span><strong>Efetivado no DP em:</strong> {new Date(detailsPromotion.dp_signature_date).toLocaleString('pt-BR')}</span>
+                    </div>
+                  )}
+
+                  {/* CAIXA DE LOGS E PARECERES */}
+                  {detailsPromotion.feedback && (
+                    <div style={{ marginTop: '0.75rem', padding: '1rem', backgroundColor: 'var(--surface-color)', border: '1px dashed var(--border-color)', borderRadius: '4px', fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                      <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Logs e Interações (Recusas/Ajustes):</strong>
+                      <span style={{ color: 'var(--text-muted)' }}>{detailsPromotion.feedback}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+              <button className="btn-secondary" onClick={() => setDetailsPromotion(null)}>Fechar Raio-X</button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FORMULÁRIO */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -481,7 +588,7 @@ export default function PromocoesPage() {
         </div>
       )}
 
-      {/* MODAL 2: JUSTIFICATIVA DE RECUSA */}
+      {/* MODAL RECUSA / AJUSTES */}
       {actionModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '450px' }}>
