@@ -12,11 +12,17 @@ export async function GET(req) {
       SELECT p.*, 
              u_curr.name as current_unit_name, 
              u_prop.name as proposed_unit_name,
-             req_usr.name as requester_name
+             req_usr.name as requester_name,
+             lead_usr.name as leadership_approver_name,
+             gp2_usr.name as gp2_approver_name,
+             dp_usr.name as dp_approver_name
       FROM promotions p
       LEFT JOIN units u_curr ON p.current_unit_id = u_curr.id
       LEFT JOIN units u_prop ON p.proposed_unit_id = u_prop.id
       LEFT JOIN users req_usr ON p.requester_id = req_usr.id
+      LEFT JOIN users lead_usr ON p.leadership_approver_id = lead_usr.id
+      LEFT JOIN users gp2_usr ON p.gp2_approver_id = gp2_usr.id
+      LEFT JOIN users dp_usr ON p.dp_approver_id = dp_usr.id
       ORDER BY p.created_at DESC
     `);
     return json(rows);
@@ -31,7 +37,6 @@ export async function POST(req) {
   
   const body = await req.json();
 
-  // 1. BARREIRA DE SEGURANÇA: Verifica se as datas obrigatórias chegaram
   if (!body.admission_date) {
     return json({ error: 'A Data de Admissão atual do colaborador é obrigatória e não foi recebida pelo servidor.' }, 400);
   }
@@ -39,7 +44,6 @@ export async function POST(req) {
     return json({ error: 'A Data da Promoção (Mês/Ano) é obrigatória.' }, 400);
   }
   
-  // 2. LISTA DE CAMPOS PERMITIDOS
   const allowedFields = [
     'type', 'collaborator_name', 'collaborator_cpf', 'admission_date', 
     'current_role', 'proposed_role', 'current_salary', 'proposed_salary', 
@@ -52,10 +56,9 @@ export async function POST(req) {
   const values = [];
   let i = 1;
 
-  // 3. CONSTRÓI A QUERY DE FORMA SEGURA (E FORÇA AS ASPAS DUPLAS NOS NOMES DAS COLUNAS)
   for (const key of allowedFields) {
     if (body[key] !== undefined && body[key] !== null && body[key] !== '') {
-      columns.push(`"${key}"`); // Aspas duplas previnem conflitos com palavras reservadas como current_role
+      columns.push(`"${key}"`); 
       placeholders.push(`$${i}`);
       values.push(body[key]);
       i++;
