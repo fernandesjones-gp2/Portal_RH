@@ -192,15 +192,23 @@ export default function PromocoesPage() {
     }
   }
 
-  // --- GERADOR DE PDF 100% COMPACTO COM LOGÓTIPO NO TOPO ---
+  // --- GERADOR DE PDF COM MARGENS SEGURAS (SANGRIA) ---
   const handleExportPDF = (p) => {
     const printWindow = window.open('', '', 'width=900,height=700');
-    const logoUrl = window.location.origin + '/logo.png'; // Garante o caminho absoluto da logo
+    const logoUrl = window.location.origin + '/logo.png'; 
     const html = `
       <html><head><title>Relatório de Promoção - ${p.collaborator_name}</title>
       <style>
-        @page { size: A4; margin: 10mm; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; margin: 0; color: #333; line-height: 1.3; font-size: 0.85rem; }
+        /* Margem de 20mm garante o espaçamento perfeito ao imprimir na folha A4 */
+        @page { size: A4; margin: 20mm; }
+        
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; margin: 0 auto; color: #333; line-height: 1.3; font-size: 0.85rem; max-width: 100%; background-color: #ffffff; }
+        
+        /* Força a impressora a imprimir cores de fundo e zera o padding extra do ecrã */
+        @media print {
+          body { padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+        
         .header-container { display: flex; align-items: center; border-bottom: 2px solid #057a55; padding-bottom: 0.5rem; margin-bottom: 1rem; }
         .logo { max-height: 45px; margin-right: 1rem; object-fit: contain; }
         h1 { color: #057a55; font-size: 1.25rem; text-transform: uppercase; margin: 0; }
@@ -583,7 +591,6 @@ export default function PromocoesPage() {
                     <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Unidade Atual *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_unit_id} onChange={e => setFormData({...formData, current_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
                   </div>
                 </div>
-
                 <div>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid rgba(5, 122, 85, 0.2)', paddingBottom: '0.5rem' }}>Nova Situação (Proposta)</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
