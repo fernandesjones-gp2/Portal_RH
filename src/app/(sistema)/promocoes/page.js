@@ -12,6 +12,7 @@ export default function PromocoesPage() {
   const [promotions, setPromotions] = useState([]);
   const [approvedCandidates, setApprovedCandidates] = useState([]); 
   const [units, setUnits] = useState([]);
+  const [roles, setRoles] = useState([]); // <-- Estado para as funções
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPromotionId, setEditingPromotionId] = useState(null); 
@@ -24,8 +25,6 @@ export default function PromocoesPage() {
   
   const [actionModal, setActionModal] = useState(null); 
   const [feedbackText, setFeedbackText] = useState('');
-  
-  // ESTADO PARA OBSERVAÇÕES OPCIONAIS DOS CARDS
   const [observations, setObservations] = useState({});
 
   const initialForm = {
@@ -51,14 +50,16 @@ export default function PromocoesPage() {
       const resPromo = await fetch('/api/promotions?_t=' + Date.now());
       const promosRes = await resPromo.json();
 
-      const [candsRes, unitsRes] = await Promise.all([
+      const [candsRes, unitsRes, rolesRes] = await Promise.all([
         api.candidates.list({ _t: Date.now() }).catch(() => []),
-        api.units.list().catch(() => [])
+        api.units.list().catch(() => []),
+        api.jobRoles.list().catch(() => []) // <-- Puxa as funções do banco
       ]);
 
       const activePromotions = Array.isArray(promosRes) ? promosRes : [];
       setPromotions(activePromotions);
       setUnits(unitsRes || []);
+      setRoles(rolesRes || []); 
 
       if (candsRes && Array.isArray(candsRes)) {
         const sixMonthsAgo = new Date();
@@ -72,7 +73,6 @@ export default function PromocoesPage() {
         );
         setApprovedCandidates(validados);
       }
-
     } catch (error) {
       console.error('Erro ao sincronizar dados:', error);
     } finally {
@@ -91,6 +91,38 @@ export default function PromocoesPage() {
   };
   const formatMonthYear = (val) => val.replace(/\D/g, '').replace(/^(\d{2})(\d)/, '$1/$2').slice(0, 7);
 
+  // --- INTELIGÊNCIA DOS SETORES DINÂMICOS ---
+  const uniqueRoleNames = [...new Set(roles.map(r => r.name))].sort();
+
+  const getSectorsForRole = (roleName) => {
+    const matchingRoles = roles.filter(r => r.name === roleName);
+    const sectors = matchingRoles.map(r => r.sector).filter(Boolean);
+    return [...new Set(sectors)].sort(); 
+  };
+
+  const currentAvailableSectors = getSectorsForRole(formData.current_role);
+  const proposedAvailableSectors = getSectorsForRole(formData.proposed_role);
+
+  const handleCurrentRoleChange = (e) => {
+    const newRole = e.target.value;
+    const sectors = getSectorsForRole(newRole);
+    setFormData({
+      ...formData, 
+      current_role: newRole, 
+      current_sector: sectors.length === 1 ? sectors[0] : '' 
+    });
+  };
+
+  const handleProposedRoleChange = (e) => {
+    const newRole = e.target.value;
+    const sectors = getSectorsForRole(newRole);
+    setFormData({
+      ...formData, 
+      proposed_role: newRole, 
+      proposed_sector: sectors.length === 1 ? sectors[0] : '' 
+    });
+  };
+
   async function handleSavePromotion(e) {
     e.preventDefault();
 
@@ -98,13 +130,16 @@ export default function PromocoesPage() {
     if (formData.type === 'Vertical' && !linkedCandidateId) {
       const cleanCpf = formData.collaborator_cpf.replace(/\D/g, '');
       const validCandidate = approvedCandidates.find(c => c.cpf && String(c.cpf).replace(/\D/g, '') === cleanCpf);
-      
       if (!validCandidate) {
         alert('❌ BLOQUEIO: Este colaborador NÃO possui uma entrevista de promoção válida aprovada nos últimos 6 meses pelo psicólogo.');
         return;
       }
       linkedCandidateId = validCandidate.id;
     }
+
+    // Identifica o ID exato na tabela de funções com base no Nome + Setor selecionado
+    const cRoleObj = roles.find(r => r.name === formData.current_role && (r.sector || '') === (formData.current_sector || ''));
+    const pRoleObj = roles.find(r => r.name === formData.proposed_role && (r.sector || '') === (formData.proposed_sector || ''));
 
     const payload = {
       ...formData,
@@ -113,6 +148,8 @@ export default function PromocoesPage() {
       requester_id: currentUserId,
       candidate_id: linkedCandidateId,
       status: 'Aguardando Liderança',
+      current_role_id: cRoleObj ? cRoleObj.id : null,
+      proposed_role_id: pRoleObj ? pRoleObj.id : null,
       feedback: editingPromotionId ? `${formData.feedback || ''}\n🔄 [FLUXO] Processo corrigido e reiniciado por ${currentUserName} em ${new Date().toLocaleString('pt-BR')}` : ''
     };
 
@@ -136,20 +173,12 @@ export default function PromocoesPage() {
     }
   }
 
-  // --- NOVA FUNÇÃO COM CAPTURA DE OBSERVAÇÕES OPCIONAIS ---
   async function executeWorkflowAction(promo, statusName, extraPayload = {}) {
     try {
       const obs = observations[promo.id];
       let newFeedback = promo.feedback || '';
-
-      if (extraPayload.feedback) {
-        newFeedback = extraPayload.feedback;
-        delete extraPayload.feedback; 
-      }
-
-      if (obs && obs.trim()) {
-        newFeedback += `\n💬 [OBSERVAÇÃO] Por ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${obs}"\n`;
-      }
+      if (extraPayload.feedback) { newFeedback = extraPayload.feedback; delete extraPayload.feedback; }
+      if (obs && obs.trim()) { newFeedback += `\n💬 [OBSERVAÇÃO] Por ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${obs}"\n`; }
 
       const payload = { status: statusName, feedback: newFeedback, ...extraPayload };
 
@@ -163,7 +192,7 @@ export default function PromocoesPage() {
         alert(`Operação realizada com sucesso! Status atualizado para: ${statusName}`);
         setActionModal(null);
         setFeedbackText('');
-        setObservations(prev => ({ ...prev, [promo.id]: '' })); // Limpa o campo após sucesso
+        setObservations(prev => ({ ...prev, [promo.id]: '' }));
         fetchData();
       } else {
         alert('Erro ao processar alteração no servidor.');
@@ -173,97 +202,20 @@ export default function PromocoesPage() {
     }
   }
 
-  // --- GERADOR DE PDF ---
   const handleExportPDF = (p) => {
     const printWindow = window.open('', '', 'width=900,height=700');
     const html = `
-      <html>
-        <head>
-          <title>Relatório de Promoção - ${p.collaborator_name}</title>
-          <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 2rem; color: #333; line-height: 1.6; }
-            h1 { color: #057a55; border-bottom: 2px solid #057a55; padding-bottom: 0.5rem; margin-bottom: 1.5rem; font-size: 1.5rem; text-transform: uppercase; }
-            h2 { color: #444; font-size: 1.2rem; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; }
-            .grid { display: flex; gap: 2rem; margin-bottom: 1.5rem; }
-            .col { flex: 1; }
-            p { margin: 0.4rem 0; font-size: 0.95rem; }
-            .label { font-weight: bold; color: #555; display: inline-block; width: 140px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; }
-            th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; }
-            th { background-color: #f9fafb; font-weight: bold; color: #333; }
-            .audit-timeline { background: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #eee; }
-            .audit-item { margin-bottom: 0.75rem; font-size: 0.9rem; }
-            .obs-box { background: #fffbeb; border: 1px solid #fde68a; padding: 1.5rem; border-radius: 8px; white-space: pre-wrap; font-size: 0.9rem; margin-top: 1rem; line-height: 1.8; }
-            .footer { margin-top: 4rem; text-align: center; color: #999; font-size: 0.8rem; border-top: 1px solid #eee; padding-top: 1rem; }
-          </style>
-        </head>
-        <body>
-          <h1>📄 Documento Oficial de Promoção - ${p.type}</h1>
-          <div class="grid">
-            <div class="col">
-              <p><span class="label">Colaborador:</span> ${p.collaborator_name}</p>
-              <p><span class="label">CPF:</span> ${p.collaborator_cpf}</p>
-              <p><span class="label">Admissão Original:</span> ${p.admission_date ? new Date(p.admission_date).toLocaleDateString('pt-BR') : 'N/A'}</p>
-            </div>
-            <div class="col">
-              <p><span class="label">Status Final:</span> <strong>${p.status}</strong></p>
-              <p><span class="label">Mês de Efetivação:</span> 01/${p.promotion_month_year}</p>
-              <p><span class="label">Emitido em:</span> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
-            </div>
-          </div>
-
-          <h2>Comparativo de Mudança</h2>
-          <table>
-            <tr>
-              <th>Campo</th>
-              <th>Situação Anterior</th>
-              <th>Situação Proposta/Aprovada</th>
-            </tr>
-            <tr>
-              <td><strong>Cargo</strong></td>
-              <td>${p.current_role}</td>
-              <td>${p.proposed_role}</td>
-            </tr>
-            <tr>
-              <td><strong>Salário</strong></td>
-              <td>R$ ${Number(p.current_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
-              <td>R$ ${Number(p.proposed_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
-            </tr>
-            <tr>
-              <td><strong>Setor</strong></td>
-              <td>${p.current_sector}</td>
-              <td>${p.proposed_sector}</td>
-            </tr>
-            <tr>
-              <td><strong>Unidade</strong></td>
-              <td>${p.current_unit_name || 'N/A'}</td>
-              <td>${p.proposed_unit_name || 'N/A'}</td>
-            </tr>
-          </table>
-
-          <h2>Linha do Tempo de Auditoria e Assinaturas</h2>
-          <div class="audit-timeline">
-            <div class="audit-item">➕ <strong>Abertura do Processo:</strong> ${p.requester_name || 'Gestor'} - ${p.created_at ? new Date(p.created_at).toLocaleString('pt-BR') : 'N/A'}</div>
-            ${p.leadership_signature_date ? `<div class="audit-item">✍️ <strong>Assinatura Liderança:</strong> ${p.leadership_approver_name || 'Aprovador'} - ${new Date(p.leadership_signature_date).toLocaleString('pt-BR')}</div>` : ''}
-            ${p.gp2_signature_date ? `<div class="audit-item">✅ <strong>Validação GP²:</strong> ${p.gp2_approver_name || 'Aprovador'} - ${new Date(p.gp2_signature_date).toLocaleString('pt-BR')}</div>` : ''}
-            ${p.dp_signature_date ? `<div class="audit-item">✅ <strong>Efetivação DP:</strong> ${p.dp_approver_name || 'Aprovador'} - ${new Date(p.dp_signature_date).toLocaleString('pt-BR')}</div>` : ''}
-          </div>
-
-          <h2>Histórico Completo de Observações e Pareceres</h2>
-          <div class="obs-box">${p.feedback || 'Nenhuma observação extra registrada neste processo.'}</div>
-
-          <div class="footer">
-            Portal RH - Gestão de Promoções | Documento gerado e validado eletronicamente
-          </div>
-          <script>
-            setTimeout(() => {
-              window.print();
-              window.close();
-            }, 500);
-          </script>
-        </body>
-      </html>
-    `;
+      <html><head><title>Relatório de Promoção - ${p.collaborator_name}</title>
+      <style>body { font-family: 'Segoe UI', sans-serif; padding: 2rem; color: #333; line-height: 1.6; } h1 { color: #057a55; border-bottom: 2px solid #057a55; padding-bottom: 0.5rem; margin-bottom: 1.5rem; font-size: 1.5rem; text-transform: uppercase; } h2 { color: #444; font-size: 1.2rem; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; } .grid { display: flex; gap: 2rem; margin-bottom: 1.5rem; } .col { flex: 1; } p { margin: 0.4rem 0; font-size: 0.95rem; } .label { font-weight: bold; color: #555; display: inline-block; width: 140px; } table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; } th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; } th { background-color: #f9fafb; font-weight: bold; color: #333; } .audit-timeline { background: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #eee; } .audit-item { margin-bottom: 0.75rem; font-size: 0.9rem; } .obs-box { background: #fffbeb; border: 1px solid #fde68a; padding: 1.5rem; border-radius: 8px; white-space: pre-wrap; font-size: 0.9rem; margin-top: 1rem; line-height: 1.8; } .footer { margin-top: 4rem; text-align: center; color: #999; font-size: 0.8rem; border-top: 1px solid #eee; padding-top: 1rem; }</style>
+      </head><body>
+      <h1>📄 Documento Oficial de Promoção - ${p.type}</h1>
+      <div class="grid"><div class="col"><p><span class="label">Colaborador:</span> ${p.collaborator_name}</p><p><span class="label">CPF:</span> ${p.collaborator_cpf}</p><p><span class="label">Admissão Original:</span> ${p.admission_date ? new Date(p.admission_date).toLocaleDateString('pt-BR') : 'N/A'}</p></div><div class="col"><p><span class="label">Status Final:</span> <strong>${p.status}</strong></p><p><span class="label">Mês de Efetivação:</span> 01/${p.promotion_month_year}</p><p><span class="label">Emitido em:</span> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p></div></div>
+      <h2>Comparativo de Mudança</h2><table><tr><th>Campo</th><th>Situação Anterior</th><th>Situação Proposta/Aprovada</th></tr><tr><td><strong>Cargo</strong></td><td>${p.current_role}</td><td>${p.proposed_role}</td></tr><tr><td><strong>Salário</strong></td><td>R$ ${Number(p.current_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td><td>R$ ${Number(p.proposed_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td></tr><tr><td><strong>Setor</strong></td><td>${p.current_sector}</td><td>${p.proposed_sector}</td></tr><tr><td><strong>Unidade</strong></td><td>${p.current_unit_name || 'N/A'}</td><td>${p.proposed_unit_name || 'N/A'}</td></tr></table>
+      <h2>Linha do Tempo de Auditoria e Assinaturas</h2><div class="audit-timeline"><div class="audit-item">➕ <strong>Abertura do Processo:</strong> ${p.requester_name || 'Gestor'} - ${p.created_at ? new Date(p.created_at).toLocaleString('pt-BR') : 'N/A'}</div>${p.leadership_signature_date ? `<div class="audit-item">✍️ <strong>Assinatura Liderança:</strong> ${p.leadership_approver_name || 'Aprovador'} - ${new Date(p.leadership_signature_date).toLocaleString('pt-BR')}</div>` : ''}${p.gp2_signature_date ? `<div class="audit-item">✅ <strong>Validação GP²:</strong> ${p.gp2_approver_name || 'Aprovador'} - ${new Date(p.gp2_signature_date).toLocaleString('pt-BR')}</div>` : ''}${p.dp_signature_date ? `<div class="audit-item">✅ <strong>Efetivação DP:</strong> ${p.dp_approver_name || 'Aprovador'} - ${new Date(p.dp_signature_date).toLocaleString('pt-BR')}</div>` : ''}</div>
+      <h2>Histórico Completo de Observações e Pareceres</h2><div class="obs-box">${p.feedback || 'Nenhuma observação extra registrada neste processo.'}</div>
+      <div class="footer">Portal RH - Gestão de Promoções | Documento gerado e validado eletronicamente</div>
+      <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+      </body></html>`;
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
@@ -343,74 +295,39 @@ export default function PromocoesPage() {
           </button>
         </div>
 
-        {/* ÁREA DE AÇÕES COM CAMPO DE OBSERVAÇÃO OPCIONAL */}
         {currentView === 'pipeline' && hasActions && (
           <div style={{ marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
-            <textarea 
-              placeholder="Adicionar observação (Opcional)..."
-              style={{ width: '100%', minHeight: '50px', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem', marginBottom: '0.75rem', resize: 'vertical', fontFamily: 'inherit' }}
-              value={observations[p.id] || ''}
-              onChange={e => setObservations({...observations, [p.id]: e.target.value})}
-            />
-            
+            <textarea placeholder="Adicionar observação (Opcional)..." style={{ width: '100%', minHeight: '50px', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.75rem', marginBottom: '0.75rem', resize: 'vertical', fontFamily: 'inherit' }} value={observations[p.id] || ''} onChange={e => setObservations({...observations, [p.id]: e.target.value})} />
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               {canActOnLideranca && (
                 <>
-                  <button onClick={() => executeWorkflowAction(p, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-                    <PenTool size={14} style={{ marginRight: '4px' }}/> Aprovar
-                  </button>
+                  <button onClick={() => executeWorkflowAction(p, 'Aguardando GP2', { leadership_approver_id: currentUserId, leadership_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', backgroundColor: '#057a55', justifyContent: 'center' }}><PenTool size={14} style={{ marginRight: '4px' }}/> Aprovar</button>
                   <button onClick={() => executeWorkflowAction(p, 'Reprovado pela Liderança')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Reprovar</button>
                 </>
               )}
-
               {canActOnGP2 && (
                 <>
-                  <button onClick={() => executeWorkflowAction(p, 'Aguardando DP', { gp2_approver_id: currentUserId, gp2_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}>
-                    <CheckCircle size={14} style={{ marginRight: '4px' }}/> Validar
-                  </button>
+                  <button onClick={() => executeWorkflowAction(p, 'Aguardando DP', { gp2_approver_id: currentUserId, gp2_signature_date: new Date().toISOString() })} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center' }}><CheckCircle size={14} style={{ marginRight: '4px' }}/> Validar</button>
                   <button onClick={() => setActionModal({ type: 'reject_gp2', promo: p })} className="btn-secondary" style={{ color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', fontSize: '0.75rem', padding: '0.4rem' }}>Ajustes</button>
                 </>
               )}
-
               {canActOnDP && (
-                <button onClick={() => executeWorkflowAction(p, 'Concluído', { dp_approver_id: currentUserId, dp_signature_date: new Date().toISOString() })} className="btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '0.5rem', backgroundColor: '#057a55', justifyContent: 'center' }}>
-                  <CheckCircle size={16} style={{ marginRight: '6px' }}/> Efetivar no DP
-                </button>
+                <button onClick={() => executeWorkflowAction(p, 'Concluído', { dp_approver_id: currentUserId, dp_signature_date: new Date().toISOString() })} className="btn-primary" style={{ width: '100%', fontSize: '0.8rem', padding: '0.5rem', backgroundColor: '#057a55', justifyContent: 'center' }}><CheckCircle size={16} style={{ marginRight: '6px' }}/> Efetivar no DP</button>
               )}
-
               {canActOnAjustes && (
                 <>
-                  <button 
-                    onClick={() => {
-                      setFormData({
-                        type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? String(p.admission_date).split('T')[0] : '',
-                        current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary),
-                        current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id,
-                        promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id
-                      });
-                      setEditingPromotionId(p.id);
-                      setIsModalOpen(true);
-                    }}
-                    className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center', backgroundColor: 'var(--saritur-orange)' }}
-                  >
-                    <RotateCcw size={14} style={{ marginRight: '4px' }}/> Corrigir
-                  </button>
+                  <button onClick={() => { setFormData({ type: p.type, collaborator_name: p.collaborator_name, collaborator_cpf: p.collaborator_cpf, admission_date: p.admission_date ? String(p.admission_date).split('T')[0] : '', current_role: p.current_role, proposed_role: p.proposed_role, current_salary: String(p.current_salary), proposed_salary: String(p.proposed_salary), current_sector: p.current_sector, proposed_sector: p.proposed_sector, current_unit_id: p.current_unit_id, proposed_unit_id: p.proposed_unit_id, promotion_month_year: p.promotion_month_year, feedback: p.feedback, candidate_id: p.candidate_id }); setEditingPromotionId(p.id); setIsModalOpen(true); }} className="btn-primary" style={{ flex: 1, fontSize: '0.75rem', padding: '0.4rem', justifyContent: 'center', backgroundColor: 'var(--saritur-orange)' }}><RotateCcw size={14} style={{ marginRight: '4px' }}/> Corrigir</button>
                   <button onClick={() => executeWorkflowAction(p, 'Cancelado')} className="btn-secondary" style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)', fontSize: '0.75rem', padding: '0.4rem' }}>Cancelar</button>
                 </>
               )}
             </div>
           </div>
         )}
-
-        {/* BOTÃO PDF EM PROCESSOS FINALIZADOS OU HISTÓRICO */}
         {['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(p.status) && (
           <div style={{ marginTop: '0.25rem' }}>
-            <button onClick={() => handleExportPDF(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem', color: '#057a55', borderColor: '#057a55' }}>
-              <Download size={14} style={{ marginRight: '4px' }} /> Gerar Documento PDF
-            </button>
+            <button onClick={() => handleExportPDF(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.75rem', padding: '0.4rem', color: '#057a55', borderColor: '#057a55' }}><Download size={14} style={{ marginRight: '4px' }} /> Gerar Documento PDF</button>
           </div>
         )}
-
       </div>
     );
   };
@@ -459,7 +376,6 @@ export default function PromocoesPage() {
         <>
           {currentView === 'pipeline' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
-              
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
                   <PenTool size={20} color="var(--saritur-orange)" />
@@ -492,7 +408,6 @@ export default function PromocoesPage() {
                   {blocoDP.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
                 </div>
               </div>
-
             </div>
           )}
 
@@ -534,16 +449,7 @@ export default function PromocoesPage() {
                         <strong>Unidade:</strong> {c.units?.name || c.unit_name || 'N/A'} <br/>
                         <strong>CPF:</strong> {c.cpf}
                       </p>
-                      <button 
-                        onClick={() => {
-                          setFormData({ ...initialForm, type: 'Vertical', collaborator_name: c.name || '', collaborator_cpf: c.cpf || '', proposed_role: c.job_roles?.name || c.job_role_name || '', proposed_unit_id: c.unit_id || '', candidate_id: c.id });
-                          setEditingPromotionId(null);
-                          setIsModalOpen(true);
-                        }}
-                        className="btn-primary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem', marginTop: 'auto' }}
-                      >
-                        Iniciar Formulário Vertical
-                      </button>
+                      <button onClick={() => { setFormData({ ...initialForm, type: 'Vertical', collaborator_name: c.name || '', collaborator_cpf: c.cpf || '', proposed_role: c.job_roles?.name || c.job_role_name || '', proposed_unit_id: c.unit_id || '', candidate_id: c.id }); setEditingPromotionId(null); setIsModalOpen(true); }} className="btn-primary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem', marginTop: 'auto' }}>Iniciar Formulário Vertical</button>
                     </div>
                   ))}
                 </div>
@@ -553,23 +459,16 @@ export default function PromocoesPage() {
         </>
       )}
 
-      {/* --- MODAL DE DETALHES COMPLETOS (RAIO-X) --- */}
+      {/* MODAL DE RAIO-X DETALHADO */}
       {detailsPromotion && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
-            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
-                  Detalhes da Solicitação
-                </h2>
+                <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>Detalhes da Solicitação</h2>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <span style={{ backgroundColor: detailsPromotion.type === 'Vertical' ? 'rgba(2, 132, 199, 0.1)' : 'rgba(243, 113, 55, 0.1)', color: detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', border: `1px solid ${detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'}` }}>
-                    {detailsPromotion.type}
-                  </span>
-                  <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>
-                    Status: {detailsPromotion.status}
-                  </span>
+                  <span style={{ backgroundColor: detailsPromotion.type === 'Vertical' ? 'rgba(2, 132, 199, 0.1)' : 'rgba(243, 113, 55, 0.1)', color: detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', border: `1px solid ${detailsPromotion.type === 'Vertical' ? '#0284c7' : 'var(--saritur-orange)'}` }}>{detailsPromotion.type}</span>
+                  <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid var(--border-color)' }}>Status: {detailsPromotion.status}</span>
                 </div>
               </div>
               <button onClick={() => setDetailsPromotion(null)}><X size={24} color="var(--text-muted)" /></button>
@@ -577,20 +476,9 @@ export default function PromocoesPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colaborador</span>
-                  <p style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.collaborator_name}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span>
-                  <p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.collaborator_cpf}</p>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Data Admissão</span>
-                  <p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>
-                    {detailsPromotion.admission_date ? String(detailsPromotion.admission_date).split('T')[0].split('-').reverse().join('/') : 'N/A'}
-                  </p>
-                </div>
+                <div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Colaborador</span><p style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.collaborator_name}</p></div>
+                <div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>CPF</span><p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.collaborator_cpf}</p></div>
+                <div><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Data Admissão</span><p style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text-main)', marginTop: '0.2rem' }}>{detailsPromotion.admission_date ? String(detailsPromotion.admission_date).split('T')[0].split('-').reverse().join('/') : 'N/A'}</p></div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -601,7 +489,6 @@ export default function PromocoesPage() {
                   <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Setor:</strong> {detailsPromotion.current_sector}</p>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0' }}><strong>Unidade:</strong> {detailsPromotion.current_unit_name || 'N/A'}</p>
                 </div>
-
                 <div style={{ border: '1px solid var(--success-color)', borderRadius: 'var(--radius-md)', padding: '1rem', backgroundColor: 'rgba(5, 122, 85, 0.03)' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid rgba(5, 122, 85, 0.2)', paddingBottom: '0.5rem' }}>Situação Proposta</h4>
                   <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>Cargo:</strong> {detailsPromotion.proposed_role}</p>
@@ -612,57 +499,37 @@ export default function PromocoesPage() {
               </div>
 
               <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
-                  Auditoria e Linha do Tempo
-                </h3>
-                
+                <h3 style={{ fontSize: '1rem', fontWeight: '700', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Auditoria e Linha do Tempo</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', backgroundColor: 'var(--bg-color)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-                    <Plus size={16} color="var(--text-muted)" />
-                    <span><strong>Solicitado por:</strong> {detailsPromotion.requester_name || 'Gestor'} em {detailsPromotion.created_at ? new Date(detailsPromotion.created_at).toLocaleString('pt-BR') : 'N/A'}</span>
-                  </div>
-
-                  {detailsPromotion.leadership_signature_date && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
-                      <PenTool size={16} />
-                      <span><strong>Aprovado na Liderança por:</strong> {detailsPromotion.leadership_approver_name || 'Usuário'} em {new Date(detailsPromotion.leadership_signature_date).toLocaleString('pt-BR')}</span>
-                    </div>
-                  )}
-
-                  {detailsPromotion.gp2_signature_date && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
-                      <CheckCircle size={16} />
-                      <span><strong>Validado no GP² por:</strong> {detailsPromotion.gp2_approver_name || 'Usuário'} em {new Date(detailsPromotion.gp2_signature_date).toLocaleString('pt-BR')}</span>
-                    </div>
-                  )}
-
-                  {detailsPromotion.dp_signature_date && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}>
-                      <CheckCircle size={16} />
-                      <span><strong>Efetivado no DP por:</strong> {detailsPromotion.dp_approver_name || 'Usuário'} em {new Date(detailsPromotion.dp_signature_date).toLocaleString('pt-BR')}</span>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}><Plus size={16} color="var(--text-muted)" /><span><strong>Solicitado por:</strong> {detailsPromotion.requester_name || 'Gestor'} em {detailsPromotion.created_at ? new Date(detailsPromotion.created_at).toLocaleString('pt-BR') : 'N/A'}</span></div>
+                  {detailsPromotion.leadership_signature_date && (<div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}><PenTool size={16} /><span><strong>Aprovado na Liderança por:</strong> {detailsPromotion.leadership_approver_name || 'Usuário'} em {new Date(detailsPromotion.leadership_signature_date).toLocaleString('pt-BR')}</span></div>)}
+                  {detailsPromotion.gp2_signature_date && (<div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}><CheckCircle size={16} /><span><strong>Validado no GP² por:</strong> {detailsPromotion.gp2_approver_name || 'Usuário'} em {new Date(detailsPromotion.gp2_signature_date).toLocaleString('pt-BR')}</span></div>)}
+                  {detailsPromotion.dp_signature_date && (<div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#057a55' }}><CheckCircle size={16} /><span><strong>Efetivado no DP por:</strong> {detailsPromotion.dp_approver_name || 'Usuário'} em {new Date(detailsPromotion.dp_signature_date).toLocaleString('pt-BR')}</span></div>)}
 
                   {detailsPromotion.feedback && (
                     <div style={{ marginTop: '0.75rem', padding: '1rem', backgroundColor: 'var(--surface-color)', border: '1px dashed var(--border-color)', borderRadius: '4px', fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
-                      <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Logs e Interações (Recusas/Ajustes/Observações):</strong>
+                      <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-main)' }}>Logs e Observações Registradas:</strong>
                       <span style={{ color: 'var(--text-muted)' }}>{detailsPromotion.feedback}</span>
                     </div>
                   )}
                 </div>
               </div>
-
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+            {['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(detailsPromotion.status) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '1.5rem' }}>
+                <button onClick={() => handleExportPDF(detailsPromotion)} className="btn-secondary" style={{ color: '#057a55', borderColor: '#057a55', fontSize: '0.85rem' }}><Download size={16} style={{ marginRight: '6px' }} /> Baixar Documento PDF</button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
               <button className="btn-secondary" onClick={() => setDetailsPromotion(null)}>Fechar Raio-X</button>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* MODAL FORMULÁRIO */}
+      {/* MODAL DO FORMULÁRIO COM DROPDOWNS INTELIGENTES (INTEGRADOS AO BANCO) */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -675,14 +542,8 @@ export default function PromocoesPage() {
               <div style={{ padding: '1rem', backgroundColor: formData.type === 'Vertical' ? 'rgba(2, 132, 199, 0.05)' : 'var(--bg-color)', border: formData.type === 'Vertical' ? '1px solid #0284c7' : '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.5rem' }}>Tipo de Promoção *</label>
                 <div style={{ display: 'flex', gap: '1rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                    <input type="radio" name="type" checked={formData.type === 'Horizontal'} onChange={() => setFormData({...formData, type: 'Horizontal'})} disabled={!!editingPromotionId} style={{ accentColor: 'var(--saritur-orange)', width: '18px', height: '18px' }} />
-                    <strong>Horizontal</strong> (Aumento Salarial)
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                    <input type="radio" name="type" checked={formData.type === 'Vertical'} onChange={() => setFormData({...formData, type: 'Vertical'})} disabled={!!editingPromotionId} style={{ accentColor: '#0284c7', width: '18px', height: '18px' }} />
-                    <strong>Vertical</strong> (Mudança de Cargo)
-                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}><input type="radio" name="type" checked={formData.type === 'Horizontal'} onChange={() => setFormData({...formData, type: 'Horizontal'})} disabled={!!editingPromotionId} style={{ accentColor: 'var(--saritur-orange)', width: '18px', height: '18px' }} /><strong>Horizontal</strong> (Aumento Salarial)</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}><input type="radio" name="type" checked={formData.type === 'Vertical'} onChange={() => setFormData({...formData, type: 'Vertical'})} disabled={!!editingPromotionId} style={{ accentColor: '#0284c7', width: '18px', height: '18px' }} /><strong>Vertical</strong> (Mudança de Cargo)</label>
                 </div>
               </div>
 
@@ -700,19 +561,60 @@ export default function PromocoesPage() {
                 <div>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Situação Atual</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Cargo Atual *</label><input required style={{ width: '100%', padding: '0.5rem' }} value={formData.current_role} onChange={e => setFormData({...formData, current_role: e.target.value})} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Salário Atual (R$) *</label><input required style={{ width: '100%', padding: '0.5rem' }} value={formData.current_salary} onChange={e => setFormData({...formData, current_salary: maskCurrency(e.target.value)})} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Setor Atual *</label><input required style={{ width: '100%', padding: '0.5rem' }} value={formData.current_sector} onChange={e => setFormData({...formData, current_sector: e.target.value})} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Unidade Atual *</label><select required style={{ width: '100%', padding: '0.5rem' }} value={formData.current_unit_id} onChange={e => setFormData({...formData, current_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Cargo Atual *</label>
+                      <select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_role} onChange={handleCurrentRoleChange}>
+                        <option value="">Selecione o Cargo...</option>
+                        {uniqueRoleNames.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </div>
+                    
+                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Salário Atual (R$) *</label><input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_salary} onChange={e => setFormData({...formData, current_salary: maskCurrency(e.target.value)})} /></div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Setor Atual *</label>
+                      {currentAvailableSectors.length > 0 ? (
+                        <select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_sector} onChange={e => setFormData({...formData, current_sector: e.target.value})}>
+                          <option value="">Selecione o Setor...</option>
+                          {currentAvailableSectors.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_sector} onChange={e => setFormData({...formData, current_sector: e.target.value})} placeholder="Digite o setor..." disabled={!formData.current_role} />
+                      )}
+                    </div>
+
+                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Unidade Atual *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_unit_id} onChange={e => setFormData({...formData, current_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
                   </div>
                 </div>
+
                 <div>
-                  <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Nova Situação (Proposta)</h4>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid rgba(5, 122, 85, 0.2)', paddingBottom: '0.5rem' }}>Nova Situação (Proposta)</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Cargo *</label><input required style={{ width: '100%', padding: '0.5rem' }} value={formData.proposed_role} onChange={e => setFormData({...formData, proposed_role: e.target.value})} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Salário (R$) *</label><input required style={{ width: '100%', padding: '0.5rem' }} value={formData.proposed_salary} onChange={e => setFormData({...formData, proposed_salary: maskCurrency(e.target.value)})} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Setor *</label><input required style={{ width: '100%', padding: '0.5rem' }} value={formData.proposed_sector} onChange={e => setFormData({...formData, proposed_sector: e.target.value})} /></div>
-                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Nova Unidade *</label><select required style={{ width: '100%', padding: '0.5rem' }} value={formData.proposed_unit_id} onChange={e => setFormData({...formData, proposed_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Cargo *</label>
+                      <select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_role} onChange={handleProposedRoleChange}>
+                        <option value="">Selecione o Cargo...</option>
+                        {uniqueRoleNames.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </div>
+
+                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Salário (R$) *</label><input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_salary} onChange={e => setFormData({...formData, proposed_salary: maskCurrency(e.target.value)})} /></div>
+                    
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Setor *</label>
+                      {proposedAvailableSectors.length > 0 ? (
+                        <select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_sector} onChange={e => setFormData({...formData, proposed_sector: e.target.value})}>
+                          <option value="">Selecione o Setor...</option>
+                          {proposedAvailableSectors.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_sector} onChange={e => setFormData({...formData, proposed_sector: e.target.value})} placeholder="Digite o setor..." disabled={!formData.proposed_role} />
+                      )}
+                    </div>
+
+                    <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Nova Unidade *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_unit_id} onChange={e => setFormData({...formData, proposed_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
                   </div>
                 </div>
               </div>
@@ -722,20 +624,6 @@ export default function PromocoesPage() {
                 <button type="submit" className="btn-primary">Gravar e Iniciar Fluxo</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL RECUSA / AJUSTES */}
-      {actionModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
-          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '450px' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--saritur-orange)', marginBottom: '1rem' }}>Recusar para Ajustes</h2>
-            <textarea required style={{ width: '100%', minHeight: '100px', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }} placeholder="Descreva os motivos..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-              <button className="btn-secondary" onClick={() => setActionModal(null)}>Voltar</button>
-              <button onClick={() => { if (!feedbackText.trim()) return alert('Insira uma justificativa.'); const note = `\n❌ [RECUSADO GP²] Por: ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${feedbackText}"\n`; executeWorkflowAction(actionModal.promo, 'Recusado pelo GP2 (Ajustes)', { feedback: (actionModal.promo.feedback || '') + note }); }} className="btn-primary" style={{ backgroundColor: 'var(--saritur-orange)' }}>Confirmar</button>
-            </div>
           </div>
         </div>
       )}
