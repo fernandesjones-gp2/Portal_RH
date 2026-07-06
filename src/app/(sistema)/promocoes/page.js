@@ -361,7 +361,7 @@ export default function PromocoesPage() {
         {/* BOTÕES DE VIZUALIZAÇÃO E PARECERES (MAIS COMPACTOS E LADO A LADO) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: '0.25rem' }}>
           <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ padding: '0.3rem', fontSize: '0.7rem', justifyContent: 'center' }}>
-            <Eye size={12} style={{ marginRight: '4px' }} /> Raio-X
+            <Eye size={12} style={{ marginRight: '4px' }} /> Detalhes
           </button>
           <button onClick={() => setObsModal(p)} className="btn-secondary" style={{ padding: '0.3rem', fontSize: '0.7rem', justifyContent: 'center' }}>
             <MessageSquare size={12} style={{ marginRight: '4px' }} /> Parecer
@@ -488,7 +488,7 @@ export default function PromocoesPage() {
         </>
       )}
 
-      {/* MODAL DE RAIO-X DETALHADO */}
+      {/* MODAL DETALHADO */}
       {detailsPromotion && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -552,7 +552,7 @@ export default function PromocoesPage() {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-              <button className="btn-secondary" onClick={() => setDetailsPromotion(null)}>Fechar Raio-X</button>
+              <button className="btn-secondary" onClick={() => setDetailsPromotion(null)}>Fechar</button>
             </div>
           </div>
         </div>
