@@ -12,7 +12,7 @@ export default function PromocoesPage() {
   const [promotions, setPromotions] = useState([]);
   const [approvedCandidates, setApprovedCandidates] = useState([]); 
   const [units, setUnits] = useState([]);
-  const [roles, setRoles] = useState([]); // <-- Estado para as funções
+  const [roles, setRoles] = useState([]); 
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPromotionId, setEditingPromotionId] = useState(null); 
@@ -53,7 +53,7 @@ export default function PromocoesPage() {
       const [candsRes, unitsRes, rolesRes] = await Promise.all([
         api.candidates.list({ _t: Date.now() }).catch(() => []),
         api.units.list().catch(() => []),
-        api.jobRoles.list().catch(() => []) // <-- Puxa as funções do banco
+        api.jobRoles.list().catch(() => []) 
       ]);
 
       const activePromotions = Array.isArray(promosRes) ? promosRes : [];
@@ -91,7 +91,6 @@ export default function PromocoesPage() {
   };
   const formatMonthYear = (val) => val.replace(/\D/g, '').replace(/^(\d{2})(\d)/, '$1/$2').slice(0, 7);
 
-  // --- INTELIGÊNCIA DOS SETORES DINÂMICOS ---
   const uniqueRoleNames = [...new Set(roles.map(r => r.name))].sort();
 
   const getSectorsForRole = (roleName) => {
@@ -106,21 +105,13 @@ export default function PromocoesPage() {
   const handleCurrentRoleChange = (e) => {
     const newRole = e.target.value;
     const sectors = getSectorsForRole(newRole);
-    setFormData({
-      ...formData, 
-      current_role: newRole, 
-      current_sector: sectors.length === 1 ? sectors[0] : '' 
-    });
+    setFormData({ ...formData, current_role: newRole, current_sector: sectors.length === 1 ? sectors[0] : '' });
   };
 
   const handleProposedRoleChange = (e) => {
     const newRole = e.target.value;
     const sectors = getSectorsForRole(newRole);
-    setFormData({
-      ...formData, 
-      proposed_role: newRole, 
-      proposed_sector: sectors.length === 1 ? sectors[0] : '' 
-    });
+    setFormData({ ...formData, proposed_role: newRole, proposed_sector: sectors.length === 1 ? sectors[0] : '' });
   };
 
   async function handleSavePromotion(e) {
@@ -137,7 +128,6 @@ export default function PromocoesPage() {
       linkedCandidateId = validCandidate.id;
     }
 
-    // Identifica o ID exato na tabela de funções com base no Nome + Setor selecionado
     const cRoleObj = roles.find(r => r.name === formData.current_role && (r.sector || '') === (formData.current_sector || ''));
     const pRoleObj = roles.find(r => r.name === formData.proposed_role && (r.sector || '') === (formData.proposed_sector || ''));
 
@@ -202,17 +192,71 @@ export default function PromocoesPage() {
     }
   }
 
+  // --- GERADOR DE PDF 100% COMPACTO COM LOGÓTIPO NO TOPO ---
   const handleExportPDF = (p) => {
     const printWindow = window.open('', '', 'width=900,height=700');
+    const logoUrl = window.location.origin + '/logo.png'; // Garante o caminho absoluto da logo
     const html = `
       <html><head><title>Relatório de Promoção - ${p.collaborator_name}</title>
-      <style>body { font-family: 'Segoe UI', sans-serif; padding: 2rem; color: #333; line-height: 1.6; } h1 { color: #057a55; border-bottom: 2px solid #057a55; padding-bottom: 0.5rem; margin-bottom: 1.5rem; font-size: 1.5rem; text-transform: uppercase; } h2 { color: #444; font-size: 1.2rem; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; } .grid { display: flex; gap: 2rem; margin-bottom: 1.5rem; } .col { flex: 1; } p { margin: 0.4rem 0; font-size: 0.95rem; } .label { font-weight: bold; color: #555; display: inline-block; width: 140px; } table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.95rem; } th, td { border: 1px solid #ddd; padding: 0.75rem; text-align: left; } th { background-color: #f9fafb; font-weight: bold; color: #333; } .audit-timeline { background: #f9fafb; padding: 1.5rem; border-radius: 8px; border: 1px solid #eee; } .audit-item { margin-bottom: 0.75rem; font-size: 0.9rem; } .obs-box { background: #fffbeb; border: 1px solid #fde68a; padding: 1.5rem; border-radius: 8px; white-space: pre-wrap; font-size: 0.9rem; margin-top: 1rem; line-height: 1.8; } .footer { margin-top: 4rem; text-align: center; color: #999; font-size: 0.8rem; border-top: 1px solid #eee; padding-top: 1rem; }</style>
+      <style>
+        @page { size: A4; margin: 10mm; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; margin: 0; color: #333; line-height: 1.3; font-size: 0.85rem; }
+        .header-container { display: flex; align-items: center; border-bottom: 2px solid #057a55; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+        .logo { max-height: 45px; margin-right: 1rem; object-fit: contain; }
+        h1 { color: #057a55; font-size: 1.25rem; text-transform: uppercase; margin: 0; }
+        h2 { color: #444; font-size: 1rem; margin-top: 1rem; margin-bottom: 0.5rem; border-bottom: 1px solid #eee; padding-bottom: 0.2rem; }
+        .grid { display: flex; gap: 1rem; margin-bottom: 1rem; }
+        .col { flex: 1; }
+        p { margin: 0.25rem 0; font-size: 0.85rem; }
+        .label { font-weight: bold; color: #555; display: inline-block; width: 125px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.8rem; }
+        th, td { border: 1px solid #ddd; padding: 0.4rem; text-align: left; }
+        th { background-color: #f9fafb; font-weight: bold; color: #333; }
+        .audit-timeline { background: #f9fafb; padding: 0.8rem; border-radius: 6px; border: 1px solid #eee; }
+        .audit-item { margin-bottom: 0.4rem; font-size: 0.8rem; }
+        .obs-box { background: #fffbeb; border: 1px solid #fde68a; padding: 0.8rem; border-radius: 6px; white-space: pre-wrap; font-size: 0.8rem; margin-top: 0.5rem; line-height: 1.4; max-height: 180px; overflow: hidden; }
+        .footer { margin-top: 1.5rem; text-align: center; color: #999; font-size: 0.7rem; border-top: 1px solid #eee; padding-top: 0.5rem; }
+      </style>
       </head><body>
-      <h1>📄 Documento Oficial de Promoção - ${p.type}</h1>
-      <div class="grid"><div class="col"><p><span class="label">Colaborador:</span> ${p.collaborator_name}</p><p><span class="label">CPF:</span> ${p.collaborator_cpf}</p><p><span class="label">Admissão Original:</span> ${p.admission_date ? new Date(p.admission_date).toLocaleDateString('pt-BR') : 'N/A'}</p></div><div class="col"><p><span class="label">Status Final:</span> <strong>${p.status}</strong></p><p><span class="label">Mês de Efetivação:</span> 01/${p.promotion_month_year}</p><p><span class="label">Emitido em:</span> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p></div></div>
-      <h2>Comparativo de Mudança</h2><table><tr><th>Campo</th><th>Situação Anterior</th><th>Situação Proposta/Aprovada</th></tr><tr><td><strong>Cargo</strong></td><td>${p.current_role}</td><td>${p.proposed_role}</td></tr><tr><td><strong>Salário</strong></td><td>R$ ${Number(p.current_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td><td>R$ ${Number(p.proposed_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td></tr><tr><td><strong>Setor</strong></td><td>${p.current_sector}</td><td>${p.proposed_sector}</td></tr><tr><td><strong>Unidade</strong></td><td>${p.current_unit_name || 'N/A'}</td><td>${p.proposed_unit_name || 'N/A'}</td></tr></table>
-      <h2>Linha do Tempo de Auditoria e Assinaturas</h2><div class="audit-timeline"><div class="audit-item">➕ <strong>Abertura do Processo:</strong> ${p.requester_name || 'Gestor'} - ${p.created_at ? new Date(p.created_at).toLocaleString('pt-BR') : 'N/A'}</div>${p.leadership_signature_date ? `<div class="audit-item">✍️ <strong>Assinatura Liderança:</strong> ${p.leadership_approver_name || 'Aprovador'} - ${new Date(p.leadership_signature_date).toLocaleString('pt-BR')}</div>` : ''}${p.gp2_signature_date ? `<div class="audit-item">✅ <strong>Validação GP²:</strong> ${p.gp2_approver_name || 'Aprovador'} - ${new Date(p.gp2_signature_date).toLocaleString('pt-BR')}</div>` : ''}${p.dp_signature_date ? `<div class="audit-item">✅ <strong>Efetivação DP:</strong> ${p.dp_approver_name || 'Aprovador'} - ${new Date(p.dp_signature_date).toLocaleString('pt-BR')}</div>` : ''}</div>
-      <h2>Histórico Completo de Observações e Pareceres</h2><div class="obs-box">${p.feedback || 'Nenhuma observação extra registrada neste processo.'}</div>
+      
+      <div class="header-container">
+        <img src="${logoUrl}" class="logo" alt="Logo" onerror="this.style.display='none'" />
+        <h1>Documento de Promoção - ${p.type}</h1>
+      </div>
+      
+      <div class="grid">
+        <div class="col">
+          <p><span class="label">Colaborador:</span> ${p.collaborator_name}</p>
+          <p><span class="label">CPF:</span> ${p.collaborator_cpf}</p>
+          <p><span class="label">Admissão Original:</span> ${p.admission_date ? new Date(p.admission_date).toLocaleDateString('pt-BR') : 'N/A'}</p>
+        </div>
+        <div class="col">
+          <p><span class="label">Status Final:</span> <strong>${p.status}</strong></p>
+          <p><span class="label">Mês de Efetivação:</span> 01/${p.promotion_month_year}</p>
+          <p><span class="label">Emitido em:</span> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+        </div>
+      </div>
+      
+      <h2>Comparativo de Mudança</h2>
+      <table>
+        <tr><th>Campo</th><th>Situação Anterior</th><th>Situação Proposta/Aprovada</th></tr>
+        <tr><td><strong>Cargo</strong></td><td>${p.current_role}</td><td>${p.proposed_role}</td></tr>
+        <tr><td><strong>Salário</strong></td><td>R$ ${Number(p.current_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td><td>R$ ${Number(p.proposed_salary || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td></tr>
+        <tr><td><strong>Setor</strong></td><td>${p.current_sector}</td><td>${p.proposed_sector}</td></tr>
+        <tr><td><strong>Unidade</strong></td><td>${p.current_unit_name || 'N/A'}</td><td>${p.proposed_unit_name || 'N/A'}</td></tr>
+      </table>
+      
+      <h2>Linha do Tempo de Auditoria e Assinaturas</h2>
+      <div class="audit-timeline">
+        <div class="audit-item">➕ <strong>Abertura do Processo:</strong> ${p.requester_name || 'Gestor'} - ${p.created_at ? new Date(p.created_at).toLocaleString('pt-BR') : 'N/A'}</div>
+        ${p.leadership_signature_date ? `<div class="audit-item">✍️ <strong>Assinatura Liderança:</strong> ${p.leadership_approver_name || 'Aprovador'} - ${new Date(p.leadership_signature_date).toLocaleString('pt-BR')}</div>` : ''}
+        ${p.gp2_signature_date ? `<div class="audit-item">✅ <strong>Validação GP²:</strong> ${p.gp2_approver_name || 'Aprovador'} - ${new Date(p.gp2_signature_date).toLocaleString('pt-BR')}</div>` : ''}
+        ${p.dp_signature_date ? `<div class="audit-item">✅ <strong>Efetivação DP:</strong> ${p.dp_approver_name || 'Aprovador'} - ${new Date(p.dp_signature_date).toLocaleString('pt-BR')}</div>` : ''}
+      </div>
+      
+      <h2>Histórico Completo de Observações e Pareceres</h2>
+      <div class="obs-box">${p.feedback || 'Nenhuma observação extra registrada neste processo.'}</div>
+      
       <div class="footer">Portal RH - Gestão de Promoções | Documento gerado e validado eletronicamente</div>
       <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
       </body></html>`;
@@ -346,67 +390,34 @@ export default function PromocoesPage() {
 
       <div className="glass-panel" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', backgroundColor: 'var(--surface-color)', padding: '1rem', borderRadius: 'var(--radius-lg)' }}>
         <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '4px' }}>
-          <button className={currentView === 'pipeline' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('pipeline')}>
-            <LayoutGrid size={16} style={{ marginRight: '6px' }}/> Quadro (Kanban)
-          </button>
-          <button className={currentView === 'historico' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('historico')} style={{ backgroundColor: currentView === 'historico' ? 'var(--text-main)' : '' }}>
-            <Archive size={16} style={{ marginRight: '6px' }}/> Histórico e Finalizados
-          </button>
-          <button className={currentView === 'banco' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('banco')} style={{ backgroundColor: currentView === 'banco' ? 'var(--saritur-orange)' : '', color: currentView === 'banco' ? 'white' : '' }}>
-            <Users size={16} style={{ marginRight: '6px' }}/> Banco do Psicólogo
-          </button>
+          <button className={currentView === 'pipeline' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('pipeline')}><LayoutGrid size={16} style={{ marginRight: '6px' }}/> Quadro (Kanban)</button>
+          <button className={currentView === 'historico' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('historico')} style={{ backgroundColor: currentView === 'historico' ? 'var(--text-main)' : '' }}><Archive size={16} style={{ marginRight: '6px' }}/> Histórico e Finalizados</button>
+          <button className={currentView === 'banco' ? 'btn-primary' : 'btn-secondary'} onClick={() => setCurrentView('banco')} style={{ backgroundColor: currentView === 'banco' ? 'var(--saritur-orange)' : '', color: currentView === 'banco' ? 'white' : '' }}><Users size={16} style={{ marginRight: '6px' }}/> Banco do Psicólogo</button>
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <Filter size={18} color="var(--saritur-orange)" />
           <input type="date" title="Data da Solicitação" style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterDate} onChange={e => setFilterDate(e.target.value)} />
-          <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}>
-            <option value="">Todas Unidades</option>
-            {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500' }}>
-            <input type="checkbox" checked={filterOnlyMine} onChange={e => setFilterOnlyMine(e.target.checked)} style={{ accentColor: 'var(--saritur-orange)', width: '16px', height: '16px' }}/> Minhas
-          </label>
+          <select style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }} value={filterUnit} onChange={e => setFilterUnit(e.target.value)}><option value="">Todas Unidades</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '500' }}><input type="checkbox" checked={filterOnlyMine} onChange={e => setFilterOnlyMine(e.target.checked)} style={{ accentColor: 'var(--saritur-orange)', width: '16px', height: '16px' }}/> Minhas</label>
         </div>
       </div>
 
-      {loading ? (
-        <p style={{ color: 'var(--text-muted)' }}>Sincronizando fluxo...</p>
-      ) : (
+      {loading ? ( <p style={{ color: 'var(--text-muted)' }}>Sincronizando fluxo...</p> ) : (
         <>
           {currentView === 'pipeline' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                  <PenTool size={20} color="var(--saritur-orange)" />
-                  <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>1. Em Aprovação (Liderança) ({blocoLideranca.length})</h2>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {blocoLideranca.map(renderPromoCard)}
-                  {blocoLideranca.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
-                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}><PenTool size={20} color="var(--saritur-orange)" /><h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>1. Em Aprovação (Liderança) ({blocoLideranca.length})</h2></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>{blocoLideranca.map(renderPromoCard)}{blocoLideranca.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}</div>
               </div>
-
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                  <CheckCircle size={20} color="var(--saritur-yellow)" />
-                  <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>2. Em Validação (GP²) ({blocoGP2.length})</h2>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {blocoGP2.map(renderPromoCard)}
-                  {blocoGP2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
-                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}><CheckCircle size={20} color="var(--saritur-yellow)" /><h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>2. Em Validação (GP²) ({blocoGP2.length})</h2></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>{blocoGP2.map(renderPromoCard)}{blocoGP2.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}</div>
               </div>
-
               <div style={{ backgroundColor: 'var(--bg-color)', padding: '1rem', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                  <CheckCircle size={20} color="var(--success-color)" />
-                  <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>3. À Efetivar (DP) ({blocoDP.length})</h2>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {blocoDP.map(renderPromoCard)}
-                  {blocoDP.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}
-                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}><CheckCircle size={20} color="var(--success-color)" /><h2 style={{ fontSize: '1.05rem', fontWeight: 'bold' }}>3. À Efetivar (DP) ({blocoDP.length})</h2></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>{blocoDP.map(renderPromoCard)}{blocoDP.length === 0 && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', padding: '1rem' }}>Vazio.</p>}</div>
               </div>
             </div>
           )}
@@ -419,11 +430,7 @@ export default function PromocoesPage() {
                   <SearchX size={48} color="var(--border-color)" style={{ marginBottom: '1rem', margin: '0 auto' }} />
                   <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Nenhum histórico encontrado.</h3>
                 </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
-                  {historyPromos.map(renderPromoCard)}
-                </div>
-              )}
+              ) : ( <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>{historyPromos.map(renderPromoCard)}</div> )}
             </div>
           )}
 
@@ -439,16 +446,9 @@ export default function PromocoesPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
                   {filteredPsi.map(c => (
                     <div key={c.id} className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', borderTop: '4px solid var(--saritur-yellow)', backgroundColor: 'var(--surface-color)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <CheckCircle size={18} color="var(--success-color)" />
-                        <span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Apto na Avaliação</span>
-                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><CheckCircle size={18} color="var(--success-color)" /><span style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>Apto na Avaliação</span></div>
                       <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: 'var(--text-main)' }}>{c.name}</h3>
-                      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
-                        <strong>Destino:</strong> {c.job_roles?.name || c.job_role_name || 'N/A'} <br/>
-                        <strong>Unidade:</strong> {c.units?.name || c.unit_name || 'N/A'} <br/>
-                        <strong>CPF:</strong> {c.cpf}
-                      </p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}><strong>Destino:</strong> {c.job_roles?.name || c.job_role_name || 'N/A'} <br/><strong>Unidade:</strong> {c.units?.name || c.unit_name || 'N/A'} <br/><strong>CPF:</strong> {c.cpf}</p>
                       <button onClick={() => { setFormData({ ...initialForm, type: 'Vertical', collaborator_name: c.name || '', collaborator_cpf: c.cpf || '', proposed_role: c.job_roles?.name || c.job_role_name || '', proposed_unit_id: c.unit_id || '', candidate_id: c.id }); setEditingPromotionId(null); setIsModalOpen(true); }} className="btn-primary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.85rem', marginTop: 'auto' }}>Iniciar Formulário Vertical</button>
                     </div>
                   ))}
@@ -529,7 +529,7 @@ export default function PromocoesPage() {
         </div>
       )}
 
-      {/* MODAL DO FORMULÁRIO COM DROPDOWNS INTELIGENTES (INTEGRADOS AO BANCO) */}
+      {/* MODAL FORMULÁRIO */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -561,7 +561,6 @@ export default function PromocoesPage() {
                 <div>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Situação Atual</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Cargo Atual *</label>
                       <select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_role} onChange={handleCurrentRoleChange}>
@@ -569,9 +568,7 @@ export default function PromocoesPage() {
                         {uniqueRoleNames.map(name => <option key={name} value={name}>{name}</option>)}
                       </select>
                     </div>
-                    
                     <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Salário Atual (R$) *</label><input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_salary} onChange={e => setFormData({...formData, current_salary: maskCurrency(e.target.value)})} /></div>
-                    
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Setor Atual *</label>
                       {currentAvailableSectors.length > 0 ? (
@@ -583,7 +580,6 @@ export default function PromocoesPage() {
                         <input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_sector} onChange={e => setFormData({...formData, current_sector: e.target.value})} placeholder="Digite o setor..." disabled={!formData.current_role} />
                       )}
                     </div>
-
                     <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Unidade Atual *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.current_unit_id} onChange={e => setFormData({...formData, current_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
                   </div>
                 </div>
@@ -591,7 +587,6 @@ export default function PromocoesPage() {
                 <div>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--success-color)', marginBottom: '1rem', borderBottom: '1px solid rgba(5, 122, 85, 0.2)', paddingBottom: '0.5rem' }}>Nova Situação (Proposta)</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Cargo *</label>
                       <select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_role} onChange={handleProposedRoleChange}>
@@ -599,9 +594,7 @@ export default function PromocoesPage() {
                         {uniqueRoleNames.map(name => <option key={name} value={name}>{name}</option>)}
                       </select>
                     </div>
-
                     <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Salário (R$) *</label><input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_salary} onChange={e => setFormData({...formData, proposed_salary: maskCurrency(e.target.value)})} /></div>
-                    
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Novo Setor *</label>
                       {proposedAvailableSectors.length > 0 ? (
@@ -613,7 +606,6 @@ export default function PromocoesPage() {
                         <input required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_sector} onChange={e => setFormData({...formData, proposed_sector: e.target.value})} placeholder="Digite o setor..." disabled={!formData.proposed_role} />
                       )}
                     </div>
-
                     <div><label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600' }}>Nova Unidade *</label><select required style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--border-color)' }} value={formData.proposed_unit_id} onChange={e => setFormData({...formData, proposed_unit_id: e.target.value})}><option value="">Selecione...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
                   </div>
                 </div>
@@ -624,6 +616,20 @@ export default function PromocoesPage() {
                 <button type="submit" className="btn-primary">Gravar e Iniciar Fluxo</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RECUSA / AJUSTES */}
+      {actionModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '450px' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--saritur-orange)', marginBottom: '1rem' }}>Recusar para Ajustes</h2>
+            <textarea required style={{ width: '100%', minHeight: '100px', padding: '0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }} placeholder="Descreva os motivos..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <button className="btn-secondary" onClick={() => setActionModal(null)}>Voltar</button>
+              <button onClick={() => { if (!feedbackText.trim()) return alert('Insira uma justificativa.'); const note = `\n❌ [RECUSADO GP²] Por: ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${feedbackText}"\n`; executeWorkflowAction(actionModal.promo, 'Recusado pelo GP2 (Ajustes)', { feedback: (actionModal.promo.feedback || '') + note }); }} className="btn-primary" style={{ backgroundColor: 'var(--saritur-orange)' }}>Confirmar</button>
+            </div>
           </div>
         </div>
       )}
