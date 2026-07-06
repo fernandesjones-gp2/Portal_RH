@@ -18,7 +18,8 @@ export async function PUT(req, ctx) {
     'promotion_month_year', 'status', 'feedback', 
     'leadership_approver_id', 'leadership_signature_date', 
     'gp2_approver_id', 'gp2_signature_date', 
-    'dp_approver_id', 'dp_signature_date'
+    'dp_approver_id', 'dp_signature_date',
+    'current_role_id', 'proposed_role_id' // <-- Adicionados aqui
   ];
   
   const fields = allowedFields.filter((k) => body[k] !== undefined);
