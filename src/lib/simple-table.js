@@ -24,6 +24,13 @@ export function nameTableHandlers(tableName) {
       if (g.error) return g.error;
       const body = await req.json();
       if (!body?.name) return json({ error: 'name_required' }, 400);
+      
+      // NOVA LÓGICA: Se o campo sector vier na requisição e a tabela for job_roles, ele grava.
+      if (table === 'job_roles' && body.sector) {
+        const { rows } = await query(`INSERT INTO "${table}" (name, sector) VALUES ($1, $2) RETURNING *`, [body.name, body.sector]);
+        return json(rows[0], 201);
+      }
+      
       const { rows } = await query(`INSERT INTO "${table}" (name) VALUES ($1) RETURNING *`, [body.name]);
       return json(rows[0], 201);
     },
@@ -38,6 +45,13 @@ export function nameTableIdHandlers(tableName) {
       if (g.error) return g.error;
       const { id } = await ctx.params;
       const body = await req.json();
+      
+      // NOVA LÓGICA: Permite atualizar o setor além do nome
+      if (table === 'job_roles' && body.sector !== undefined) {
+         const { rows } = await query(`UPDATE "${table}" SET name = $1, sector = $2 WHERE id = $3 RETURNING *`, [body.name, body.sector, id]);
+         return json(rows[0] || null);
+      }
+
       const { rows } = await query(`UPDATE "${table}" SET name = $1 WHERE id = $2 RETURNING *`, [body.name, id]);
       return json(rows[0] || null);
     },
