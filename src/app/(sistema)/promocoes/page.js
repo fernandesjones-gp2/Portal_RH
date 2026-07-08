@@ -25,10 +25,7 @@ export default function PromocoesPage() {
   
   const [actionModal, setActionModal] = useState(null); 
   const [feedbackText, setFeedbackText] = useState('');
-  
-  // NOVO: Controle do Modal de Parecer/Observação Avulsa
-  const [obsModal, setObsModal] = useState(null);
-  const [obsText, setObsText] = useState('');
+  const [observations, setObservations] = useState({});
 
   const initialForm = {
     type: 'Horizontal', collaborator_name: '', collaborator_cpf: '', admission_date: '',
@@ -38,10 +35,19 @@ export default function PromocoesPage() {
   };
   const [formData, setFormData] = useState(initialForm);
 
-  useEffect(() => { fetchData(); }, []);
+  // --- ATUALIZAÇÃO AUTOMÁTICA (10 SEGUNDOS) ---
+  useEffect(() => { 
+    fetchData(false); // Primeira carga com loading na tela
+    
+    const intervalId = setInterval(() => {
+      fetchData(true); // Cargas subsequentes em background (silenciosas)
+    }, 10000);
+    
+    return () => clearInterval(intervalId); // Limpa o intervalo ao sair da tela
+  }, []);
 
-  async function fetchData() {
-    setLoading(true);
+  async function fetchData(isBackground = false) {
+    if (!isBackground) setLoading(true);
     try {
       const sessionUser = await api.me();
       if (sessionUser) {
@@ -68,18 +74,30 @@ export default function PromocoesPage() {
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         
-        const validados = candsRes.filter(c => 
-          c.process_type === 'Promoção' && 
-          (c.status === 'Promoção (Em Andamento)' || c.status === 'Promoção (Em Análise)') && 
-          new Date(c.created_at) >= sixMonthsAgo &&
-          !activePromotions.some(p => p.candidate_id === c.id && ['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(p.status))
-        );
+        // --- FILTRO DO BANCO DO PSICÓLOGO AJUSTADO ---
+        const validados = candsRes.filter(c => {
+          // 1. Deve ser processo de Promoção
+          if (c.process_type !== 'Promoção') return false;
+          
+          // 2. O candidato só fica no Banco se estiver "Em Andamento". 
+          // Assim que vira "Em Análise" (entra no Kanban), ele sai do banco.
+          if (c.status !== 'Promoção (Em Andamento)') return false;
+          
+          // 3. Validade do laudo (6 meses)
+          if (new Date(c.created_at) < sixMonthsAgo) return false;
+          
+          // 4. Não pode ter uma promoção ativa atrelada a ele
+          const hasActivePromo = activePromotions.some(p => p.candidate_id === c.id && !['Cancelado', 'Reprovado pela Liderança'].includes(p.status));
+          if (hasActivePromo) return false;
+          
+          return true;
+        });
         setApprovedCandidates(validados);
       }
     } catch (error) {
       console.error('Erro ao sincronizar dados:', error);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   }
 
@@ -160,13 +178,15 @@ export default function PromocoesPage() {
       setFormData(initialForm);
       setEditingPromotionId(null);
       setIsModalOpen(false);
-      fetchData();
+      fetchData(false);
     } catch (err) {
       alert('Erro ao gravar solicitação: ' + err.message);
     }
   }
 
-  // --- NOVA FUNÇÃO DE LANÇAMENTO DE PARECER AVULSO ---
+  const [obsModal, setObsModal] = useState(null);
+  const [obsText, setObsText] = useState('');
+
   async function handleSaveObservation(e) {
     e.preventDefault();
     if (!obsText.trim()) return alert("Digite um parecer válido.");
@@ -186,7 +206,7 @@ export default function PromocoesPage() {
         alert('Parecer adicionado ao histórico do processo!');
         setObsModal(null);
         setObsText('');
-        fetchData();
+        fetchData(false);
       } else {
         alert('Erro ao salvar parecer no servidor.');
       }
@@ -197,8 +217,10 @@ export default function PromocoesPage() {
 
   async function executeWorkflowAction(promo, statusName, extraPayload = {}) {
     try {
+      const obs = observations[promo.id];
       let newFeedback = promo.feedback || '';
       if (extraPayload.feedback) { newFeedback = extraPayload.feedback; delete extraPayload.feedback; }
+      if (obs && obs.trim()) { newFeedback += `\n💬 [OBSERVAÇÃO] Por ${currentUserName} em ${new Date().toLocaleString('pt-BR')}:\n"${obs}"\n`; }
 
       const payload = { status: statusName, feedback: newFeedback, ...extraPayload };
 
@@ -212,7 +234,8 @@ export default function PromocoesPage() {
         alert(`Operação realizada com sucesso! Status atualizado para: ${statusName}`);
         setActionModal(null);
         setFeedbackText('');
-        fetchData();
+        setObservations(prev => ({ ...prev, [promo.id]: '' }));
+        fetchData(false);
       } else {
         alert('Erro ao processar alteração no servidor.');
       }
@@ -358,17 +381,15 @@ export default function PromocoesPage() {
           <span>Efetivação: 01/{p.promotion_month_year}</span>
         </div>
 
-        {/* BOTÕES DE VIZUALIZAÇÃO E PARECERES (MAIS COMPACTOS E LADO A LADO) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: '0.25rem' }}>
           <button onClick={() => setDetailsPromotion(p)} className="btn-secondary" style={{ padding: '0.3rem', fontSize: '0.7rem', justifyContent: 'center' }}>
-            <Eye size={12} style={{ marginRight: '4px' }} /> Detalhes
+            <Eye size={12} style={{ marginRight: '4px' }} /> Raio-X
           </button>
           <button onClick={() => setObsModal(p)} className="btn-secondary" style={{ padding: '0.3rem', fontSize: '0.7rem', justifyContent: 'center' }}>
             <MessageSquare size={12} style={{ marginRight: '4px' }} /> Parecer
           </button>
         </div>
 
-        {/* BOTÕES DE AÇÃO DO FLUXO (PEQUENOS) */}
         {currentView === 'pipeline' && hasActions && (
           <div style={{ marginTop: '0.25rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
             {canActOnLideranca && (
@@ -395,7 +416,6 @@ export default function PromocoesPage() {
           </div>
         )}
 
-        {/* BOTÃO PDF */}
         {['Concluído', 'Cancelado', 'Reprovado pela Liderança'].includes(p.status) && (
           <div style={{ marginTop: '0.25rem' }}>
             <button onClick={() => handleExportPDF(p)} className="btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.7rem', padding: '0.4rem', color: '#057a55', borderColor: '#057a55' }}><Download size={12} style={{ marginRight: '4px' }} /> Gerar Relatório PDF</button>
@@ -488,7 +508,7 @@ export default function PromocoesPage() {
         </>
       )}
 
-      {/* MODAL DETALHADO */}
+      {/* MODAL DE RAIO-X DETALHADO */}
       {detailsPromotion && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 120 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -552,13 +572,13 @@ export default function PromocoesPage() {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-              <button className="btn-secondary" onClick={() => setDetailsPromotion(null)}>Fechar</button>
+              <button className="btn-secondary" onClick={() => setDetailsPromotion(null)}>Fechar Raio-X</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL DE PARECER AVULSO (MUITO MAIS LIMPO) */}
+      {/* MODAL DE PARECER AVULSO */}
       {obsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110 }}>
           <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '450px' }}>
