@@ -39,11 +39,15 @@ export default function DashboardPage() {
 
       const novoFunil = { entrevistas: [], documentacao: [], exames: [], prontos: [] };
 
+      // MAPEAMENTO EXATO DOS STATUS POR BLOCO (Sem filtros ocultos)
+      const statusEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'];
+      const statusBloco1 = ['Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'];
+      const statusBloco2 = ['Em Análise do Médico', 'Aprovado com Ressalva', 'Aguardando Exame', 'Pendente Exame'];
+      const statusBloco3 = ['Aprovado pelo Médico', 'Pré-Admissão (Pronto)', 'Pronto para Admitir'];
+
       cands.forEach(c => {
-        // Ignora os que já terminaram o fluxo
+        // Ignora apenas processos já finalizados ou se for Promoção (para focar na Admissão)
         if (['Concluído', 'Cancelado', 'Reprovado'].includes(c.status)) return;
-        
-        // Isola apenas os candidatos de Recrutamento e Admissão (Ignora Promoções neste quadro)
         if (c.process_type === 'Promoção') return; 
 
         // Enriquecimento de Dados
@@ -56,7 +60,7 @@ export default function DashboardPage() {
         dataBase.setHours(0, 0, 0, 0);
 
         // REGRA ESPECÍFICA DE TEMPO PARA ENTREVISTAS: Usa a data do Agendamento (se existir)
-        if (['Cadastrado', 'Agendado', 'Reagendado'].includes(c.status) && (c.interview_date || c.scheduled_date)) {
+        if (statusEntrevista.includes(c.status) && (c.interview_date || c.scheduled_date)) {
           dataBase = new Date(c.interview_date || c.scheduled_date);
           dataBase.setHours(0, 0, 0, 0);
         }
@@ -65,14 +69,14 @@ export default function DashboardPage() {
         c.tempoParado = diffDias > 0 ? diffDias : 0; 
 
         // DISTRIBUIÇÃO EXATA CONFORME REGRAS DO PIPELINE DE ADMISSÃO E AGENDAMENTOS
-        if (['Cadastrado', 'Agendado', 'Reagendado'].includes(c.status)) {
+        if (statusEntrevista.includes(c.status)) {
           novoFunil.entrevistas.push(c); // 1. Agendamentos
-        } else if (['Pendente Documentação'].includes(c.status)) {
-          novoFunil.documentacao.push(c); // 2. Bloco 1 da Admissão
-        } else if (['Em Análise do Médico', 'Aprovado com Ressalva', 'Aprovado', 'Aprovado pelo Médico'].includes(c.status)) {
-          novoFunil.exames.push(c); // 3. Bloco 2 da Admissão
-        } else if (['Pré-Admissão (Pronto)'].includes(c.status)) {
-          novoFunil.prontos.push(c); // 4. Bloco 3 da Admissão
+        } else if (statusBloco1.includes(c.status)) {
+          novoFunil.documentacao.push(c); // 2. Bloco 1 da Admissão (Documentação)
+        } else if (statusBloco2.includes(c.status)) {
+          novoFunil.exames.push(c); // 3. Bloco 2 da Admissão (Exames)
+        } else if (statusBloco3.includes(c.status)) {
+          novoFunil.prontos.push(c); // 4. Bloco 3 da Admissão (Prontos)
         }
       });
 
@@ -220,7 +224,7 @@ export default function DashboardPage() {
       {/* BLOCO ÚNICO E COMPACTO: FUNIL DE PROCESSOS EM ANDAMENTO */}
       <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)', maxWidth: '900px' }}>
         <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
-          <BarChart3 size={24} color="var(--saritur-orange)" /> Funil de Recrutamento (Em Andamento)
+          <BarChart3 size={24} color="var(--saritur-orange)" /> Processos em Andamento
         </h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
