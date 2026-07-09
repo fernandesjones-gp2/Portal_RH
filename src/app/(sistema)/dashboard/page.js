@@ -71,7 +71,7 @@ export default function DashboardPage() {
         } else if (isBloco2) {
           // REGRA 3: Somente do Bloco 2 se o Exame for Pendente/Solicitado
           const examSt = String(c.exam_status || c.medical_status || c.status_exame || '').trim().toLowerCase();
-          const isExamPending = examSt === 'pendente' || examSt.includes('solicitad') || st.toLowerCase().includes('pendente exame') || st.toLowerCase().includes('aguardando exame');
+          const isExamPending = examSt === 'Pendente' || examSt.includes('Solicitad') || st.toLowerCase().includes('pendente exame') || st.toLowerCase().includes('aguardando exame');
           if (isExamPending) {
             bucket = 'exames';
           }
