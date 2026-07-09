@@ -39,28 +39,54 @@ export default function DashboardPage() {
 
       const novoFunil = { entrevistas: [], documentacao: [], exames: [], prontos: [] };
 
-      // MAPEAMENTO EXATO DOS STATUS POR BLOCO (Sem filtros ocultos)
-      const statusEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'];
-      const statusBloco1 = ['Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'];
-      const statusBloco2 = ['Em Análise do Médico', 'Aprovado com Ressalva', 'Aguardando Exame', 'Pendente Exame'];
-      const statusBloco3 = ['Aprovado pelo Médico', 'Pré-Admissão (Pronto)', 'Pronto para Admitir'];
-
       cands.forEach(c => {
-        // Ignora apenas processos já finalizados ou se for Promoção (para focar na Admissão)
-        if (['Concluído', 'Cancelado', 'Reprovado'].includes(c.status)) return;
+        const st = c.status ? c.status.trim() : '';
+
+        // Ignora processos finalizados, reprovados ou cancelados
+        if (['Concluído', 'Cancelado', 'Reprovado', 'Reprovado Documentação', 'Reprovado pelo Médico', 'Inapto Médico', 'Desistência', 'Falta'].includes(st)) return;
+        
+        // Isola apenas os candidatos de Recrutamento e Admissão (Ignora Promoções neste quadro)
         if (c.process_type === 'Promoção') return; 
 
-        // Enriquecimento de Dados
+        // Enriquecimento de Dados para a Tabela de Visualização
         c.roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
         c.unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'N/A';
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
 
-        // LÓGICA DE TEMPO: Usa a data da última movimentação (Data da Solicitação) por padrão
+        // ----------------------------------------------------------------------
+        // MAPEAMENTO EXATO - IDÊNTICO ÀS TELAS DE PIPELINE
+        // ----------------------------------------------------------------------
+        let bucket = null;
+
+        if (['Cadastrado', 'Agendado', 'Reagendado'].includes(st)) {
+          bucket = 'entrevistas'; // Agendamentos
+        } else if (['Aprovado', 'Pendente Documentação', 'Em Análise'].includes(st)) {
+          bucket = 'documentacao'; // Bloco 1 da Admissão
+        } else if (['Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico'].includes(st)) {
+          bucket = 'exames'; // Bloco 2 da Admissão
+        } else if (['Aprovado pelo Médico', 'Aprovado com Ressalva', 'Pré-Admissão (Pronto)'].includes(st)) {
+          bucket = 'prontos'; // Bloco 3 da Admissão
+        } else {
+          // Fallback de segurança: se o status for escrito ligeiramente diferente mas estiver ativo
+          const lowerSt = st.toLowerCase();
+          if (lowerSt.includes('exame') || lowerSt.includes('médico') || lowerSt.includes('medico')) {
+             if (lowerSt.includes('aprovado')) bucket = 'prontos';
+             else bucket = 'exames';
+          } else if (lowerSt.includes('pronto') || lowerSt.includes('admiss')) {
+             bucket = 'prontos';
+          } else {
+             bucket = 'documentacao'; // Default seguro
+          }
+        }
+
+        // ----------------------------------------------------------------------
+        // LÓGICA DE TEMPO PARADO
+        // ----------------------------------------------------------------------
         let dataBase = new Date(c.updated_at || c.created_at);
         dataBase.setHours(0, 0, 0, 0);
 
-        // REGRA ESPECÍFICA DE TEMPO PARA ENTREVISTAS: Usa a data do Agendamento (se existir)
-        if (statusEntrevista.includes(c.status) && (c.interview_date || c.scheduled_date)) {
+        // Se for Entrevista, calcula com base na Data da Entrevista
+        if (bucket === 'entrevistas' && (c.interview_date || c.scheduled_date)) {
           dataBase = new Date(c.interview_date || c.scheduled_date);
           dataBase.setHours(0, 0, 0, 0);
         }
@@ -68,19 +94,11 @@ export default function DashboardPage() {
         let diffDias = Math.floor((hoje - dataBase) / (1000 * 60 * 60 * 24));
         c.tempoParado = diffDias > 0 ? diffDias : 0; 
 
-        // DISTRIBUIÇÃO EXATA CONFORME REGRAS DO PIPELINE DE ADMISSÃO E AGENDAMENTOS
-        if (statusEntrevista.includes(c.status)) {
-          novoFunil.entrevistas.push(c); // 1. Agendamentos
-        } else if (statusBloco1.includes(c.status)) {
-          novoFunil.documentacao.push(c); // 2. Bloco 1 da Admissão (Documentação)
-        } else if (statusBloco2.includes(c.status)) {
-          novoFunil.exames.push(c); // 3. Bloco 2 da Admissão (Exames)
-        } else if (statusBloco3.includes(c.status)) {
-          novoFunil.prontos.push(c); // 4. Bloco 3 da Admissão (Prontos)
-        }
+        // Adiciona ao respectivo quadro
+        novoFunil[bucket].push(c);
       });
 
-      // Ordena quem está há mais tempo parado no topo da lista
+      // Ordena do mais atrasado (maior tempo parado) para o mais recente
       Object.keys(novoFunil).forEach(key => {
         novoFunil[key].sort((a, b) => b.tempoParado - a.tempoParado);
       });
@@ -94,7 +112,9 @@ export default function DashboardPage() {
     }
   }
 
+  // ----------------------------------------------------------------------
   // CÁLCULOS DO EXTRA: Gargalos nas Entrevistas (> 2 dias)
+  // ----------------------------------------------------------------------
   const entrevistasAtrasadas = funil.entrevistas.filter(c => c.tempoParado > 2);
   const gargaloPorResponsavel = entrevistasAtrasadas.reduce((acc, c) => { acc[c.respName] = (acc[c.respName] || 0) + 1; return acc; }, {});
   const gargaloPorFuncao = entrevistasAtrasadas.reduce((acc, c) => { acc[c.roleName] = (acc[c.roleName] || 0) + 1; return acc; }, {});
@@ -134,7 +154,7 @@ export default function DashboardPage() {
           {modalStage === 'entrevistas' && entrevistasAtrasadas.length > 0 && (
             <div style={{ marginBottom: '2rem', border: '1px solid var(--danger-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <AlertTriangle size={20} /> Alerta: {entrevistasAtrasadas.length} Candidato(s) parado(s) há mais de 2 dias
+                <AlertTriangle size={20} /> Alerta: {entrevistasAtrasadas.length} Candidato(s) parado(s) há mais de 2 dias na entrevista
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 <div>
