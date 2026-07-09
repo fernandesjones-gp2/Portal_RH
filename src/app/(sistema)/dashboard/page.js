@@ -54,51 +54,58 @@ export default function DashboardPage() {
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
 
         // ----------------------------------------------------------------------
-        // MAPEAMENTO EXATO - IDÊNTICO ÀS TELAS DE PIPELINE
+        // MAPEAMENTO EXATO DOS BLOCOS DO PIPELINE DE ADMISSÃO E AGENDAMENTOS
         // ----------------------------------------------------------------------
+        const isEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
+        const isBloco1 = ['1. Em Andamento', 'Em Andamento', 'Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'].includes(st);
+        const isBloco2 = ['2. Pré-Admissão', 'Pré-Admissão', 'Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico', 'Aprovado com Ressalva'].includes(st);
+        const isBloco3 = ['3. Prontos para Admitir', 'Pronto para Admitir', 'Pré-Admissão (Pronto)', 'Aprovado pelo Médico'].includes(st);
+
         let bucket = null;
 
-        if (['Cadastrado', 'Agendado', 'Reagendado'].includes(st)) {
-          bucket = 'entrevistas'; // Agendamentos
-        } else if (['Aprovado', 'Pendente Documentação', 'Em Análise'].includes(st)) {
-          bucket = 'documentacao'; // Bloco 1 da Admissão
-        } else if (['Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico'].includes(st)) {
-          bucket = 'exames'; // Bloco 2 da Admissão
-        } else if (['Aprovado pelo Médico', 'Aprovado com Ressalva', 'Pré-Admissão (Pronto)'].includes(st)) {
-          bucket = 'prontos'; // Bloco 3 da Admissão
-        } else {
-          // Fallback de segurança: se o status for escrito ligeiramente diferente mas estiver ativo
-          const lowerSt = st.toLowerCase();
-          if (lowerSt.includes('exame') || lowerSt.includes('médico') || lowerSt.includes('medico')) {
-             if (lowerSt.includes('aprovado')) bucket = 'prontos';
-             else bucket = 'exames';
-          } else if (lowerSt.includes('pronto') || lowerSt.includes('admiss')) {
-             bucket = 'prontos';
-          } else {
-             bucket = 'documentacao'; // Default seguro
+        if (isEntrevista) {
+          bucket = 'entrevistas';
+        } else if (isBloco1) {
+          bucket = 'documentacao'; // Pega todos do Bloco 1 independente do status interno
+        } else if (isBloco3) {
+          bucket = 'prontos'; // Pega todos do Bloco 3
+        } else if (isBloco2) {
+          // REGRA DE OURO DO BLOCO 2: Somente se o Exame for Pendente ou Solicitado
+          const examSt = String(c.exam_status || c.medical_status || c.status_exame || c.exame_status || '').trim().toLowerCase();
+          const mainStLower = st.toLowerCase();
+          
+          const isPendenteOuSolicitado = 
+            examSt === 'pendente' || examSt === 'solicitado' || 
+            mainStLower === 'pendente' || mainStLower === 'solicitado' ||
+            mainStLower.includes('pendente') || mainStLower.includes('solicitado');
+
+          if (isPendenteOuSolicitado) {
+            bucket = 'exames';
           }
         }
 
         // ----------------------------------------------------------------------
         // LÓGICA DE TEMPO PARADO
         // ----------------------------------------------------------------------
-        let dataBase = new Date(c.updated_at || c.created_at);
-        dataBase.setHours(0, 0, 0, 0);
-
-        // Se for Entrevista, calcula com base na Data da Entrevista
-        if (bucket === 'entrevistas' && (c.interview_date || c.scheduled_date)) {
-          dataBase = new Date(c.interview_date || c.scheduled_date);
+        if (bucket) {
+          let dataBase = new Date(c.updated_at || c.created_at);
           dataBase.setHours(0, 0, 0, 0);
+
+          // Se for Entrevista, calcula com base na Data da Entrevista (Hoje - data da entrevista)
+          if (bucket === 'entrevistas' && (c.interview_date || c.scheduled_date)) {
+            dataBase = new Date(c.interview_date || c.scheduled_date);
+            dataBase.setHours(0, 0, 0, 0);
+          }
+
+          let diffDias = Math.floor((hoje - dataBase) / (1000 * 60 * 60 * 24));
+          c.tempoParado = diffDias > 0 ? diffDias : 0; 
+
+          // Adiciona ao respectivo quadro
+          novoFunil[bucket].push(c);
         }
-
-        let diffDias = Math.floor((hoje - dataBase) / (1000 * 60 * 60 * 24));
-        c.tempoParado = diffDias > 0 ? diffDias : 0; 
-
-        // Adiciona ao respectivo quadro
-        novoFunil[bucket].push(c);
       });
 
-      // Ordena do mais atrasado (maior tempo parado) para o mais recente
+      // Ordena quem está há mais tempo parado no topo da lista
       Object.keys(novoFunil).forEach(key => {
         novoFunil[key].sort((a, b) => b.tempoParado - a.tempoParado);
       });
@@ -123,7 +130,7 @@ export default function DashboardPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
         <Activity size={48} color="var(--saritur-orange)" style={{ animation: 'spin 2s linear infinite', marginBottom: '1rem' }} />
-        <p>Construindo painel visual...</p>
+        <p>A mapear blocos e calcular métricas...</p>
       </div>
     );
   }
@@ -133,10 +140,10 @@ export default function DashboardPage() {
 
     let title = ''; let list = []; let icon = null;
     switch(modalStage) {
-      case 'entrevistas': title = '1. Entrevistas (Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
-      case 'documentacao': title = '2. Documentação (Bloco 1 do Pipeline)'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
-      case 'exames': title = '3. Exames Médicos (Bloco 2 do Pipeline)'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
-      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3 do Pipeline)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
+      case 'entrevistas': title = '1. Entrevistas (Tela de Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
+      case 'documentacao': title = '2. Documentação (Bloco 1. Em Andamento)'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
+      case 'exames': title = '3. Exames Médicos (Bloco 2. Pré-Admissão)'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
+      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3. Prontos)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
     }
 
     return (
@@ -154,7 +161,7 @@ export default function DashboardPage() {
           {modalStage === 'entrevistas' && entrevistasAtrasadas.length > 0 && (
             <div style={{ marginBottom: '2rem', border: '1px solid var(--danger-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <AlertTriangle size={20} /> Alerta: {entrevistasAtrasadas.length} Candidato(s) parado(s) há mais de 2 dias na entrevista
+                <AlertTriangle size={20} /> Alerta: {entrevistasAtrasadas.length} Candidato(s) parado(s) há mais de 2 dias
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 <div>
