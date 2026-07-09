@@ -42,55 +42,55 @@ export default function DashboardPage() {
       cands.forEach(c => {
         const st = c.status ? c.status.trim() : '';
 
-        // Ignora processos finalizados, reprovados ou cancelados
+        // 1. IGNORA FINALIZADOS, CANCELADOS E REPROVADOS
         if (['Concluído', 'Cancelado', 'Reprovado', 'Reprovado Documentação', 'Reprovado pelo Médico', 'Inapto Médico', 'Desistência', 'Falta'].includes(st)) return;
         
-        // Isola apenas os candidatos de Recrutamento e Admissão (Ignora Promoções neste quadro)
-        if (c.process_type === 'Promoção') return; 
+        // 2. FILTRO GLOBAL DA TELA: Apenas Admissão e Readmissão (Ignora Promoções)
+        if (!['Admissão', 'Readmissão'].includes(c.process_type)) return; 
 
-        // Enriquecimento de Dados para a Tabela de Visualização
+        // Enriquecimento de Dados
         c.roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
         c.unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'N/A';
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
 
-        // ----------------------------------------------------------------------
-        // MAPEAMENTO ESTRITO DOS BLOCOS
-        // ----------------------------------------------------------------------
+        // Mapeamento das Etapas/Blocos do Pipeline
         const isEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
-        const isBloco1 = ['1. Em Andamento', 'Em Andamento', 'Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'].includes(st);
         const isBloco2 = ['2. Pré-Admissão', 'Pré-Admissão', 'Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico', 'Aprovado com Ressalva'].includes(st);
         const isBloco3 = ['3. Prontos para Admitir', 'Pronto para Admitir', 'Pré-Admissão (Pronto)', 'Aprovado pelo Médico'].includes(st);
-        const isPipelineAdmissao = isBloco1 || isBloco2 || isBloco3;
+        const isPipelineAdmissao = !isEntrevista; // Qualquer candidato que não esteja na triagem já está no pipeline de admissão
 
         let bucket = null;
 
+        // ======================================================================
+        // APLICAÇÃO ESTRITA DAS REGRAS SOLICITADAS
+        // ======================================================================
+
+        // REGRA 1: Entrevistas
         if (isEntrevista) {
           bucket = 'entrevistas';
-        } else if (isBloco3) {
-          bucket = 'prontos'; // REGRA 4: Todos do Bloco 3
-        } else if (isBloco2) {
-          // REGRA 3: Somente do Bloco 2 se o Exame for Pendente/Solicitado
-          const examSt = String(c.exam_status || c.medical_status || c.status_exame || '').trim().toLowerCase();
-          const isExamPending = examSt === 'Pendente' || examSt.includes('Solicitad') || st.toLowerCase().includes('pendente exame') || st.toLowerCase().includes('aguardando exame');
-          if (isExamPending) {
-            bucket = 'exames';
-          }
         } 
-        
-        // REGRA 2: Todos no Pipeline com Documentação Pendente/Solicitada
-        if (!bucket && isPipelineAdmissao) {
-          const docSt = String(c.doc_status || c.document_status || c.status_documentacao || '').trim().toLowerCase();
-          const isDocPending = docSt === 'pendente' || docSt.includes('Solicitad') || st.toLowerCase().includes('pendente documentação') || st.toLowerCase().includes('aguardando documentação') || isBloco1; 
-          // Mantive 'isBloco1' como fallback seguro caso o usuário não tenha preenchido a tag doc_status mas o candidato já esteja no bloco
-          
-          if (isDocPending) {
-            bucket = 'documentacao';
+        // REGRA 4: Prontos para Admitir (Todos do Bloco 3, independente do status)
+        else if (isBloco3) {
+          bucket = 'prontos'; 
+        } 
+        // REGRA 2: Documentação (No Pipeline E docs_receive_date = null)
+        else if (isPipelineAdmissao && (!c.docs_receive_date || c.docs_receive_date === 'null')) {
+          bucket = 'documentacao';
+        } 
+        // REGRA 3: Exames (No Bloco 2 E medical_result_date = null E analysis_status = "Aprovado" E docs_status = "Recebida")
+        else if (isBloco2) {
+          const isMedicalResultNull = !c.medical_result_date || c.medical_result_date === 'null';
+          const isAnalysisAprovado = String(c.analysis_status || '').trim().toLowerCase() === 'aprovado';
+          const isDocsRecebida = String(c.doc_status || c.docs_status || c.document_status || '').trim().toLowerCase() === 'recebida';
+
+          if (isMedicalResultNull && isAnalysisAprovado && isDocsRecebida) {
+            bucket = 'exames';
           }
         }
 
-        // ----------------------------------------------------------------------
-        // LÓGICA DE TEMPO PARADO
-        // ----------------------------------------------------------------------
+        // ======================================================================
+        // CÁLCULO DE TEMPO PARADO (Caso o candidato tenha caído em algum bucket)
+        // ======================================================================
         if (bucket) {
           let dataBase = new Date(c.updated_at || c.created_at);
           dataBase.setHours(0, 0, 0, 0);
@@ -104,7 +104,6 @@ export default function DashboardPage() {
           let diffDias = Math.floor((hoje - dataBase) / (1000 * 60 * 60 * 24));
           c.tempoParado = diffDias > 0 ? diffDias : 0; 
 
-          // Adiciona ao respectivo quadro
           novoFunil[bucket].push(c);
         }
       });
@@ -123,9 +122,7 @@ export default function DashboardPage() {
     }
   }
 
-  // ----------------------------------------------------------------------
   // CÁLCULOS DO EXTRA: Gargalos nas Entrevistas (> 2 dias)
-  // ----------------------------------------------------------------------
   const entrevistasAtrasadas = funil.entrevistas.filter(c => c.tempoParado > 2);
   const gargaloPorResponsavel = entrevistasAtrasadas.reduce((acc, c) => { acc[c.respName] = (acc[c.respName] || 0) + 1; return acc; }, {});
   const gargaloPorFuncao = entrevistasAtrasadas.reduce((acc, c) => { acc[c.roleName] = (acc[c.roleName] || 0) + 1; return acc; }, {});
@@ -134,7 +131,7 @@ export default function DashboardPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
         <Activity size={48} color="var(--saritur-orange)" style={{ animation: 'spin 2s linear infinite', marginBottom: '1rem' }} />
-        <p>Construindo painel visual...</p>
+        <p>A mapear e auditar dados do banco...</p>
       </div>
     );
   }
@@ -146,8 +143,8 @@ export default function DashboardPage() {
     switch(modalStage) {
       case 'entrevistas': title = '1. Entrevistas (Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
       case 'documentacao': title = '2. Documentação Pendente ou Solicitada'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
-      case 'exames': title = '3. Exames Médicos Pendentes/Solicitados'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
-      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3 do Pipeline)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
+      case 'exames': title = '3. Exames Médicos Pendentes'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
+      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
     }
 
     return (
@@ -192,7 +189,7 @@ export default function DashboardPage() {
              <div style={{ padding: '3rem', textAlign: 'center' }}>
                <CheckCircle size={48} color="var(--success-color)" style={{ margin: '0 auto 1rem' }} />
                <h3 style={{ fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: 'bold' }}>Fila Limpa!</h3>
-               <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato aguardando nesta fase.</p>
+               <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato aguardando nesta fase e com essas condições.</p>
              </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
