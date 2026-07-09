@@ -80,7 +80,7 @@ export default function DashboardPage() {
         // REGRA 2: Todos no Pipeline com Documentação Pendente/Solicitada
         if (!bucket && isPipelineAdmissao) {
           const docSt = String(c.doc_status || c.document_status || c.status_documentacao || '').trim().toLowerCase();
-          const isDocPending = docSt === 'pendente' || docSt.includes('solicitad') || st.toLowerCase().includes('pendente documentação') || st.toLowerCase().includes('aguardando documentação') || isBloco1; 
+          const isDocPending = docSt === 'pendente' || docSt.includes('Solicitad') || st.toLowerCase().includes('pendente documentação') || st.toLowerCase().includes('aguardando documentação') || isBloco1; 
           // Mantive 'isBloco1' como fallback seguro caso o usuário não tenha preenchido a tag doc_status mas o candidato já esteja no bloco
           
           if (isDocPending) {
