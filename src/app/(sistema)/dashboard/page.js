@@ -45,7 +45,7 @@ export default function DashboardPage() {
         // 1. IGNORA FINALIZADOS, CANCELADOS E REPROVADOS
         if (['Concluído', 'Cancelado', 'Reprovado', 'Reprovado Documentação', 'Reprovado pelo Médico', 'Inapto Médico', 'Desistência', 'Falta'].includes(st)) return;
         
-        // 2. FILTRO GLOBAL DA TELA: Apenas Admissão e Readmissão (Ignora Promoções)
+        // 2. FILTRO GLOBAL DA TELA: Apenas Admissão e Readmissão
         if (!['Admissão', 'Readmissão'].includes(c.process_type)) return; 
 
         // Enriquecimento de Dados
@@ -53,49 +53,59 @@ export default function DashboardPage() {
         c.unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'N/A';
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
 
-        // Mapeamento das Etapas/Blocos do Pipeline
+        // Mapeamento dos Blocos 
         const isEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
+        const isBloco1 = ['1. Em Andamento', 'Em Andamento', 'Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'].includes(st);
         const isBloco2 = ['2. Pré-Admissão', 'Pré-Admissão', 'Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico', 'Aprovado com Ressalva'].includes(st);
         const isBloco3 = ['3. Prontos para Admitir', 'Pronto para Admitir', 'Pré-Admissão (Pronto)', 'Aprovado pelo Médico'].includes(st);
-        const isPipelineAdmissao = !isEntrevista; // Qualquer candidato que não esteja na triagem já está no pipeline de admissão
 
         let bucket = null;
 
         // ======================================================================
-        // APLICAÇÃO ESTRITA DAS REGRAS SOLICITADAS
+        // APLICAÇÃO ESTRITA DAS 4 REGRAS SOLICITADAS
         // ======================================================================
 
-        // REGRA 1: Entrevistas
+        // REGRA 1: Entrevistas (Tela de Agendamentos)
         if (isEntrevista) {
           bucket = 'entrevistas';
         } 
-        // REGRA 4: Prontos para Admitir (Todos do Bloco 3, independente do status)
+        // REGRA 4: Prontos p/ Admitir (Todos do Bloco 3, independente do status)
         else if (isBloco3) {
           bucket = 'prontos'; 
         } 
-        // REGRA 2: Documentação (No Pipeline E docs_receive_date = null)
-        else if (isPipelineAdmissao && (!c.docs_receive_date || c.docs_receive_date === 'null')) {
-          bucket = 'documentacao';
+        // REGRA 2: Documentação (SOMENTE Bloco 1 E docs_receive_date nulo)
+        else if (isBloco1) {
+          const isDocsNull = !c.docs_receive_date || String(c.docs_receive_date).trim() === '' || String(c.docs_receive_date).trim() === 'null';
+          if (isDocsNull) {
+            bucket = 'documentacao';
+          }
         } 
-        // REGRA 3: Exames (No Bloco 2 E medical_result_date = null E analysis_status = "Aprovado" E docs_status = "Recebida")
+        // REGRA 3: Exames Médicos (SOMENTE Bloco 2 E regras específicas)
         else if (isBloco2) {
-          const isMedicalResultNull = !c.medical_result_date || c.medical_result_date === 'null';
-          const isAnalysisAprovado = String(c.analysis_status || '').trim().toLowerCase() === 'aprovado';
-          const isDocsRecebida = String(c.doc_status || c.docs_status || c.document_status || '').trim().toLowerCase() === 'recebida';
+          // Validação dos 3 campos do banco
+          const isMedicalResultNull = !c.medical_result_date || String(c.medical_result_date).trim() === '' || String(c.medical_result_date).trim() === 'null';
+          
+          const analysisStatus = String(c.analysis_status || '').trim().toLowerCase();
+          const isAnalysisAprovado = analysisStatus === 'aprovado';
 
+          // Checa as duas grafias possíveis para prevenir erros de banco (docs_status ou doc_status)
+          const docsStatus = String(c.docs_status || c.doc_status || c.document_status || '').trim().toLowerCase();
+          const isDocsRecebida = docsStatus === 'recebida' || docsStatus === 'recebido';
+
+          // Só entra no funil se as 3 regras baterem juntas
           if (isMedicalResultNull && isAnalysisAprovado && isDocsRecebida) {
             bucket = 'exames';
           }
         }
 
         // ======================================================================
-        // CÁLCULO DE TEMPO PARADO (Caso o candidato tenha caído em algum bucket)
+        // CÁLCULO DE TEMPO PARADO (Caso o candidato tenha entrado num bucket)
         // ======================================================================
         if (bucket) {
           let dataBase = new Date(c.updated_at || c.created_at);
           dataBase.setHours(0, 0, 0, 0);
 
-          // Se for Entrevista, calcula com base na Data da Entrevista (Hoje - data da entrevista)
+          // Se for Entrevista, calcula (Hoje - data da entrevista)
           if (bucket === 'entrevistas' && (c.interview_date || c.scheduled_date)) {
             dataBase = new Date(c.interview_date || c.scheduled_date);
             dataBase.setHours(0, 0, 0, 0);
@@ -131,7 +141,7 @@ export default function DashboardPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
         <Activity size={48} color="var(--saritur-orange)" style={{ animation: 'spin 2s linear infinite', marginBottom: '1rem' }} />
-        <p>A mapear e auditar dados do banco...</p>
+        <p>A validar regras do banco de dados...</p>
       </div>
     );
   }
@@ -142,8 +152,8 @@ export default function DashboardPage() {
     let title = ''; let list = []; let icon = null;
     switch(modalStage) {
       case 'entrevistas': title = '1. Entrevistas (Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
-      case 'documentacao': title = '2. Documentação Pendente ou Solicitada'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
-      case 'exames': title = '3. Exames Médicos Pendentes'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
+      case 'documentacao': title = '2. Documentação Pendente (Bloco 1)'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
+      case 'exames': title = '3. Exames Médicos Pendentes (Bloco 2)'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
       case 'prontos': title = '4. Prontos pra Admitir (Bloco 3)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
     }
 
@@ -189,7 +199,7 @@ export default function DashboardPage() {
              <div style={{ padding: '3rem', textAlign: 'center' }}>
                <CheckCircle size={48} color="var(--success-color)" style={{ margin: '0 auto 1rem' }} />
                <h3 style={{ fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: 'bold' }}>Fila Limpa!</h3>
-               <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato aguardando nesta fase e com essas condições.</p>
+               <p style={{ color: 'var(--text-muted)' }}>Nenhum candidato nesta fase cumpre os critérios da regra de banco.</p>
              </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -212,7 +222,7 @@ export default function DashboardPage() {
                     <tr key={c.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '1rem 0.75rem' }}>
                         <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{c.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Status: {c.status}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Status Kanban: {c.status}</div>
                       </td>
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-main)' }}>{c.roleName}</td>
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>{c.unitName}</td>
