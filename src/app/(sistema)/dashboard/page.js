@@ -40,38 +40,43 @@ export default function DashboardPage() {
       const novoFunil = { entrevistas: [], documentacao: [], exames: [], prontos: [] };
 
       cands.forEach(c => {
+        // Ignora os que já terminaram o fluxo
         if (['Concluído', 'Cancelado', 'Reprovado'].includes(c.status)) return;
-        if (c.process_type === 'Promoção' && c.status === 'Aguardando Liderança') return; 
+        
+        // Isola apenas os candidatos de Recrutamento e Admissão (Ignora Promoções neste quadro)
+        if (c.process_type === 'Promoção') return; 
 
+        // Enriquecimento de Dados
         c.roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
         c.unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'N/A';
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
 
-        // LÓGICA DE TEMPO: Usa a data de alteração do status (Data da Solicitação) por padrão
+        // LÓGICA DE TEMPO: Usa a data da última movimentação (Data da Solicitação) por padrão
         let dataBase = new Date(c.updated_at || c.created_at);
         dataBase.setHours(0, 0, 0, 0);
 
-        // REGRA ESPECÍFICA: Se for Entrevista, usa a Data do Agendamento (interview_date/scheduled_date)
-        if (['Agendado', 'Reagendado'].includes(c.status) && c.interview_date) {
-          dataBase = new Date(c.interview_date);
+        // REGRA ESPECÍFICA DE TEMPO PARA ENTREVISTAS: Usa a data do Agendamento (se existir)
+        if (['Cadastrado', 'Agendado', 'Reagendado'].includes(c.status) && (c.interview_date || c.scheduled_date)) {
+          dataBase = new Date(c.interview_date || c.scheduled_date);
           dataBase.setHours(0, 0, 0, 0);
         }
 
         let diffDias = Math.floor((hoje - dataBase) / (1000 * 60 * 60 * 24));
         c.tempoParado = diffDias > 0 ? diffDias : 0; 
 
-        // DISTRIBUIÇÃO NOS 4 BLOCOS
+        // DISTRIBUIÇÃO EXATA CONFORME REGRAS DO PIPELINE DE ADMISSÃO E AGENDAMENTOS
         if (['Cadastrado', 'Agendado', 'Reagendado'].includes(c.status)) {
-          novoFunil.entrevistas.push(c);
-        } else if (['Aprovado', 'Em Análise', 'Pendente Documentação'].includes(c.status)) {
-          novoFunil.documentacao.push(c);
-        } else if (['Em Análise do Médico', 'Aprovado com Ressalva', 'Aprovado pelo Médico'].includes(c.status)) {
-          novoFunil.exames.push(c);
-        } else if (['Pré-Admissão (Pronto)', 'Promoção (Em Análise)'].includes(c.status)) {
-          novoFunil.prontos.push(c);
+          novoFunil.entrevistas.push(c); // 1. Agendamentos
+        } else if (['Pendente Documentação'].includes(c.status)) {
+          novoFunil.documentacao.push(c); // 2. Bloco 1 da Admissão
+        } else if (['Em Análise do Médico', 'Aprovado com Ressalva', 'Aprovado', 'Aprovado pelo Médico'].includes(c.status)) {
+          novoFunil.exames.push(c); // 3. Bloco 2 da Admissão
+        } else if (['Pré-Admissão (Pronto)'].includes(c.status)) {
+          novoFunil.prontos.push(c); // 4. Bloco 3 da Admissão
         }
       });
 
+      // Ordena quem está há mais tempo parado no topo da lista
       Object.keys(novoFunil).forEach(key => {
         novoFunil[key].sort((a, b) => b.tempoParado - a.tempoParado);
       });
@@ -104,10 +109,10 @@ export default function DashboardPage() {
 
     let title = ''; let list = []; let icon = null;
     switch(modalStage) {
-      case 'entrevistas': title = '1. Entrevistas (Tela de Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
-      case 'documentacao': title = '2. Documentação (1º Bloco da Admissão)'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
-      case 'exames': title = '3. Exames Médicos (2º Bloco da Admissão)'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
-      case 'prontos': title = '4. Prontos pra Admitir (3º Bloco)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
+      case 'entrevistas': title = '1. Entrevistas (Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
+      case 'documentacao': title = '2. Documentação (Bloco 1 do Pipeline)'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
+      case 'exames': title = '3. Exames Médicos (Bloco 2 do Pipeline)'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
+      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3 do Pipeline)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
     }
 
     return (
@@ -125,7 +130,7 @@ export default function DashboardPage() {
           {modalStage === 'entrevistas' && entrevistasAtrasadas.length > 0 && (
             <div style={{ marginBottom: '2rem', border: '1px solid var(--danger-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <AlertTriangle size={20} /> Alerta: {entrevistasAtrasadas.length} Candidato(s) parado(s) há mais de 2 dias na entrevista
+                <AlertTriangle size={20} /> Alerta: {entrevistasAtrasadas.length} Candidato(s) parado(s) há mais de 2 dias
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 <div>
@@ -195,7 +200,6 @@ export default function DashboardPage() {
     );
   };
 
-  // Prepara os dados para o gráfico de barras
   const stages = [
     { id: 'entrevistas', label: '1. Entrevistas', count: funil.entrevistas.length, color: '#3b82f6', icon: <Users size={16} /> },
     { id: 'documentacao', label: '2. Documentação', count: funil.documentacao.length, color: '#f59e0b', icon: <FileText size={16} /> },
@@ -203,7 +207,6 @@ export default function DashboardPage() {
     { id: 'prontos', label: '4. Prontos p/ Admitir', count: funil.prontos.length, color: '#10b981', icon: <CheckCircle size={16} /> }
   ];
   
-  // Define o 100% da barra como o maior número de candidatos em uma etapa
   const maxCount = Math.max(...stages.map(s => s.count), 1);
 
   return (
@@ -214,36 +217,32 @@ export default function DashboardPage() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhamento centralizado de Recrutamento & Seleção.</p>
       </div>
 
-      {/* BLOCO ÚNICO E COMPACTO: FUNIL DE PROCESSOS */}
+      {/* BLOCO ÚNICO E COMPACTO: FUNIL DE PROCESSOS EM ANDAMENTO */}
       <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)', maxWidth: '900px' }}>
         <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
-          <BarChart3 size={24} color="var(--saritur-orange)" /> Processos em Andamento
+          <BarChart3 size={24} color="var(--saritur-orange)" /> Funil de Recrutamento (Em Andamento)
         </h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {stages.map(stage => (
             <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               
-              {/* Rótulo da Etapa */}
               <div style={{ width: '200px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-muted)' }}>
                 <span style={{ color: stage.color }}>{stage.icon}</span> {stage.label}
               </div>
               
-              {/* Barra do Gráfico */}
               <div 
                 style={{ flex: 1, backgroundColor: 'var(--bg-color)', borderRadius: '8px', height: '24px', overflow: 'hidden', cursor: 'pointer', border: '1px solid var(--border-color)' }}
                 onClick={() => setModalStage(stage.id)}
-                title="Clique para ver os candidatos"
+                title="Clique para visualizar os candidatos"
               >
                 <div style={{ width: `${(stage.count / maxCount) * 100}%`, backgroundColor: stage.color, height: '100%', transition: 'width 1s ease-in-out' }}></div>
               </div>
               
-              {/* Número Total */}
               <div style={{ width: '40px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--text-main)' }}>
                 {stage.count}
               </div>
               
-              {/* Botão Visualizar */}
               <button onClick={() => setModalStage(stage.id)} className="btn-secondary" style={{ padding: '0.4rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Eye size={14} /> Ver
               </button>
@@ -252,7 +251,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* BLOCO 2: HISTÓRICO FUTURO */}
+      {/* BLOCO 2: HISTÓRICO / PROCESSOS CONCLUÍDOS */}
       <div style={{ opacity: '0.5', maxWidth: '900px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderBottom: '2px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1.5rem' }}>
           <TrendingUp size={24} color="var(--success-color)" />
