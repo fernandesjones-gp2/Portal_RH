@@ -54,33 +54,37 @@ export default function DashboardPage() {
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
 
         // ----------------------------------------------------------------------
-        // MAPEAMENTO EXATO DOS BLOCOS DO PIPELINE DE ADMISSÃO E AGENDAMENTOS
+        // MAPEAMENTO ESTRITO DOS BLOCOS
         // ----------------------------------------------------------------------
         const isEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
         const isBloco1 = ['1. Em Andamento', 'Em Andamento', 'Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'].includes(st);
         const isBloco2 = ['2. Pré-Admissão', 'Pré-Admissão', 'Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico', 'Aprovado com Ressalva'].includes(st);
         const isBloco3 = ['3. Prontos para Admitir', 'Pronto para Admitir', 'Pré-Admissão (Pronto)', 'Aprovado pelo Médico'].includes(st);
+        const isPipelineAdmissao = isBloco1 || isBloco2 || isBloco3;
 
         let bucket = null;
 
         if (isEntrevista) {
           bucket = 'entrevistas';
-        } else if (isBloco1) {
-          bucket = 'documentacao'; // Pega todos do Bloco 1 independente do status interno
         } else if (isBloco3) {
-          bucket = 'prontos'; // Pega todos do Bloco 3
+          bucket = 'prontos'; // REGRA 4: Todos do Bloco 3
         } else if (isBloco2) {
-          // REGRA DE OURO DO BLOCO 2: Somente se o Exame for Pendente ou Solicitado
-          const examSt = String(c.exam_status || c.medical_status || c.status_exame || c.exame_status || '').trim().toLowerCase();
-          const mainStLower = st.toLowerCase();
-          
-          const isPendenteOuSolicitado = 
-            examSt === 'pendente' || examSt === 'solicitado' || 
-            mainStLower === 'pendente' || mainStLower === 'solicitado' ||
-            mainStLower.includes('pendente') || mainStLower.includes('solicitado');
-
-          if (isPendenteOuSolicitado) {
+          // REGRA 3: Somente do Bloco 2 se o Exame for Pendente/Solicitado
+          const examSt = String(c.exam_status || c.medical_status || c.status_exame || '').trim().toLowerCase();
+          const isExamPending = examSt === 'pendente' || examSt.includes('solicitad') || st.toLowerCase().includes('pendente exame') || st.toLowerCase().includes('aguardando exame');
+          if (isExamPending) {
             bucket = 'exames';
+          }
+        } 
+        
+        // REGRA 2: Todos no Pipeline com Documentação Pendente/Solicitada
+        if (!bucket && isPipelineAdmissao) {
+          const docSt = String(c.doc_status || c.document_status || c.status_documentacao || '').trim().toLowerCase();
+          const isDocPending = docSt === 'pendente' || docSt.includes('solicitad') || st.toLowerCase().includes('pendente documentação') || st.toLowerCase().includes('aguardando documentação') || isBloco1; 
+          // Mantive 'isBloco1' como fallback seguro caso o usuário não tenha preenchido a tag doc_status mas o candidato já esteja no bloco
+          
+          if (isDocPending) {
+            bucket = 'documentacao';
           }
         }
 
@@ -130,7 +134,7 @@ export default function DashboardPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
         <Activity size={48} color="var(--saritur-orange)" style={{ animation: 'spin 2s linear infinite', marginBottom: '1rem' }} />
-        <p>A mapear blocos e calcular métricas...</p>
+        <p>Construindo painel visual...</p>
       </div>
     );
   }
@@ -140,10 +144,10 @@ export default function DashboardPage() {
 
     let title = ''; let list = []; let icon = null;
     switch(modalStage) {
-      case 'entrevistas': title = '1. Entrevistas (Tela de Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
-      case 'documentacao': title = '2. Documentação (Bloco 1. Em Andamento)'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
-      case 'exames': title = '3. Exames Médicos (Bloco 2. Pré-Admissão)'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
-      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3. Prontos)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
+      case 'entrevistas': title = '1. Entrevistas (Agendamentos)'; list = funil.entrevistas; icon = <Users color="#3b82f6" />; break;
+      case 'documentacao': title = '2. Documentação Pendente ou Solicitada'; list = funil.documentacao; icon = <FileText color="#f59e0b" />; break;
+      case 'exames': title = '3. Exames Médicos Pendentes/Solicitados'; list = funil.exames; icon = <Activity color="#8b5cf6" />; break;
+      case 'prontos': title = '4. Prontos pra Admitir (Bloco 3 do Pipeline)'; list = funil.prontos; icon = <CheckCircle color="#10b981" />; break;
     }
 
     return (
@@ -199,7 +203,11 @@ export default function DashboardPage() {
                     <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>Função</th>
                     <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>Unidade</th>
                     <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>Responsável</th>
-                    <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>Tempo Parado</th>
+                    
+                    {/* ESCONDE A COLUNA DE TEMPO PARADO SE FOR 'PRONTOS' */}
+                    {modalStage !== 'prontos' && (
+                      <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>Tempo Parado</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -212,14 +220,18 @@ export default function DashboardPage() {
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-main)' }}>{c.roleName}</td>
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>{c.unitName}</td>
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>{c.respName}</td>
-                      <td style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
-                        <span style={{ 
-                          backgroundColor: modalStage === 'entrevistas' && c.tempoParado > 2 ? 'var(--danger-color)' : (c.tempoParado > 0 ? 'var(--saritur-orange)' : 'var(--success-color)'), 
-                          color: 'white', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' 
-                        }}>
-                          {c.tempoParado} dia(s)
-                        </span>
-                      </td>
+                      
+                      {/* ESCONDE O DADO DO TEMPO PARADO SE FOR 'PRONTOS' */}
+                      {modalStage !== 'prontos' && (
+                        <td style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
+                          <span style={{ 
+                            backgroundColor: modalStage === 'entrevistas' && c.tempoParado > 2 ? 'var(--danger-color)' : (c.tempoParado > 0 ? 'var(--saritur-orange)' : 'var(--success-color)'), 
+                            color: 'white', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' 
+                          }}>
+                            {c.tempoParado} dia(s)
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
