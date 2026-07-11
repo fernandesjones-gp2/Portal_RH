@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Users, FileText, Activity, CheckCircle, SearchX, Eye, X, AlertTriangle, BarChart3, TrendingUp } from 'lucide-react';
+import { Users, FileText, Activity, CheckCircle, SearchX, Eye, X, AlertTriangle, BarChart3, TrendingUp, BarChart, Award } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -11,6 +11,13 @@ export default function DashboardPage() {
     documentacao: [],
     exames: [],
     prontos: []
+  });
+
+  // Novo estado para armazenar os dados do histórico e ranking
+  const [historyStats, setHistoryStats] = useState({
+    total: 0,
+    monthly: [],
+    ranking: []
   });
 
   const [modalStage, setModalStage] = useState(null); 
@@ -38,17 +45,46 @@ export default function DashboardPage() {
       hoje.setHours(0, 0, 0, 0);
 
       const novoFunil = { entrevistas: [], documentacao: [], exames: [], prontos: [] };
+      
+      // Variáveis para o Histórico e Ranking
+      const monthlyMap = {};
+      const psychoMap = {};
+      let totalAtendimentos = 0;
 
       cands.forEach(c => {
         const st = c.status ? c.status.trim() : '';
 
-        // 1. IGNORA FINALIZADOS, CANCELADOS E REPROVADOS
+        // ======================================================================
+        // 1. PROCESSAMENTO DO HISTÓRICO (Antes de filtrar os concluídos)
+        // ======================================================================
+        // Considera Admissões, Readmissões e também Promoções para o volume global de trabalho da equipe
+        let dataAtendimento = c.interview_date || c.created_at; 
+        if (dataAtendimento) {
+          const d = new Date(dataAtendimento);
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const year = d.getFullYear();
+          const key = `${year}-${month}`;
+          const label = `${month}/${year}`;
+
+          if (!monthlyMap[key]) monthlyMap[key] = { key, label, count: 0 };
+          monthlyMap[key].count++;
+
+          const respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sem Responsável';
+          if (respName !== 'Sistema') {
+            if (!psychoMap[respName]) psychoMap[respName] = { name: respName, count: 0 };
+            psychoMap[respName].count++;
+          }
+          
+          totalAtendimentos++;
+        }
+
+        // ======================================================================
+        // 2. FILTRAGEM PARA O FUNIL (Apenas processos ativos)
+        // ======================================================================
         if (['Concluído', 'Cancelado', 'Reprovado', 'Reprovado Documentação', 'Reprovado pelo Médico', 'Inapto Médico', 'Desistência', 'Falta'].includes(st)) return;
-        
-        // 2. FILTRO GLOBAL DA TELA: Apenas Admissão e Readmissão
         if (!['Admissão', 'Readmissão'].includes(c.process_type)) return; 
 
-        // Enriquecimento de Dados
+        // Enriquecimento de Dados para a Tabela de Visualização
         c.roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
         c.unitName = units.find(u => u.id === c.unit_id)?.name || c.unit_name || 'N/A';
         c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
@@ -58,12 +94,9 @@ export default function DashboardPage() {
         const isBloco1 = ['1. Em Andamento', 'Em Andamento', 'Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'].includes(st);
         const isBloco2 = ['2. Pré-Admissão', 'Pré-Admissão', 'Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico', 'Aprovado com Ressalva'].includes(st);
         const isBloco3 = ['3. Prontos para Admitir', 'Pronto para Admitir', 'Pré-Admissão (Pronto)', 'Aprovado pelo Médico'].includes(st);
+        const isPipelineAdmissao = !isEntrevista; 
 
         let bucket = null;
-
-        // ======================================================================
-        // APLICAÇÃO ESTRITA DAS 4 REGRAS SOLICITADAS
-        // ======================================================================
 
         // REGRA 1: Entrevistas (Tela de Agendamentos)
         if (isEntrevista) {
@@ -82,30 +115,22 @@ export default function DashboardPage() {
         } 
         // REGRA 3: Exames Médicos (SOMENTE Bloco 2 E regras específicas)
         else if (isBloco2) {
-          // Validação dos 3 campos do banco
           const isMedicalResultNull = !c.medical_result_date || String(c.medical_result_date).trim() === '' || String(c.medical_result_date).trim() === 'null';
-          
           const analysisStatus = String(c.analysis_status || '').trim().toLowerCase();
           const isAnalysisAprovado = analysisStatus === 'aprovado';
-
-          // Checa as duas grafias possíveis para prevenir erros de banco (docs_status ou doc_status)
           const docsStatus = String(c.docs_status || c.doc_status || c.document_status || '').trim().toLowerCase();
           const isDocsRecebida = docsStatus === 'recebida' || docsStatus === 'recebido';
 
-          // Só entra no funil se as 3 regras baterem juntas
           if (isMedicalResultNull && isAnalysisAprovado && isDocsRecebida) {
             bucket = 'exames';
           }
         }
 
-        // ======================================================================
-        // CÁLCULO DE TEMPO PARADO (Caso o candidato tenha entrado num bucket)
-        // ======================================================================
+        // CÁLCULO DE TEMPO PARADO 
         if (bucket) {
           let dataBase = new Date(c.updated_at || c.created_at);
           dataBase.setHours(0, 0, 0, 0);
 
-          // Se for Entrevista, calcula (Hoje - data da entrevista)
           if (bucket === 'entrevistas' && (c.interview_date || c.scheduled_date)) {
             dataBase = new Date(c.interview_date || c.scheduled_date);
             dataBase.setHours(0, 0, 0, 0);
@@ -123,7 +148,16 @@ export default function DashboardPage() {
         novoFunil[key].sort((a, b) => b.tempoParado - a.tempoParado);
       });
 
+      // Prepara os Arrays de Histórico (Ordenando e Limitando)
+      const monthlyArray = Object.values(monthlyMap)
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .slice(-12); // Pega os últimos 12 meses para o gráfico de colunas
+
+      const rankingArray = Object.values(psychoMap)
+        .sort((a, b) => b.count - a.count); // Do maior para o menor
+
       setFunil(novoFunil);
+      setHistoryStats({ total: totalAtendimentos, monthly: monthlyArray, ranking: rankingArray });
 
     } catch (error) {
       console.error("Erro ao montar dashboard:", error);
@@ -141,7 +175,7 @@ export default function DashboardPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
         <Activity size={48} color="var(--saritur-orange)" style={{ animation: 'spin 2s linear infinite', marginBottom: '1rem' }} />
-        <p>A validar regras do banco de dados...</p>
+        <p>A compilar os dados gerenciais...</p>
       </div>
     );
   }
@@ -168,7 +202,6 @@ export default function DashboardPage() {
             <button onClick={() => setModalStage(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><X size={28} color="var(--text-muted)" /></button>
           </div>
 
-          {/* PAINEL EXTRA: ALERTAS PARA ENTREVISTAS > 2 DIAS */}
           {modalStage === 'entrevistas' && entrevistasAtrasadas.length > 0 && (
             <div style={{ marginBottom: '2rem', border: '1px solid var(--danger-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -210,11 +243,7 @@ export default function DashboardPage() {
                     <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>Função</th>
                     <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>Unidade</th>
                     <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>Responsável</th>
-                    
-                    {/* ESCONDE A COLUNA DE TEMPO PARADO SE FOR 'PRONTOS' */}
-                    {modalStage !== 'prontos' && (
-                      <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>Tempo Parado</th>
-                    )}
+                    {modalStage !== 'prontos' && ( <th style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>Tempo Parado</th> )}
                   </tr>
                 </thead>
                 <tbody>
@@ -227,8 +256,6 @@ export default function DashboardPage() {
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-main)' }}>{c.roleName}</td>
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>{c.unitName}</td>
                       <td style={{ padding: '1rem 0.75rem', color: 'var(--text-muted)' }}>{c.respName}</td>
-                      
-                      {/* ESCONDE O DADO DO TEMPO PARADO SE FOR 'PRONTOS' */}
                       {modalStage !== 'prontos' && (
                         <td style={{ padding: '1rem 0.75rem', textAlign: 'center' }}>
                           <span style={{ 
@@ -258,6 +285,10 @@ export default function DashboardPage() {
   ];
   
   const maxCount = Math.max(...stages.map(s => s.count), 1);
+  
+  // Limites para os gráficos de Histórico
+  const maxMonthCount = Math.max(...historyStats.monthly.map(m => m.count), 1);
+  const maxRankCount = Math.max(...historyStats.ranking.map(r => r.count), 1);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem', paddingBottom: '3rem' }}>
@@ -267,13 +298,13 @@ export default function DashboardPage() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Acompanhamento centralizado de Recrutamento & Seleção.</p>
       </div>
 
-      {/* BLOCO ÚNICO E COMPACTO: FUNIL DE PROCESSOS EM ANDAMENTO */}
-      <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)', maxWidth: '900px' }}>
+      {/* BLOCO 1: FUNIL DE PROCESSOS EM ANDAMENTO */}
+      <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
         <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)' }}>
           <BarChart3 size={24} color="var(--saritur-orange)" /> Processos em Andamento
         </h3>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '900px' }}>
           {stages.map(stage => (
             <div key={stage.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               
@@ -301,14 +332,76 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* BLOCO 2: HISTÓRICO / PROCESSOS CONCLUÍDOS */}
-      <div style={{ opacity: '0.5', maxWidth: '900px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderBottom: '2px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1.5rem' }}>
-          <TrendingUp size={24} color="var(--success-color)" />
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', textTransform: 'uppercase' }}>Processos Concluídos (Histórico)</h2>
+      {/* BLOCO 2: HISTÓRICO E RANKING DE ATENDIMENTOS */}
+      <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '2px solid var(--border-color)', paddingBottom: '1rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <TrendingUp size={24} color="var(--success-color)" /> Volume Global de Atendimentos
+          </h2>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Total Histórico</span>
+            <div style={{ fontSize: '1.75rem', fontWeight: '900', color: 'var(--text-main)', lineHeight: '1' }}>{historyStats.total}</div>
+          </div>
         </div>
-        <div style={{ padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-          <p style={{ color: 'var(--text-muted)' }}>Aguardando definição dos indicadores e métricas desta secção...</p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '3rem' }}>
+          
+          {/* GRÁFICO 1: COLUNAS (Volume Mensal) */}
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <BarChart size={18} color="var(--text-muted)"/> Evolução por Mês/Ano
+            </h3>
+            
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '220px', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)', overflowX: 'auto' }}>
+              {historyStats.monthly.length === 0 && <p style={{color: 'var(--text-muted)', fontSize: '0.85rem'}}>Nenhum dado mensal registrado.</p>}
+              
+              {historyStats.monthly.map(m => (
+                <div key={m.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: '40px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-main)' }}>{m.count}</span>
+                  <div 
+                    style={{ 
+                      width: '100%', maxWidth: '35px', backgroundColor: 'var(--saritur-orange)', 
+                      height: `${(m.count / maxMonthCount) * 160}px`, 
+                      borderRadius: '4px 4px 0 0', transition: 'height 1s ease-in-out' 
+                    }}
+                  ></div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px' }}>{m.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* GRÁFICO 2: BARRAS HORIZONTAIS (Ranking por Psicóloga) */}
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Award size={18} color="var(--saritur-yellow)"/> Ranking por Psicóloga
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+              {historyStats.ranking.length === 0 && <p style={{color: 'var(--text-muted)', fontSize: '0.85rem'}}>Nenhum responsável registrado.</p>}
+
+              {historyStats.ranking.map((r, index) => (
+                <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ width: '25px', fontWeight: 'bold', color: index < 3 ? 'var(--saritur-yellow)' : 'var(--text-muted)', fontSize: '0.9rem' }}>
+                    {index + 1}º
+                  </span>
+                  
+                  <div style={{ width: '120px', fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.name}>
+                    {r.name.split(' ')[0]} {r.name.split(' ')[1] ? r.name.split(' ')[1][0] + '.' : ''}
+                  </div>
+                  
+                  <div style={{ flex: 1, backgroundColor: 'var(--bg-color)', height: '12px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                    <div style={{ width: `${(r.count / maxRankCount) * 100}%`, backgroundColor: index === 0 ? '#10b981' : '#3b82f6', height: '100%', transition: 'width 1s ease-in-out' }}></div>
+                  </div>
+                  
+                  <div style={{ width: '35px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                    {r.count}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
       </div>
 
