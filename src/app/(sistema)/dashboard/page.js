@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const [funil, setFunil] = useState({ entrevistas: [], documentacao: [], exames: [], prontos: [] });
-  const [historyStats, setHistoryStats] = useState({ total: 0, monthly: [], ranking: [] });
+  const [historyStats, setHistoryStats] = useState({ total: 0, monthly: [], ranking: [], matrizMeses: [], matrizLinhas: [] });
   const [kpis, setKpis] = useState({
     indiceAprovacao: 0,
     aprovacaoPorPsicologo: [],
@@ -43,6 +43,7 @@ export default function DashboardPage() {
   const [modalParados, setModalParados] = useState(false);
   const [hoverCard, setHoverCard] = useState(null);
   const [abaReprovados, setAbaReprovados] = useState('psicologo');
+  const [viewVolume, setViewVolume] = useState('mensal');
 
   useEffect(() => { fetchDashboardData(); }, []);
 
@@ -67,6 +68,7 @@ export default function DashboardPage() {
       const novoFunil   = { entrevistas: [], documentacao: [], exames: [], prontos: [] };
       const monthlyMap  = {};
       const psychoMap   = {};
+      const psicoMesMap = {};
       let totalAtendimentos = 0;
 
       let totalEntrevistados = 0, totalAprovados = 0;
@@ -93,6 +95,13 @@ export default function DashboardPage() {
           if (c.respName !== 'Sistema') {
             if (!psychoMap[c.respName]) psychoMap[c.respName] = { name: c.respName, count: 0 };
             psychoMap[c.respName].count++;
+            // Matriz psicólogo × mês (usa interview_date como referência)
+            if (c.interview_date) {
+              const di = new Date(c.interview_date);
+              const mk = `${di.getFullYear()}-${String(di.getMonth() + 1).padStart(2, '0')}`;
+              if (!psicoMesMap[c.respName]) psicoMesMap[c.respName] = {};
+              psicoMesMap[c.respName][mk] = (psicoMesMap[c.respName][mk] || 0) + 1;
+            }
           }
           totalAtendimentos++;
         }
@@ -129,26 +138,24 @@ export default function DashboardPage() {
         if (TERMINAL.includes(st)) return;
         if (!['Admissão', 'Readmissão'].includes(c.process_type)) return;
 
-        const isEntrevista = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
-        const isBloco1 = ['1. Em Andamento', 'Em Andamento', 'Aprovado', 'Pendente Documentação', 'Em Análise', 'Aguardando Documentação'].includes(st);
-        const isBloco2 = ['2. Pré-Admissão', 'Pré-Admissão', 'Aguardando Exame', 'Pendente Exame', 'Em Análise do Médico', 'Aprovado com Ressalva'].includes(st);
-        const isBloco3 = ['3. Prontos para Admitir', 'Pronto para Admitir', 'Pré-Admissão (Pronto)', 'Aprovado pelo Médico'].includes(st);
+        // Condições espelhadas dos Blocos 1, 2 e 3 da tela de pré-admissão
+        const isEntrevista  = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
+        const isPendente    = st === 'Pré-Admissão (Pendente)';
+        const isPronto      = st === 'Pré-Admissão (Pronto)';
+        const analAprovado  = c.analysis_status === 'Aprovado';
+        const docsRecebida  = String(c.docs_status || '').trim() === 'Recebida';
+        const docsRecvNull  = !c.docs_receive_date  || String(c.docs_receive_date).trim()  === '' || String(c.docs_receive_date).trim()  === 'null';
+        const medResultNull = !c.medical_result_date || String(c.medical_result_date).trim() === '' || String(c.medical_result_date).trim() === 'null';
 
         let bucket = null;
         if (isEntrevista) {
           bucket = 'entrevistas';
-        } else if (isBloco3) {
+        } else if (isPronto) {
           bucket = 'prontos';
-        } else if (isBloco1) {
-          const docsNull = !c.docs_receive_date || String(c.docs_receive_date).trim() === '' || String(c.docs_receive_date).trim() === 'null';
-          if (docsNull) bucket = 'documentacao';
-        } else if (isBloco2) {
-          const medNull   = !c.medical_result_date || String(c.medical_result_date).trim() === '' || String(c.medical_result_date).trim() === 'null';
-          const analSt    = String(c.analysis_status || '').trim().toLowerCase();
-          const docsSt    = String(c.docs_status || c.doc_status || c.document_status || '').trim().toLowerCase();
-          if (medNull && analSt === 'aprovado' && (docsSt === 'recebida' || docsSt === 'recebido')) {
-            bucket = 'exames';
-          }
+        } else if (isPendente && !(analAprovado && docsRecebida) && docsRecvNull) {
+          bucket = 'documentacao';
+        } else if (isPendente && analAprovado && docsRecebida && medResultNull) {
+          bucket = 'exames';
         }
 
         if (bucket) {
@@ -174,6 +181,21 @@ export default function DashboardPage() {
       const monthlyArray = Object.values(monthlyMap).sort((a, b) => a.key.localeCompare(b.key)).slice(-12);
       const rankingArray = Object.values(psychoMap).sort((a, b) => b.count - a.count);
 
+      // Matriz psicólogo × mês — últimos 6 meses
+      const refDate = new Date();
+      const ultimos6Meses = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(refDate.getFullYear(), refDate.getMonth() - 5 + i, 1);
+        return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` };
+      });
+      const matrizLinhas = Object.entries(psicoMesMap)
+        .map(([name, mesCounts]) => ({
+          name,
+          counts: ultimos6Meses.map(m => mesCounts[m.key] || 0),
+          total:  ultimos6Meses.reduce((s, m) => s + (mesCounts[m.key] || 0), 0),
+        }))
+        .filter(r => r.total > 0)
+        .sort((a, b) => b.total - a.total);
+
       const leadtimeMedio = leadtimeValues.length > 0
         ? Math.round(leadtimeValues.reduce((s, v) => s + v, 0) / leadtimeValues.length)
         : 0;
@@ -187,7 +209,7 @@ export default function DashboardPage() {
         .sort((a, b) => a.media - b.media);
 
       setFunil(novoFunil);
-      setHistoryStats({ total: totalAtendimentos, monthly: monthlyArray, ranking: rankingArray });
+      setHistoryStats({ total: totalAtendimentos, monthly: monthlyArray, ranking: rankingArray, matrizMeses: ultimos6Meses, matrizLinhas });
       setKpis({ indiceAprovacao: totalEntrevistados > 0 ? Math.round((totalAprovados / totalEntrevistados) * 100) : 0, aprovacaoPorPsicologo, leadtimeMedio, leadtimePorPsicologo });
       setRawCands(cands);
 
@@ -552,52 +574,131 @@ export default function DashboardPage() {
 
       {/* ── VOLUME GLOBAL DE ATENDIMENTOS ─────────────────────────────────── */}
       <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '2px solid var(--border-color)', paddingBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '2px solid var(--border-color)', paddingBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <TrendingUp size={24} color="var(--success-color)" /> Volume Global de Atendimentos
           </h2>
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Total Histórico</span>
-            <div style={{ fontSize: '1.75rem', fontWeight: '900', color: 'var(--text-main)', lineHeight: '1' }}>{historyStats.total}</div>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '3rem' }}>
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <BarChart size={18} color="var(--text-muted)" /> Evolução por Mês/Ano
-            </h3>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '220px', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)', overflowX: 'auto' }}>
-              {historyStats.monthly.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado registrado.</p>}
-              {historyStats.monthly.map(m => (
-                <div key={m.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: '40px' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-main)' }}>{m.count}</span>
-                  <div style={{ width: '100%', maxWidth: '35px', backgroundColor: 'var(--saritur-orange)', height: `${(m.count / maxMonthCount) * 160}px`, borderRadius: '4px 4px 0 0', transition: 'height 1s ease-in-out' }}></div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px' }}>{m.label}</span>
-                </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {/* Toggle de visão */}
+            <div style={{ display: 'flex', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+              {[{ id: 'mensal', label: 'Mensal' }, { id: 'matriz', label: 'Por Psicólogo/Mês' }].map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setViewVolume(v.id)}
+                  style={{
+                    padding: '0.35rem 0.85rem', border: 'none', cursor: 'pointer', fontSize: '0.82rem',
+                    backgroundColor: viewVolume === v.id ? 'var(--saritur-orange)' : 'var(--bg-color)',
+                    color: viewVolume === v.id ? 'white' : 'var(--text-muted)',
+                    fontWeight: viewVolume === v.id ? '700' : '400',
+                  }}
+                >
+                  {v.label}
+                </button>
               ))}
             </div>
-          </div>
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Award size={18} color="#f59e0b" /> Ranking por Psicólogo
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-              {historyStats.ranking.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum responsável registrado.</p>}
-              {historyStats.ranking.map((r, index) => (
-                <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ width: '25px', fontWeight: 'bold', color: index < 3 ? '#f59e0b' : 'var(--text-muted)', fontSize: '0.9rem' }}>{index + 1}º</span>
-                  <div style={{ width: '120px', fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.name}>
-                    {r.name.split(' ')[0]} {r.name.split(' ')[1] ? r.name.split(' ')[1][0] + '.' : ''}
-                  </div>
-                  <div style={{ flex: 1, backgroundColor: 'var(--bg-color)', height: '12px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                    <div style={{ width: `${(r.count / maxRankCount) * 100}%`, backgroundColor: index === 0 ? '#10b981' : '#3b82f6', height: '100%', transition: 'width 1s ease-in-out' }}></div>
-                  </div>
-                  <div style={{ width: '35px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--text-main)' }}>{r.count}</div>
-                </div>
-              ))}
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Total Histórico</span>
+              <div style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--text-main)', lineHeight: '1' }}>{historyStats.total}</div>
             </div>
           </div>
         </div>
+
+        {/* ── Visão A: Mensal + Ranking ── */}
+        {viewVolume === 'mensal' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '3rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <BarChart size={18} color="var(--text-muted)" /> Evolução por Mês/Ano
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '220px', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)', overflowX: 'auto' }}>
+                {historyStats.monthly.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado registrado.</p>}
+                {historyStats.monthly.map(m => (
+                  <div key={m.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: '40px' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-main)' }}>{m.count}</span>
+                    <div style={{ width: '100%', maxWidth: '35px', backgroundColor: 'var(--saritur-orange)', height: `${(m.count / maxMonthCount) * 160}px`, borderRadius: '4px 4px 0 0', transition: 'height 1s ease-in-out' }}></div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '8px' }}>{m.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Award size={18} color="#f59e0b" /> Ranking por Psicólogo
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                {historyStats.ranking.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum responsável registrado.</p>}
+                {historyStats.ranking.map((r, index) => (
+                  <div key={r.name} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <span style={{ width: '25px', fontWeight: 'bold', color: index < 3 ? '#f59e0b' : 'var(--text-muted)', fontSize: '0.9rem' }}>{index + 1}º</span>
+                    <div style={{ width: '120px', fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.name}>
+                      {r.name.split(' ')[0]} {r.name.split(' ')[1] ? r.name.split(' ')[1][0] + '.' : ''}
+                    </div>
+                    <div style={{ flex: 1, backgroundColor: 'var(--bg-color)', height: '12px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                      <div style={{ width: `${(r.count / maxRankCount) * 100}%`, backgroundColor: index === 0 ? '#10b981' : '#3b82f6', height: '100%', transition: 'width 1s ease-in-out' }}></div>
+                    </div>
+                    <div style={{ width: '35px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--text-main)' }}>{r.count}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Visão B: Matriz Psicólogo × Mês ── */}
+        {viewVolume === 'matriz' && (
+          <div style={{ overflowX: 'auto' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.25rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Users size={18} color="var(--text-muted)" /> Volume por Psicólogo / Mês (últimos 6 meses)
+            </h3>
+            {historyStats.matrizLinhas.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado registrado.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-color)', borderBottom: '2px solid var(--border-color)' }}>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: '700', minWidth: '160px' }}>Psicólogo</th>
+                    {historyStats.matrizMeses.map(m => (
+                      <th key={m.key} style={{ padding: '0.75rem 0.5rem', textAlign: 'center', color: 'var(--text-muted)', fontWeight: '700', minWidth: '80px' }}>{m.label}</th>
+                    ))}
+                    <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', color: 'var(--text-main)', fontWeight: '700', minWidth: '70px', borderLeft: '2px solid var(--border-color)' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyStats.matrizLinhas.map((linha, i) => (
+                    <tr key={linha.name} style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: '600', color: 'var(--text-main)' }}>
+                        {linha.name.split(' ').slice(0, 2).join(' ')}
+                      </td>
+                      {linha.counts.map((count, ci) => (
+                        <td key={ci} style={{ padding: '0.75rem 0.5rem', textAlign: 'center', color: count > 0 ? 'var(--text-main)' : 'var(--text-muted)', fontWeight: count > 0 ? '600' : '400' }}>
+                          {count > 0 ? count : '—'}
+                        </td>
+                      ))}
+                      <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: '900', color: 'var(--saritur-orange)', borderLeft: '2px solid var(--border-color)' }}>
+                        {linha.total}
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Linha de totais */}
+                  <tr style={{ borderTop: '2px solid var(--border-color)', backgroundColor: 'var(--bg-color)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: 'var(--text-main)' }}>Total</td>
+                    {historyStats.matrizMeses.map((m, mi) => {
+                      const colTotal = historyStats.matrizLinhas.reduce((s, l) => s + l.counts[mi], 0);
+                      return (
+                        <td key={m.key} style={{ padding: '0.75rem 0.5rem', textAlign: 'center', fontWeight: '700', color: 'var(--text-main)' }}>
+                          {colTotal > 0 ? colTotal : '—'}
+                        </td>
+                      );
+                    })}
+                    <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontWeight: '900', color: 'var(--text-main)', borderLeft: '2px solid var(--border-color)' }}>
+                      {historyStats.matrizLinhas.reduce((s, l) => s + l.total, 0)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── BLOCO 2: PROCESSOS CONCLUÍDOS ────────────────────────────────── */}
