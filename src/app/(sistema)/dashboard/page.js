@@ -281,16 +281,34 @@ export default function DashboardPage() {
   const totalPeriodo      = admitidosPeriodo.length + reprovadosPeriodo.length;
   const aprovadosIntervistaPeriodo = [...admitidosPeriodo, ...reprovadosPeriodo].filter(c => c.analysis_status === 'Aprovado').length;
 
+  // Histórico completo de reprovados/cancelados — sem filtro de período
+  const todosReprovados = rawCands.filter(c => TERMINAL_REP.includes(c.status) && ['Admissão','Readmissão'].includes(c.process_type));
+
+  const getEtapa = (c) => {
+    const st = c.status;
+    if (['Reprovado', 'Falta', 'Desistência'].includes(st)) return 'Entrevista';
+    if (st === 'Reprovado Documentação') return 'Documentação (Bloco 1)';
+    if (['Reprovado pelo Médico', 'Inapto Médico'].includes(st)) return 'Pré-Admissão (Bloco 2)';
+    if (st === 'Cancelado') {
+      const ok   = v => v && String(v).trim() !== '' && String(v).trim() !== 'null';
+      if (ok(c.medical_result_date)) return 'Pós concluído (Bloco 3)';
+      if (ok(c.docs_receive_date))   return 'Pré-Admissão (Bloco 2)';
+      if (c.interview_date)          return 'Documentação (Bloco 1)';
+      return 'Entrevista';
+    }
+    return st || 'Outro';
+  };
+
   const rankBy = (arr, key) => Object.entries(
     arr.reduce((acc, c) => { const k = c[key] || 'N/A'; acc[k] = (acc[k] || 0) + 1; return acc; }, {})
   ).sort((a, b) => b[1] - a[1]);
 
-  const rep_psicologo = rankBy(reprovadosPeriodo, 'responsible_name');
-  const rep_funcao    = rankBy(reprovadosPeriodo, 'job_role_name');
-  const rep_unidade   = rankBy(reprovadosPeriodo, 'unit_name');
-  const rep_motivo    = rankBy(reprovadosPeriodo, 'cancellation_reason_name').map(([k, v]) => [k === 'N/A' ? 'Sem motivo informado' : k, v]);
+  const rep_psicologo = rankBy(todosReprovados, 'responsible_name');
+  const rep_funcao    = rankBy(todosReprovados, 'job_role_name');
+  const rep_unidade   = rankBy(todosReprovados, 'unit_name');
+  const rep_motivo    = rankBy(todosReprovados, 'cancellation_reason_name').map(([k, v]) => [k === 'N/A' ? 'Sem motivo informado' : k, v]);
   const rep_etapa     = Object.entries(
-    reprovadosPeriodo.reduce((acc, c) => { const k = ETAPA_MAP[c.status] || c.status || 'Outro'; acc[k] = (acc[k] || 0) + 1; return acc; }, {})
+    todosReprovados.reduce((acc, c) => { const k = getEtapa(c); acc[k] = (acc[k] || 0) + 1; return acc; }, {})
   ).sort((a, b) => b[1] - a[1]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
@@ -927,23 +945,22 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {totalPeriodo === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center' }}>
-            <CheckCircle size={48} color="var(--text-muted)" style={{ margin: '0 auto 1rem' }} />
-            <h3 style={{ fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 'bold' }}>Sem dados para {MESES[filtroPeriodo.mes - 1]} / {filtroPeriodo.ano}</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Nenhum processo encerrado neste período.</p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
 
-            {/* Funil de conversão */}
+          {/* Funil de conversão — filtrado por período */}
+          {totalPeriodo === 0 ? (
+            <div style={{ padding: '1.5rem', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+              <CheckCircle size={32} color="var(--text-muted)" style={{ margin: '0 auto 0.5rem' }} />
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: '600' }}>Sem admissões em {MESES[filtroPeriodo.mes - 1]} / {filtroPeriodo.ano}</p>
+            </div>
+          ) : (
             <div>
               <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--text-main)' }}>Funil de Conversão — {MESES[filtroPeriodo.mes - 1]} {filtroPeriodo.ano}</h3>
               {(() => {
                 const items = [
-                  { label: 'Total de candidatos',       count: totalPeriodo,                 color: '#3b82f6' },
-                  { label: 'Aprovados na entrevista',   count: aprovadosIntervistaPeriodo,   color: '#f59e0b' },
-                  { label: 'Admitidos',                 count: admitidosPeriodo.length,       color: '#10b981' },
+                  { label: 'Total de candidatos',       count: totalPeriodo,               color: '#3b82f6' },
+                  { label: 'Aprovados na entrevista',   count: aprovadosIntervistaPeriodo, color: '#f59e0b' },
+                  { label: 'Admitidos',                 count: admitidosPeriodo.length,    color: '#10b981' },
                 ];
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '750px' }}>
@@ -972,58 +989,59 @@ export default function DashboardPage() {
                 );
               })()}
             </div>
+          )}
 
-            {/* Análise dos Reprovados */}
-            {reprovadosPeriodo.length > 0 && (
-              <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.25rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <AlertTriangle size={18} color="var(--danger-color)" /> Análise dos Reprovados / Cancelados ({reprovadosPeriodo.length})
-                </h3>
+          {/* Análise dos Reprovados / Cancelados — histórico completo */}
+          {todosReprovados.length > 0 && (
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.25rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertTriangle size={18} color="var(--danger-color)" /> Análise dos Reprovados / Cancelados
+                <span style={{ fontSize: '0.8rem', fontWeight: '400', color: 'var(--text-muted)' }}>— histórico: {todosReprovados.length}</span>
+              </h3>
 
-                {/* Tabs */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'psicologo', label: 'Por Psicólogo' },
-                    { id: 'funcao',    label: 'Por Função' },
-                    { id: 'unidade',   label: 'Por Unidade' },
-                    { id: 'etapa',     label: 'Por Etapa' },
-                    { id: 'motivo',    label: 'Por Motivo' },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setAbaReprovados(tab.id)}
-                      style={{
-                        padding: '0.4rem 1rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: abaReprovados === tab.id ? 'var(--saritur-orange)' : 'var(--bg-color)',
-                        color:           abaReprovados === tab.id ? 'white' : 'var(--text-muted)',
-                        fontWeight:      abaReprovados === tab.id ? '700' : '400',
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Conteúdo da aba */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '700px' }}>
-                  {tabAtiva.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado disponível.</p>
-                  ) : tabAtiva.map(([label, count]) => (
-                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <div style={{ width: '180px', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={label}>{label}</div>
-                      <div style={{ flex: 1, backgroundColor: 'var(--bg-color)', borderRadius: '6px', height: '18px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                        <div style={{ width: `${(count / maxTabVal) * 100}%`, backgroundColor: 'var(--danger-color)', height: '100%', opacity: 0.75, transition: 'width 0.8s ease-in-out' }}></div>
-                      </div>
-                      <div style={{ width: '30px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>{count}</div>
-                    </div>
-                  ))}
-                </div>
+              {/* Tabs */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'psicologo', label: 'Por Psicólogo' },
+                  { id: 'funcao',    label: 'Por Função' },
+                  { id: 'unidade',   label: 'Por Unidade' },
+                  { id: 'etapa',     label: 'Por Etapa' },
+                  { id: 'motivo',    label: 'Por Motivo' },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setAbaReprovados(tab.id)}
+                    style={{
+                      padding: '0.4rem 1rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: abaReprovados === tab.id ? 'var(--saritur-orange)' : 'var(--bg-color)',
+                      color:           abaReprovados === tab.id ? 'white' : 'var(--text-muted)',
+                      fontWeight:      abaReprovados === tab.id ? '700' : '400',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-            )}
 
-          </div>
-        )}
+              {/* Conteúdo da aba */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '700px' }}>
+                {tabAtiva.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado disponível.</p>
+                ) : tabAtiva.map(([label, count]) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div style={{ width: '210px', fontSize: '0.85rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={label}>{label}</div>
+                    <div style={{ flex: 1, backgroundColor: 'var(--bg-color)', borderRadius: '6px', height: '18px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                      <div style={{ width: `${(count / maxTabVal) * 100}%`, backgroundColor: 'var(--danger-color)', height: '100%', opacity: 0.75, transition: 'width 0.8s ease-in-out' }}></div>
+                    </div>
+                    <div style={{ width: '30px', textAlign: 'right', fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-main)' }}>{count}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
 
       {renderModalDetails()}
