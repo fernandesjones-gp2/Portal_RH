@@ -31,6 +31,9 @@ export default function DashboardPage() {
     aprovacaoPorPsicologo: [],
     leadtimeMedio: 0,
     leadtimePorPsicologo: [],
+    leadtimePorMes: [],
+    leadtimePorUnidade: [],
+    leadtimePorFuncao: [],
   });
   const [rawCands, setRawCands] = useState([]);
 
@@ -44,6 +47,8 @@ export default function DashboardPage() {
   const [hoverCard, setHoverCard] = useState(null);
   const [abaReprovados, setAbaReprovados] = useState('psicologo');
   const [viewVolume, setViewVolume] = useState('mensal');
+  const [viewLeadtime, setViewLeadtime] = useState('psicologo');
+  const [hoverLeadtime, setHoverLeadtime] = useState(null);
 
   useEffect(() => { fetchDashboardData(); }, []);
 
@@ -75,6 +80,9 @@ export default function DashboardPage() {
       const aprovacaoPorPsicoMap  = {};
       const leadtimeValues        = [];
       const leadtimePorPsicoMap   = {};
+      const leadtimeMensalMap     = {};
+      const leadtimeUnidadeMap    = {};
+      const leadtimeFuncaoMap     = {};
 
       cands.forEach(c => {
         const st = c.status ? c.status.trim() : '';
@@ -129,6 +137,23 @@ export default function DashboardPage() {
                 if (!leadtimePorPsicoMap[psico]) leadtimePorPsicoMap[psico] = { name: psico, sum: 0, count: 0 };
                 leadtimePorPsicoMap[psico].sum   += diff;
                 leadtimePorPsicoMap[psico].count += 1;
+                // por mês (referência: admission_date)
+                const admD   = new Date(c.admission_date);
+                const admKey = `${admD.getFullYear()}-${String(admD.getMonth() + 1).padStart(2, '0')}`;
+                const admLbl = `${String(admD.getMonth() + 1).padStart(2, '0')}/${admD.getFullYear()}`;
+                if (!leadtimeMensalMap[admKey]) leadtimeMensalMap[admKey] = { key: admKey, label: admLbl, sum: 0, count: 0 };
+                leadtimeMensalMap[admKey].sum   += diff;
+                leadtimeMensalMap[admKey].count += 1;
+                // por unidade
+                const unidade = c.unitName || 'N/A';
+                if (!leadtimeUnidadeMap[unidade]) leadtimeUnidadeMap[unidade] = { name: unidade, sum: 0, count: 0 };
+                leadtimeUnidadeMap[unidade].sum   += diff;
+                leadtimeUnidadeMap[unidade].count += 1;
+                // por função
+                const funcao = c.roleName || 'N/A';
+                if (!leadtimeFuncaoMap[funcao]) leadtimeFuncaoMap[funcao] = { name: funcao, sum: 0, count: 0 };
+                leadtimeFuncaoMap[funcao].sum   += diff;
+                leadtimeFuncaoMap[funcao].count += 1;
               }
             }
           }
@@ -208,9 +233,22 @@ export default function DashboardPage() {
         .map(p => ({ name: p.name, media: Math.round(p.sum / p.count), count: p.count }))
         .sort((a, b) => a.media - b.media);
 
+      const leadtimePorMes = Object.values(leadtimeMensalMap)
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .slice(-12)
+        .map(m => ({ key: m.key, label: m.label, media: Math.round(m.sum / m.count), count: m.count }));
+
+      const leadtimePorUnidade = Object.values(leadtimeUnidadeMap)
+        .map(u => ({ name: u.name, media: Math.round(u.sum / u.count), count: u.count }))
+        .sort((a, b) => a.media - b.media);
+
+      const leadtimePorFuncao = Object.values(leadtimeFuncaoMap)
+        .map(f => ({ name: f.name, media: Math.round(f.sum / f.count), count: f.count }))
+        .sort((a, b) => a.media - b.media);
+
       setFunil(novoFunil);
       setHistoryStats({ total: totalAtendimentos, monthly: monthlyArray, ranking: rankingArray, matrizMeses: ultimos6Meses, matrizLinhas });
-      setKpis({ indiceAprovacao: totalEntrevistados > 0 ? Math.round((totalAprovados / totalEntrevistados) * 100) : 0, aprovacaoPorPsicologo, leadtimeMedio, leadtimePorPsicologo });
+      setKpis({ indiceAprovacao: totalEntrevistados > 0 ? Math.round((totalAprovados / totalEntrevistados) * 100) : 0, aprovacaoPorPsicologo, leadtimeMedio, leadtimePorPsicologo, leadtimePorMes, leadtimePorUnidade, leadtimePorFuncao });
       setRawCands(cands);
 
     } catch (error) {
@@ -429,6 +467,12 @@ export default function DashboardPage() {
   const tabDataMap = { psicologo: rep_psicologo, funcao: rep_funcao, unidade: rep_unidade, etapa: rep_etapa, motivo: rep_motivo };
   const tabAtiva = tabDataMap[abaReprovados] || [];
   const maxTabVal = tabAtiva.length > 0 ? tabAtiva[0][1] : 1;
+
+  // Dados da análise de leadtime
+  const maxLeadtimeMes = Math.max(...kpis.leadtimePorMes.map(m => m.media), 1);
+  const leadtimeRankMap = { psicologo: kpis.leadtimePorPsicologo, unidade: kpis.leadtimePorUnidade, funcao: kpis.leadtimePorFuncao };
+  const leadtimeRankAtual = leadtimeRankMap[viewLeadtime] || [];
+  const maxLeadtimeRank = Math.max(...leadtimeRankAtual.map(r => r.media), 1);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -697,6 +741,159 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ── ANÁLISE DE LEADTIME ──────────────────────────────────────────── */}
+      <div className="glass-panel" style={{ padding: '2rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '2px solid var(--border-color)', paddingBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Clock size={24} color="#8b5cf6" /> Análise de Leadtime
+          </h2>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Média Global</span>
+            <div style={{ fontSize: '1.5rem', fontWeight: '900', color: '#8b5cf6', lineHeight: '1' }}>
+              {kpis.leadtimeMedio > 0 ? `${kpis.leadtimeMedio} dias` : '—'}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Aprovação → Admissão</div>
+          </div>
+        </div>
+
+        {kpis.leadtimePorMes.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center' }}>
+            <Clock size={40} color="var(--text-muted)" style={{ margin: '0 auto 0.75rem' }} />
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Sem admissões concluídas para calcular leadtime.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+
+            {/* Gráfico de colunas — leadtime por mês */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1.25rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <BarChart size={18} color="var(--text-muted)" /> Leadtime Médio por Mês (dias)
+              </h3>
+              <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
+                <div style={{ minWidth: `${kpis.leadtimePorMes.length * 52}px` }}>
+                  {/* Barra do gráfico */}
+                  <div
+                    style={{
+                      display: 'flex', alignItems: 'flex-end', gap: '6px',
+                      height: '180px', overflow: 'visible', position: 'relative',
+                      borderBottom: '1px solid var(--border-color)',
+                    }}
+                  >
+                    {/* Gridlines hairline */}
+                    {[0.33, 0.66].map(f => (
+                      <div key={f} style={{
+                        position: 'absolute', bottom: `${f * 150}px`, left: 0, right: 0,
+                        height: '1px', backgroundColor: 'var(--border-color)', opacity: 0.5, pointerEvents: 'none',
+                      }} />
+                    ))}
+
+                    {kpis.leadtimePorMes.map(m => {
+                      const barH = Math.max(4, Math.round((m.media / maxLeadtimeMes) * 150));
+                      const isHov = hoverLeadtime === m.key;
+                      return (
+                        <div
+                          key={m.key}
+                          onMouseEnter={() => setHoverLeadtime(m.key)}
+                          onMouseLeave={() => setHoverLeadtime(null)}
+                          style={{ flex: 1, minWidth: '44px', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', cursor: 'default' }}
+                        >
+                          {/* Tooltip */}
+                          {isHov && (
+                            <div style={{
+                              position: 'absolute', bottom: `${barH + 36}px`, left: '50%', transform: 'translateX(-50%)',
+                              backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)',
+                              borderRadius: '6px', padding: '0.35rem 0.65rem', fontSize: '0.72rem',
+                              whiteSpace: 'nowrap', zIndex: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+                              pointerEvents: 'none',
+                            }}>
+                              <div style={{ fontWeight: '700', color: 'var(--text-main)', marginBottom: '2px' }}>{m.label}</div>
+                              <div style={{ color: 'var(--text-muted)' }}>{m.media} dias · {m.count} admissão(ões)</div>
+                            </div>
+                          )}
+                          {/* Cap label */}
+                          <span style={{ fontSize: '0.68rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '3px', lineHeight: '1' }}>{m.media}</span>
+                          {/* Barra */}
+                          <div style={{
+                            width: '24px', height: `${barH}px`,
+                            backgroundColor: isHov ? '#3987e5' : '#2a78d6',
+                            borderRadius: '4px 4px 0 0',
+                            transition: 'background-color 0.15s',
+                          }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Rótulos dos meses */}
+                  <div style={{ display: 'flex', gap: '6px', paddingTop: '6px' }}>
+                    {kpis.leadtimePorMes.map(m => (
+                      <div key={m.key} style={{ flex: 1, minWidth: '44px', fontSize: '0.62rem', color: 'var(--text-muted)', textAlign: 'center' }}>{m.label}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Rankings por dimensão — 3 tabs */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Award size={18} color="#f59e0b" /> Ranking por Dimensão (menor = melhor)
+                </h3>
+                <div style={{ display: 'flex', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                  {[
+                    { id: 'psicologo', label: 'Psicólogo' },
+                    { id: 'unidade',   label: 'Unidade' },
+                    { id: 'funcao',    label: 'Função' },
+                  ].map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => setViewLeadtime(v.id)}
+                      style={{
+                        padding: '0.35rem 0.85rem', border: 'none', cursor: 'pointer', fontSize: '0.82rem',
+                        backgroundColor: viewLeadtime === v.id ? '#2a78d6' : 'var(--bg-color)',
+                        color: viewLeadtime === v.id ? 'white' : 'var(--text-muted)',
+                        fontWeight: viewLeadtime === v.id ? '700' : '400',
+                      }}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '750px' }}>
+                {leadtimeRankAtual.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum dado disponível.</p>
+                ) : leadtimeRankAtual.map((item, idx) => {
+                  const pct = Math.round((item.media / maxLeadtimeRank) * 100);
+                  return (
+                    <div key={item.name}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: idx === 0 ? '#1baf7a' : 'var(--text-muted)', minWidth: '20px' }}>{idx + 1}º</span>
+                          <span style={{ fontSize: '0.88rem', color: 'var(--text-main)', fontWeight: '600' }}
+                                title={item.name}>
+                            {item.name}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
+                          <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{item.media} dias</strong>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>({item.count} admissões)</span>
+                        </div>
+                      </div>
+                      <div style={{ backgroundColor: 'var(--bg-color)', borderRadius: '4px 4px 0 0', height: '10px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', backgroundColor: '#2a78d6', borderRadius: '4px 4px 0 0', transition: 'width 0.7s ease' }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
           </div>
         )}
       </div>
