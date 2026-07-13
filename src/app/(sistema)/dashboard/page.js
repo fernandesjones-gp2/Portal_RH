@@ -91,12 +91,14 @@ export default function DashboardPage() {
   const [allUnits, setAllUnits] = useState([]);
   const [allRoles, setAllRoles] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [allTipos, setAllTipos] = useState([]);
 
   const [filterDateFrom,     setFilterDateFrom]     = useState('');
   const [filterDateTo,       setFilterDateTo]       = useState('');
   const [filterUnidades,     setFilterUnidades]     = useState([]);
   const [filterFuncoes,      setFilterFuncoes]      = useState([]);
   const [filterResponsaveis, setFilterResponsaveis] = useState([]);
+  const [filterTipos,        setFilterTipos]        = useState([]);
 
   const [modalStage,    setModalStage]    = useState(null);
   const [modalParados,  setModalParados]  = useState(false);
@@ -133,6 +135,7 @@ export default function DashboardPage() {
       setAllUnits([...units].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
       setAllRoles([...roles].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
       setAllUsers([...users].filter(u => u.name && u.name !== 'Sistema').sort((a, b) => a.name.localeCompare(b.name)));
+      setAllTipos([...new Set(cands.map(c => c.process_type).filter(Boolean))].sort());
     } catch (err) {
       console.error('Erro ao montar dashboard:', err);
     } finally {
@@ -141,7 +144,7 @@ export default function DashboardPage() {
   }
 
   // ── Filtros ───────────────────────────────────────────────────────────────
-  const hasFilter = !!(filterDateFrom || filterDateTo || filterUnidades.length || filterFuncoes.length || filterResponsaveis.length);
+  const hasFilter = !!(filterDateFrom || filterDateTo || filterUnidades.length || filterFuncoes.length || filterResponsaveis.length || filterTipos.length);
 
   const clearFilters = () => {
     setFilterDateFrom('');
@@ -149,6 +152,7 @@ export default function DashboardPage() {
     setFilterUnidades([]);
     setFilterFuncoes([]);
     setFilterResponsaveis([]);
+    setFilterTipos([]);
   };
 
   const filteredCands = useMemo(() => {
@@ -160,20 +164,21 @@ export default function DashboardPage() {
       if (filterUnidades.length     > 0 && !filterUnidades.includes(c.unit_id))            return false;
       if (filterFuncoes.length      > 0 && !filterFuncoes.includes(c.job_role_id))         return false;
       if (filterResponsaveis.length > 0 && !filterResponsaveis.includes(c.responsible_id)) return false;
+      if (filterTipos.length        > 0 && !filterTipos.includes(c.process_type))          return false;
       return true;
     });
-  }, [rawCands, hasFilter, filterDateFrom, filterDateTo, filterUnidades, filterFuncoes, filterResponsaveis]);
+  }, [rawCands, hasFilter, filterDateFrom, filterDateTo, filterUnidades, filterFuncoes, filterResponsaveis, filterTipos]);
 
   // Histórico reprovados: sem filtro de data, só dimensões
   const todosReprovados = useMemo(() => {
     return rawCands.filter(c =>
       TERMINAL_REP.includes(c.status) &&
-      ['Admissão', 'Readmissão'].includes(c.process_type) &&
       (filterUnidades.length     === 0 || filterUnidades.includes(c.unit_id)) &&
       (filterFuncoes.length      === 0 || filterFuncoes.includes(c.job_role_id)) &&
-      (filterResponsaveis.length === 0 || filterResponsaveis.includes(c.responsible_id))
+      (filterResponsaveis.length === 0 || filterResponsaveis.includes(c.responsible_id)) &&
+      (filterTipos.length        === 0 || filterTipos.includes(c.process_type))
     );
-  }, [rawCands, filterUnidades, filterFuncoes, filterResponsaveis]);
+  }, [rawCands, filterUnidades, filterFuncoes, filterResponsaveis, filterTipos]);
 
   // ── Computação principal (render-time, memoizada) ─────────────────────────
   const comp = useMemo(() => {
@@ -210,48 +215,45 @@ export default function DashboardPage() {
         totalAtendimentos++;
       }
 
-      if (['Admissão', 'Readmissão'].includes(c.process_type)) {
-        const psico = c.respName;
-        if (c.interview_date) {
-          totalEntrevistados++;
-          if (!aprovacaoPorPsicoMap[psico]) aprovacaoPorPsicoMap[psico] = { name: psico, aprovados: 0, total: 0 };
-          aprovacaoPorPsicoMap[psico].total++;
-          if (c.analysis_status === 'Aprovado') {
-            totalAprovados++;
-            aprovacaoPorPsicoMap[psico].aprovados++;
-          }
+      const psico = c.respName;
+      if (c.interview_date) {
+        totalEntrevistados++;
+        if (!aprovacaoPorPsicoMap[psico]) aprovacaoPorPsicoMap[psico] = { name: psico, aprovados: 0, total: 0 };
+        aprovacaoPorPsicoMap[psico].total++;
+        if (c.analysis_status === 'Aprovado') {
+          totalAprovados++;
+          aprovacaoPorPsicoMap[psico].aprovados++;
         }
-        if (st === 'Concluído' && c.admission_date) {
-          const dataAprov = c.analysis_update_date || c.interview_date;
-          if (dataAprov) {
-            const diff = Math.floor((new Date(c.admission_date) - new Date(dataAprov)) / 86400000);
-            if (diff >= 0) {
-              leadtimeValues.push(diff);
-              if (!leadtimePorPsicoMap[psico]) leadtimePorPsicoMap[psico] = { name: psico, sum: 0, count: 0 };
-              leadtimePorPsicoMap[psico].sum   += diff;
-              leadtimePorPsicoMap[psico].count += 1;
-              const admD   = new Date(c.admission_date);
-              const admKey = `${admD.getFullYear()}-${String(admD.getMonth()+1).padStart(2,'0')}`;
-              const admLbl = `${String(admD.getMonth()+1).padStart(2,'0')}/${admD.getFullYear()}`;
-              if (!leadtimeMensalMap[admKey]) leadtimeMensalMap[admKey] = { key: admKey, label: admLbl, sum: 0, count: 0 };
-              leadtimeMensalMap[admKey].sum   += diff;
-              leadtimeMensalMap[admKey].count += 1;
-              const unidade = c.unitName || 'N/A';
-              if (!leadtimeUnidadeMap[unidade]) leadtimeUnidadeMap[unidade] = { name: unidade, sum: 0, count: 0 };
-              leadtimeUnidadeMap[unidade].sum   += diff;
-              leadtimeUnidadeMap[unidade].count += 1;
-              const funcao = c.roleName || 'N/A';
-              if (!leadtimeFuncaoMap[funcao]) leadtimeFuncaoMap[funcao] = { name: funcao, sum: 0, count: 0 };
-              leadtimeFuncaoMap[funcao].sum   += diff;
-              leadtimeFuncaoMap[funcao].count += 1;
-            }
+      }
+      if (st === 'Concluído' && c.admission_date) {
+        const dataAprov = c.analysis_update_date || c.interview_date;
+        if (dataAprov) {
+          const diff = Math.floor((new Date(c.admission_date) - new Date(dataAprov)) / 86400000);
+          if (diff >= 0) {
+            leadtimeValues.push(diff);
+            if (!leadtimePorPsicoMap[psico]) leadtimePorPsicoMap[psico] = { name: psico, sum: 0, count: 0 };
+            leadtimePorPsicoMap[psico].sum   += diff;
+            leadtimePorPsicoMap[psico].count += 1;
+            const admD   = new Date(c.admission_date);
+            const admKey = `${admD.getFullYear()}-${String(admD.getMonth()+1).padStart(2,'0')}`;
+            const admLbl = `${String(admD.getMonth()+1).padStart(2,'0')}/${admD.getFullYear()}`;
+            if (!leadtimeMensalMap[admKey]) leadtimeMensalMap[admKey] = { key: admKey, label: admLbl, sum: 0, count: 0 };
+            leadtimeMensalMap[admKey].sum   += diff;
+            leadtimeMensalMap[admKey].count += 1;
+            const unidade = c.unitName || 'N/A';
+            if (!leadtimeUnidadeMap[unidade]) leadtimeUnidadeMap[unidade] = { name: unidade, sum: 0, count: 0 };
+            leadtimeUnidadeMap[unidade].sum   += diff;
+            leadtimeUnidadeMap[unidade].count += 1;
+            const funcao = c.roleName || 'N/A';
+            if (!leadtimeFuncaoMap[funcao]) leadtimeFuncaoMap[funcao] = { name: funcao, sum: 0, count: 0 };
+            leadtimeFuncaoMap[funcao].sum   += diff;
+            leadtimeFuncaoMap[funcao].count += 1;
           }
         }
       }
 
       // Funil em andamento
       if (TERMINAL.includes(st)) return;
-      if (!['Admissão', 'Readmissão'].includes(c.process_type)) return;
 
       const isEntrevista  = ['Cadastrado', 'Agendado', 'Reagendado'].includes(st);
       const isPendente    = st === 'Pré-Admissão (Pendente)';
@@ -329,8 +331,8 @@ export default function DashboardPage() {
       ...funilData.exames.filter(c => c.tempoParado > 2).map(c => ({ ...c, etapaLabel: '3. Exame Médico' })),
     ].sort((a, b) => b.tempoParado - a.tempoParado);
 
-    const admitidos          = filteredCands.filter(c => c.status === 'Concluído' && ['Admissão','Readmissão'].includes(c.process_type));
-    const repPeriodo         = filteredCands.filter(c => TERMINAL_REP.includes(c.status) && ['Admissão','Readmissão'].includes(c.process_type));
+    const admitidos          = filteredCands.filter(c => c.status === 'Concluído');
+    const repPeriodo         = filteredCands.filter(c => TERMINAL_REP.includes(c.status));
     const totalFunil         = admitidos.length + repPeriodo.length;
     const aprovadosEntrevista = [...admitidos, ...repPeriodo].filter(c => c.analysis_status === 'Aprovado').length;
 
@@ -386,9 +388,10 @@ export default function DashboardPage() {
   const maxMonthCount = Math.max(...monthly.map(m => m.count), 1);
   const maxRankCount  = Math.max(...ranking.map(r => r.count), 1);
 
-  const unitOptions = allUnits.map(u => ({ value: u.id, label: u.name }));
-  const roleOptions = allRoles.map(r => ({ value: r.id, label: r.name }));
-  const userOptions = allUsers.map(u => ({ value: u.id, label: u.name }));
+  const unitOptions = allUnits.map(u => ({ value: u.id,  label: u.name }));
+  const roleOptions = allRoles.map(r => ({ value: r.id,  label: r.name }));
+  const userOptions = allUsers.map(u => ({ value: u.id,  label: u.name }));
+  const tipoOptions = allTipos.map(t => ({ value: t,     label: t      }));
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
@@ -594,6 +597,7 @@ export default function DashboardPage() {
         <MultiSelect label="Unidade"     options={unitOptions} selected={filterUnidades}     onChange={setFilterUnidades}     placeholder="Todas as unidades" />
         <MultiSelect label="Função"      options={roleOptions} selected={filterFuncoes}      onChange={setFilterFuncoes}      placeholder="Todas as funções" />
         <MultiSelect label="Responsável" options={userOptions} selected={filterResponsaveis} onChange={setFilterResponsaveis} placeholder="Todos" />
+        <MultiSelect label="Tipo"        options={tipoOptions} selected={filterTipos}        onChange={setFilterTipos} />
 
         {hasFilter && (
           <>
