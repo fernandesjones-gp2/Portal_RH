@@ -4,7 +4,7 @@ import { api } from '@/lib/api-client';
 import {
   Users, FileText, Activity, CheckCircle, Eye, X,
   AlertTriangle, BarChart3, TrendingUp, BarChart, Award,
-  Clock, Target, Timer, Filter, ChevronDown,
+  Clock, Target, Timer, Filter, ChevronDown, Download,
 } from 'lucide-react';
 
 const TERMINAL = ['Concluído','Cancelado','Reprovado','Reprovado Documentação','Reprovado pelo Médico','Inapto Médico','Desistência','Falta'];
@@ -393,6 +393,115 @@ export default function DashboardPage() {
   const userOptions = allUsers.map(u => ({ value: u.id,  label: u.name }));
   const tipoOptions = allTipos.map(t => ({ value: t,     label: t      }));
 
+  // ── Exportar CSV ─────────────────────────────────────────────────────────
+  const exportarCSV = () => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const fmtDate = d => {
+      if (!d) return '';
+      const dt = new Date(d);
+      return isNaN(dt) ? '' : `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+    };
+
+    const getBucket = c => {
+      const st = c.status ? c.status.trim() : '';
+      if (TERMINAL.includes(st)) return '';
+      const isEntrevista  = ['Cadastrado','Agendado','Reagendado'].includes(st);
+      const isPendente    = st === 'Pré-Admissão (Pendente)';
+      const isPronto      = st === 'Pré-Admissão (Pronto)';
+      const analAprovado  = c.analysis_status === 'Aprovado';
+      const docsRecebida  = String(c.docs_status || '').trim() === 'Recebida';
+      const docsRecvNull  = !c.docs_receive_date  || String(c.docs_receive_date).trim()  === '' || String(c.docs_receive_date).trim()  === 'null';
+      const medResultNull = !c.medical_result_date || String(c.medical_result_date).trim() === '' || String(c.medical_result_date).trim() === 'null';
+      if (isEntrevista) return '1. Entrevistas';
+      if (isPronto)     return '4. Prontos p/ Admitir';
+      if (isPendente && !(analAprovado && docsRecebida) && docsRecvNull)  return '2. Documentação';
+      if (isPendente && analAprovado && docsRecebida && medResultNull)    return '3. Exames Médicos';
+      return '';
+    };
+
+    const getTempoParado = (c, bucket) => {
+      if (!bucket) return '';
+      let dataBase;
+      if (bucket === '1. Entrevistas')     dataBase = c.interview_date       || c.created_at;
+      else if (bucket === '2. Documentação') dataBase = c.docs_request_date    || c.updated_at || c.created_at;
+      else if (bucket === '3. Exames Médicos') dataBase = c.medical_request_date || c.updated_at || c.created_at;
+      else                                 dataBase = c.updated_at           || c.created_at;
+      if (!dataBase) return '';
+      const d = new Date(dataBase);
+      d.setHours(0, 0, 0, 0);
+      return Math.max(0, Math.floor((hoje - d) / 86400000));
+    };
+
+    const getLeadtime = c => {
+      if (c.status !== 'Concluído' || !c.admission_date) return '';
+      const dataAprov = c.analysis_update_date || c.interview_date;
+      if (!dataAprov) return '';
+      const diff = Math.floor((new Date(c.admission_date) - new Date(dataAprov)) / 86400000);
+      return diff >= 0 ? diff : '';
+    };
+
+    const headers = [
+      'Nome', 'Status', 'Tipo de Processo', 'Responsável', 'Unidade', 'Função',
+      'Data Criação', 'Data Entrevista', 'Data Atualiz. Análise',
+      'Data Receb. Docs', 'Data Result. Médico', 'Data Admissão',
+      'Status Análise', 'Status Docs', 'Motivo Cancelamento',
+      'Bucket Funil (andamento)', 'Tempo Parado (dias)', 'Leadtime (dias)', 'Etapa Reprovação',
+      'Conta Volume?', 'Conta Aprovação?', 'Conta Leadtime?',
+    ];
+
+    const rows = filteredCands.map(c => {
+      const bucket      = getBucket(c);
+      const tempoParado = getTempoParado(c, bucket);
+      const leadtime    = getLeadtime(c);
+      const etapa       = TERMINAL_REP.includes(c.status) ? getEtapa(c) : '';
+      const contaVolume   = (c.interview_date || c.created_at) ? 'Sim' : 'Não';
+      const contaAprov    = c.interview_date ? 'Sim' : 'Não';
+      const contaLeadtime = (c.status === 'Concluído' && c.admission_date && (c.analysis_update_date || c.interview_date)) ? 'Sim' : 'Não';
+      return [
+        c.name                        || '',
+        c.status                      || '',
+        c.process_type                || '',
+        c.respName                    || '',
+        c.unitName                    || '',
+        c.roleName                    || '',
+        fmtDate(c.created_at),
+        fmtDate(c.interview_date),
+        fmtDate(c.analysis_update_date),
+        fmtDate(c.docs_receive_date),
+        fmtDate(c.medical_result_date),
+        fmtDate(c.admission_date),
+        c.analysis_status             || '',
+        c.docs_status                 || '',
+        c.cancellation_reason_name    || '',
+        bucket,
+        tempoParado,
+        leadtime,
+        etapa,
+        contaVolume,
+        contaAprov,
+        contaLeadtime,
+      ];
+    });
+
+    const esc = v => {
+      const s = String(v ?? '');
+      return (s.includes(';') || s.includes('"') || s.includes('\n'))
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const csv = [headers, ...rows].map(r => r.map(esc).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const ts   = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    link.href     = url;
+    link.download = `dashboard_candidatos_${ts}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -557,9 +666,25 @@ export default function DashboardPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
 
       {/* Cabeçalho */}
-      <div>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Inteligência Gerencial</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '0.2rem' }}>Acompanhamento centralizado de Recrutamento &amp; Seleção — todos os indicadores respondem aos filtros.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Inteligência Gerencial</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginTop: '0.2rem' }}>Acompanhamento centralizado de Recrutamento &amp; Seleção — todos os indicadores respondem aos filtros.</p>
+        </div>
+        <button
+          onClick={exportarCSV}
+          title={`Exportar ${filteredCands.length} candidatos para CSV`}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0,
+            padding: '0.45rem 0.9rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem',
+            border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)',
+            color: 'var(--text-muted)', fontWeight: '600',
+          }}
+        >
+          <Download size={14} />
+          Exportar CSV
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '400' }}>({filteredCands.length})</span>
+        </button>
       </div>
 
       {/* ── BARRA DE FILTROS (sticky) ─────────────────────────────────────── */}
