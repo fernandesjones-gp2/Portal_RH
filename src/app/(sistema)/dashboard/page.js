@@ -454,10 +454,8 @@ export default function DashboardPage() {
     };
 
     const getLeadtime = c => {
-      if (c.status !== 'Concluído' || !c.admission_date) return '';
-      const dataAprov = c.analysis_update_date || c.interview_date;
-      if (!dataAprov) return '';
-      const diff = Math.floor((new Date(c.admission_date) - new Date(dataAprov)) / 86400000);
+      if (c.status !== 'Concluído' || !c.admission_date || !c.interview_date) return '';
+      const diff = Math.floor((new Date(c.admission_date) - new Date(c.interview_date)) / 86400000);
       return diff >= 0 ? diff : '';
     };
 
@@ -476,7 +474,7 @@ export default function DashboardPage() {
       const leadtime    = getLeadtime(c);
       const etapa       = TERMINAL_REP.includes(c.status) ? getEtapa(c) : '';
       const contaVolume   = (c.interview_date || c.created_at) ? 'Sim' : 'Não';
-      const contaAprov    = c.interview_date ? 'Sim' : 'Não';
+      const contaAprov    = c.interview_approved === true ? 'Sim' : 'Não';
       const contaLeadtime = (c.status === 'Concluído' && c.admission_date && (c.analysis_update_date || c.interview_date)) ? 'Sim' : 'Não';
       return [
         c.name                        || '',
