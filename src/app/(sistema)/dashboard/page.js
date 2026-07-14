@@ -347,7 +347,7 @@ export default function DashboardPage() {
     const admitidos          = filteredCands.filter(c => c.status === 'Concluído');
     const repPeriodo         = filteredCands.filter(c => TERMINAL_REP.includes(c.status));
     const totalFunil         = admitidos.length + repPeriodo.length;
-    const aprovadosEntrevista = [...admitidos, ...repPeriodo].filter(c => c.analysis_status === 'Aprovado').length;
+    const aprovadosEntrevista = [...admitidos, ...repPeriodo].filter(c => c.interview_approved === true).length;
 
     const outrosProcessos = Object.values(outrosMap).sort((a, b) => b.total - a.total);
 
@@ -791,7 +791,38 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Card 2: Índice de Aprovação */}
+        {/* Card 2: Taxa de Conversão */}
+        <div style={{ position: 'relative' }} onMouseEnter={() => setHoverCard('conversao')} onMouseLeave={() => setHoverCard(null)}>
+          <div className="glass-panel" style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
+              <TrendingUp size={14} color="#f59e0b" /> Taxa de Conversão
+            </div>
+            <div style={{ fontSize: '2rem', fontWeight: '900', color: '#f59e0b', lineHeight: '1' }}>
+              {taxaConvGeral !== null ? `${taxaConvGeral}%` : '—'}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+              Geral · {admitidos.length} de {totalFunil} concluídos · passe o mouse
+            </div>
+          </div>
+          {hoverCard === 'conversao' && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50, backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.85rem', boxShadow: '0 8px 24px rgba(0,0,0,0.18)' }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.6rem' }}>Detalhamento</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', fontSize: '0.8rem' }}>
+                <span style={{ color: 'var(--text-main)' }}>Geral (admitidos / concluídos)</span>
+                <strong style={{ color: '#f59e0b' }}>{taxaConvGeral !== null ? `${taxaConvGeral}%` : '—'}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                <span style={{ color: 'var(--text-main)' }}>Aprov. entrevista → Admitidos</span>
+                <strong style={{ color: 'var(--saritur-orange)' }}>{taxaConvAprovados !== null ? `${taxaConvAprovados}%` : '—'}</strong>
+              </div>
+              <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '0.5rem', paddingTop: '0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                {admitidos.length} admitidos · {aprovadosEntrevista} aprov. entrevista · {totalFunil} concluídos
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Card 3: Índice de Aprovação */}
         <div style={{ position: 'relative' }} onMouseEnter={() => setHoverCard('aprovacao')} onMouseLeave={() => setHoverCard(null)}>
           <div className="glass-panel" style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
@@ -814,21 +845,6 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
-        </div>
-
-        {/* Card 3: Parados > 2 dias */}
-        <div>
-          <div
-            className="glass-panel"
-            onClick={() => setModalParados(true)}
-            style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)', cursor: 'pointer', border: `1px solid ${todosParados.length > 0 ? 'var(--danger-color)' : 'var(--border-color)'}` }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
-              <Timer size={14} color={todosParados.length > 0 ? 'var(--danger-color)' : 'var(--text-muted)'} /> Parados &gt; 2 dias
-            </div>
-            <div style={{ fontSize: '2rem', fontWeight: '900', color: todosParados.length > 0 ? 'var(--danger-color)' : 'var(--success-color)', lineHeight: '1' }}>{todosParados.length}</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>Todos os estágios · clique para detalhar</div>
-          </div>
         </div>
 
         {/* Card 4: Leadtime Médio */}
@@ -859,25 +875,18 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Card 5: Taxa de Conversão */}
-        <div className="glass-panel" style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
-            <TrendingUp size={14} color="#f59e0b" /> Taxa de Conversão
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Aprovados → Admitidos</span>
-            <span style={{ fontSize: '1.5rem', fontWeight: '900', color: '#f59e0b', lineHeight: '1' }}>
-              {taxaConvAprovados !== null ? `${taxaConvAprovados}%` : '—'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.4rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.4rem' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Geral (concluídos)</span>
-            <span style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--saritur-orange)', lineHeight: '1' }}>
-              {taxaConvGeral !== null ? `${taxaConvGeral}%` : '—'}
-            </span>
-          </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-            {admitidos.length} admitidos de {totalFunil} concluídos
+        {/* Card 5: Parados > 2 dias */}
+        <div>
+          <div
+            className="glass-panel"
+            onClick={() => setModalParados(true)}
+            style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)', cursor: 'pointer', border: `1px solid ${todosParados.length > 0 ? 'var(--danger-color)' : 'var(--border-color)'}` }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
+              <Timer size={14} color={todosParados.length > 0 ? 'var(--danger-color)' : 'var(--text-muted)'} /> Parados &gt; 2 dias
+            </div>
+            <div style={{ fontSize: '2rem', fontWeight: '900', color: todosParados.length > 0 ? 'var(--danger-color)' : 'var(--success-color)', lineHeight: '1' }}>{todosParados.length}</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>Todos os estágios · clique para detalhar</div>
           </div>
         </div>
       </div>
