@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw, Eye } from 'lucide-react';
+import { Plus, Edit2, MessageSquare, ThumbsUp, ThumbsDown, Database, X, Filter, RotateCcw, Eye, Trash2 } from 'lucide-react';
 
 export default function AgendamentosPage() {
   const [candidates, setCandidates] = useState([]);
@@ -20,7 +20,11 @@ export default function AgendamentosPage() {
   const [feedbackCandidate, setFeedbackCandidate] = useState(null);
   const [rejectCandidate, setRejectCandidate] = useState(null);
   const [detailsCandidate, setDetailsCandidate] = useState(null);
-  
+  const [currentUser, setCurrentUser] = useState(null);
+  const [archiveCandidate, setArchiveCandidate] = useState(null);
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiving, setArchiving] = useState(false);
+
   const [filterProcessType, setFilterProcessType] = useState('');
   const [filterUnit, setFilterUnit] = useState('');
   const [filterRole, setFilterRole] = useState('');
@@ -42,13 +46,14 @@ export default function AgendamentosPage() {
   async function fetchData(silent = false) {
     if (!silent) setLoading(true);
     try {
-      const [allCandsData, unitsRes, rolesRes, usersRes, reasonsRes, templatesRes] = await Promise.all([
+      const [allCandsData, unitsRes, rolesRes, usersRes, reasonsRes, templatesRes, meRes] = await Promise.all([
         api.candidates.list({ _t: Date.now() }),
         !silent ? api.units.list({ _t: Date.now() }) : Promise.resolve(units),
         !silent ? api.jobRoles.list({ _t: Date.now() }) : Promise.resolve(roles),
         !silent ? api.users.list({ _t: Date.now() }) : Promise.resolve(responsibles),
         !silent ? api.cancellationReasons.list({ _t: Date.now() }).catch(() => []) : Promise.resolve(cancellationReasons),
-        !silent ? api.messageTemplates.list({ _t: Date.now() }).catch(() => []) : Promise.resolve(templates)
+        !silent ? api.messageTemplates.list({ _t: Date.now() }).catch(() => []) : Promise.resolve(templates),
+        !silent ? api.me().catch(() => null) : Promise.resolve(currentUser),
       ]);
 
       if (allCandsData) {
@@ -60,6 +65,7 @@ export default function AgendamentosPage() {
       if (!silent && usersRes) setResponsibles(usersRes);
       if (!silent && reasonsRes) setCancellationReasons(reasonsRes);
       if (!silent && templatesRes) setTemplates(templatesRes);
+      if (!silent && meRes) setCurrentUser(meRes);
 
     } catch (error) { 
       console.error('Error fetching data:', error); 
@@ -346,6 +352,22 @@ export default function AgendamentosPage() {
     }
   }
 
+  async function handleArchive() {
+    if (!archiveCandidate || archiveReason.trim().length < 10) return;
+    setArchiving(true);
+    try {
+      await api.candidates.archive(archiveCandidate.id, archiveReason.trim());
+      setCandidates(prev => prev.filter(c => c.id !== archiveCandidate.id));
+      setAllCandidates(prev => prev.filter(c => c.id !== archiveCandidate.id));
+      setArchiveCandidate(null);
+      setArchiveReason('');
+    } catch (err) {
+      alert(err.body?.message || 'Erro ao arquivar candidato.');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   const sortedFilteredCandidates = candidates.filter(c => {
     if (c.status !== currentTab) return false;
     if (filterProcessType && c.process_type !== filterProcessType) return false;
@@ -412,6 +434,16 @@ export default function AgendamentosPage() {
 
                 {currentTab === 'Agendado' && (<><button className="btn-secondary" onClick={() => setEditingCandidate(c)} title="Editar Cadastro"><Edit2 size={16} /></button><button className="btn-secondary" onClick={() => changeStatus(c, 'Banco de Talentos')} title="Mover para Banco de Talentos"><Database size={16} /></button><button className="btn-secondary" onClick={() => handleApprove(c)} style={{ color: 'var(--success-color)', borderColor: 'var(--success-color)' }} title="Aprovar (Avançar)"><ThumbsUp size={16} /></button><button className="btn-secondary" onClick={() => setRejectCandidate(c)} style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Reprovar / Cancelar"><ThumbsDown size={16} /></button></>)}
                 {(currentTab === 'Banco de Talentos' || currentTab === 'Reprovado') && <button className="btn-primary" onClick={() => changeStatus(c, 'Agendado')} style={{ backgroundColor: 'var(--saritur-orange)' }} title="Retomar Processo"><RotateCcw size={16} style={{ marginRight: '4px' }}/> Retomar Processo</button>}
+                {currentUser?.role === 'ADMIN' && (
+                  <button
+                    className="btn-secondary"
+                    onClick={() => { setArchiveCandidate(c); setArchiveReason(''); }}
+                    title="Arquivar candidato (apenas ADMIN)"
+                    style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -547,6 +579,74 @@ export default function AgendamentosPage() {
               <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem' }}>Observações (Opcional)</label><textarea style={{ width: '100%', minHeight: '80px', padding: '0.6rem' }} placeholder="Detalhes..." value={rejectForm.notes} onChange={e => setRejectForm({...rejectForm, notes: e.target.value})} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setRejectCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary" style={{ backgroundColor: 'var(--danger-color)' }}>Confirmar Reprovação</button></div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ── MODAL: ARQUIVAR CANDIDATO (ADMIN) ─────────────────────────────── */}
+      {archiveCandidate && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Trash2 size={20} /> Arquivar Candidato
+              </h2>
+              <button onClick={() => setArchiveCandidate(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                <X size={24} color="var(--text-muted)" />
+              </button>
+            </div>
+
+            <div style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 'var(--radius-md)', padding: '1rem', marginBottom: '1.5rem' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Candidato a ser arquivado:</p>
+              <p style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>{archiveCandidate.name}</p>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{archiveCandidate.job_role_name} • {archiveCandidate.unit_name} • Status: {archiveCandidate.status}</p>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: '1.5' }}>
+              O candidato será <strong>removido do sistema ativo</strong> e movido para o arquivo. Esta ação não pode ser desfeita pelo sistema — o registro ficará disponível para consulta na aba <em>Arquivados</em> em Configurações.
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                Motivo da exclusão <span style={{ color: 'var(--danger-color)' }}>*</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: '400', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>(mínimo 10 caracteres)</span>
+              </label>
+              <textarea
+                value={archiveReason}
+                onChange={e => setArchiveReason(e.target.value)}
+                placeholder="Descreva o motivo pelo qual este candidato está sendo arquivado..."
+                rows={4}
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '0.75rem',
+                  border: `1px solid ${archiveReason.length > 0 && archiveReason.trim().length < 10 ? 'var(--danger-color)' : 'var(--border-color)'}`,
+                  borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-color)',
+                  color: 'var(--text-main)', fontSize: '0.9rem', resize: 'vertical', fontFamily: 'inherit',
+                }}
+              />
+              {archiveReason.length > 0 && archiveReason.trim().length < 10 && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--danger-color)', marginTop: '0.25rem' }}>
+                  Mínimo de 10 caracteres ({archiveReason.trim().length}/10)
+                </p>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button className="btn-secondary" onClick={() => setArchiveCandidate(null)} disabled={archiving}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleArchive}
+                disabled={archiving || archiveReason.trim().length < 10}
+                style={{
+                  padding: '0.6rem 1.25rem', borderRadius: 'var(--radius-md)', cursor: archiveReason.trim().length < 10 ? 'not-allowed' : 'pointer',
+                  backgroundColor: archiveReason.trim().length >= 10 ? 'var(--danger-color)' : 'var(--border-color)',
+                  color: 'white', border: 'none', fontWeight: '600', fontSize: '0.9rem',
+                  display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: archiving ? 0.7 : 1,
+                }}
+              >
+                <Trash2 size={15} />
+                {archiving ? 'Arquivando...' : 'Confirmar Arquivamento'}
+              </button>
+            </div>
           </div>
         </div>
       )}

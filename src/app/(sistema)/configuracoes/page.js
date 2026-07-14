@@ -49,6 +49,12 @@ export default function ConfiguracoesPage() {
   const [isUserAcessModalOpen, setIsUserAcessModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
+  const [archivedCands, setArchivedCands] = useState(null);
+  const [archivedSearch, setArchivedSearch] = useState('');
+  const [archivedDateFrom, setArchivedDateFrom] = useState('');
+  const [archivedDateTo, setArchivedDateTo] = useState('');
+  const [archivedLoading, setArchivedLoading] = useState(false);
+
   const menusAcessiveis = [
     { path: '/dashboard', label: 'Dashboard' }, 
     { path: '/agendamentos', label: 'Agendamentos' },
@@ -196,6 +202,22 @@ export default function ConfiguracoesPage() {
   async function handleApproveUser(id) { try { await api.users.update(id, { status: 'Aprovado' }); fetchAllData(); } catch (error) {} }
   async function handleDeleteUser(id) { if (!confirm('Deseja bloquear este usuário?')) return; try { await api.users.remove(id); fetchAllData(); } catch (error) {} }
   function handleSaveTargets(e) { e.preventDefault(); localStorage.setItem('portal_rh_targets', JSON.stringify(dashTargets)); alert('Metas atualizadas!'); }
+
+  async function fetchArchived() {
+    setArchivedLoading(true);
+    try {
+      const params = {};
+      if (archivedSearch)   params.search   = archivedSearch;
+      if (archivedDateFrom) params.dateFrom = archivedDateFrom;
+      if (archivedDateTo)   params.dateTo   = archivedDateTo;
+      const data = await api.candidates.listArchived(params);
+      setArchivedCands(Array.isArray(data) ? data : []);
+    } catch (err) {
+      alert('Erro ao buscar candidatos arquivados: ' + (err.message || ''));
+    } finally {
+      setArchivedLoading(false);
+    }
+  }
 
   if (loading) return <p style={{ padding: '2rem' }}>Validando credenciais de Administrador...</p>;
   if (isAdmin === false) return (<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh' }}><ShieldAlert size={64} color="var(--danger-color)" /><h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Acesso Restrito</h2></div>);
@@ -372,6 +394,102 @@ export default function ConfiguracoesPage() {
           <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.5rem' }}>Taxa de Aprovação (%)</label><input type="number" style={{padding: '0.5rem', width: '100%', borderRadius: '4px', border: '1px solid var(--border-color)'}} placeholder="Ex: 60" value={dashTargets.targetApprovalRate} onChange={e => setDashTargets({...dashTargets, targetApprovalRate: e.target.value})} /></div>
           <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.5rem' }}><Save size={16} /> Salvar Metas</button>
         </form>
+      </div>
+
+      {/* ── CANDIDATOS ARQUIVADOS ─────────────────────────────────────────── */}
+      <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Trash2 size={20} color="var(--danger-color)" /> Candidatos Arquivados
+          </h2>
+          {archivedCands !== null && (
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', backgroundColor: 'var(--bg-color)', padding: '0.2rem 0.75rem', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+              {archivedCands.length} registro(s)
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Buscar por nome / CPF</label>
+            <input
+              type="text"
+              placeholder="Ex: João Silva ou 000.000.000-00"
+              value={archivedSearch}
+              onChange={e => setArchivedSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && fetchArchived()}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.75rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontSize: '0.88rem' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>De</label>
+            <input type="date" value={archivedDateFrom} onChange={e => setArchivedDateFrom(e.target.value)} style={{ padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontSize: '0.88rem' }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>Até</label>
+            <input type="date" value={archivedDateTo} onChange={e => setArchivedDateTo(e.target.value)} style={{ padding: '0.5rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', fontSize: '0.88rem' }} />
+          </div>
+          <button
+            onClick={fetchArchived}
+            disabled={archivedLoading}
+            className="btn-primary"
+            style={{ padding: '0.5rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            {archivedLoading ? 'Buscando...' : 'Buscar'}
+          </button>
+        </div>
+
+        {archivedCands === null ? (
+          <div style={{ padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Clique em <strong>Buscar</strong> para consultar os candidatos arquivados.</p>
+          </div>
+        ) : archivedCands.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Nenhum candidato arquivado encontrado com os filtros informados.</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-color)', borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Candidato</th>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Função</th>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Unidade</th>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Status à época</th>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Arquivado em</th>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Arquivado por</th>
+                  <th style={{ padding: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>Motivo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedCands.map(c => (
+                  <tr key={c.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.75rem' }}>
+                      <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{c.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>CPF: {c.cpf || '—'}</div>
+                    </td>
+                    <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{c.job_role_name || '—'}</td>
+                    <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{c.unit_name || '—'}</td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: 'var(--bg-color)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {new Date(c.deleted_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' })}
+                    </td>
+                    <td style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>{c.deleted_by_name || '—'}</td>
+                    <td style={{ padding: '0.75rem', color: 'var(--text-main)', maxWidth: '280px' }}>
+                      <span title={c.deletion_reason} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {c.deletion_reason}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {isRoleModalOpen && (

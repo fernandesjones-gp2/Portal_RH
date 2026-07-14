@@ -49,17 +49,7 @@ export async function PATCH(req, props) {
 
 export const PUT = PATCH;
 
-export async function DELETE(req, props) {
-  const g = await requireApproved();
-  if (g.error) return g.error;
-  const params = await props.params;
-  const { id } = params;
-
-  try {
-    await query('DELETE FROM candidates WHERE id = $1', [id]);
-    return json({ success: true });
-  } catch (err) {
-    console.error("Erro DELETE", err);
-    return json({ error: err.message }, 500);
-  }
+// Exclusão permanente desativada. Use POST /api/candidates/:id/archive (ADMIN only).
+export async function DELETE() {
+  return json({ error: 'method_not_allowed', message: 'Use POST /api/candidates/:id/archive para arquivar um candidato.' }, 405);
 }

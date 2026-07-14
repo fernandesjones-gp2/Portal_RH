@@ -55,5 +55,7 @@ export const api = {
     list: (params = {}) => req(`/api/candidates?${new URLSearchParams(params).toString()}`),
     create: (data) => req('/api/candidates', { method: 'POST', body: JSON.stringify(data) }),
     update: (id, data) => req(`/api/candidates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    archive: (id, deletion_reason) => req(`/api/candidates/${id}/archive`, { method: 'POST', body: JSON.stringify({ deletion_reason }) }),
+    listArchived: (params = {}) => req(`/api/candidates/archived?${new URLSearchParams(params).toString()}`),
   },
 };

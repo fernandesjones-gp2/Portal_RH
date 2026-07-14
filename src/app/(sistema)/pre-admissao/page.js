@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye, Edit2, BellRing, Lock } from 'lucide-react';
+import { Check, X, CheckCircle2, AlertCircle, FileCheck, Send, Settings2, Circle, Filter, MessageSquareText, MessageSquare, Calendar, ArrowRight, ThumbsDown, ShieldAlert, Eye, Edit2, BellRing, Lock, Trash2 } from 'lucide-react';
 
 export default function PipelineAdmissaoPage() {
   const [currentUserRole, setCurrentUserRole] = useState('');
@@ -29,6 +29,9 @@ export default function PipelineAdmissaoPage() {
 
   const [feedbackCandidate, setFeedbackCandidate] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
+  const [archiveCandidate, setArchiveCandidate] = useState(null);
+  const [archiveReason, setArchiveReason] = useState('');
+  const [archiving, setArchiving] = useState(false);
 
   const [filterProcessType, setFilterProcessType] = useState('');
   const [filterUnit, setFilterUnit] = useState('');
@@ -397,6 +400,22 @@ export default function PipelineAdmissaoPage() {
     setFeedbackCandidate(null); fetchData(true);
   }
 
+  async function handleArchive() {
+    if (!archiveCandidate || archiveReason.trim().length < 10) return;
+    setArchiving(true);
+    try {
+      await api.candidates.archive(archiveCandidate.id, archiveReason.trim());
+      setCandidates(prev => prev.filter(c => c.id !== archiveCandidate.id));
+      setAllCandidates(prev => prev.filter(c => c.id !== archiveCandidate.id));
+      setArchiveCandidate(null);
+      setArchiveReason('');
+    } catch (err) {
+      alert(err.body?.message || 'Erro ao arquivar candidato.');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   const getStatusColor = (status) => {
     switch(status) { 
       case 'Aprovado': case 'Apto': case 'Recebida': return '#057a55'; 
@@ -450,6 +469,16 @@ export default function PipelineAdmissaoPage() {
             )}
             {canInterruptProcess && (
               <button onClick={() => setRejectCandidate(c)} className="btn-secondary" style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }} title="Interromper Processo"><ThumbsDown size={14} /></button>
+            )}
+            {currentUserRole === 'ADMIN' && (
+              <button
+                onClick={() => { setArchiveCandidate(c); setArchiveReason(''); }}
+                className="btn-secondary"
+                style={{ padding: '0.4rem', borderRadius: 'var(--radius-sm)', color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }}
+                title="Arquivar candidato (apenas ADMIN)"
+              >
+                <Trash2 size={14} />
+              </button>
             )}
           </div>
         </div>
@@ -693,6 +722,75 @@ export default function PipelineAdmissaoPage() {
               <div><p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Deixe uma observação no histórico de <strong>{feedbackCandidate.name}</strong> para o restante da equipe.</p><textarea required style={{ width: '100%', minHeight: '100px', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }} placeholder="Sua mensagem..." value={feedbackText} onChange={e => setFeedbackText(e.target.value)} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}><button type="button" className="btn-secondary" onClick={() => setFeedbackCandidate(null)}>Cancelar</button><button type="submit" className="btn-primary">Salvar Mensagem</button></div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: ARQUIVAR CANDIDATO (ADMIN) ─────────────────────────────── */}
+      {archiveCandidate && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ backgroundColor: 'var(--surface-color)', padding: '2rem', borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: '500px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: 'var(--danger-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Trash2 size={20} /> Arquivar Candidato
+              </h2>
+              <button onClick={() => setArchiveCandidate(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                <X size={24} color="var(--text-muted)" />
+              </button>
+            </div>
+
+            <div style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 'var(--radius-md)', padding: '1rem', marginBottom: '1.5rem' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Candidato a ser arquivado:</p>
+              <p style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>{archiveCandidate.name}</p>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{archiveCandidate.job_role_name} • {archiveCandidate.unit_name} • Status: {archiveCandidate.status}</p>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: '1.5' }}>
+              O candidato será <strong>removido do sistema ativo</strong> e movido para o arquivo. Esta ação não pode ser desfeita pelo sistema — o registro ficará disponível para consulta na aba <em>Arquivados</em> em Configurações.
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                Motivo da exclusão <span style={{ color: 'var(--danger-color)' }}>*</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: '400', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>(mínimo 10 caracteres)</span>
+              </label>
+              <textarea
+                value={archiveReason}
+                onChange={e => setArchiveReason(e.target.value)}
+                placeholder="Descreva o motivo pelo qual este candidato está sendo arquivado..."
+                rows={4}
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '0.75rem',
+                  border: `1px solid ${archiveReason.length > 0 && archiveReason.trim().length < 10 ? 'var(--danger-color)' : 'var(--border-color)'}`,
+                  borderRadius: 'var(--radius-md)', backgroundColor: 'var(--bg-color)',
+                  color: 'var(--text-main)', fontSize: '0.9rem', resize: 'vertical', fontFamily: 'inherit',
+                }}
+              />
+              {archiveReason.length > 0 && archiveReason.trim().length < 10 && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--danger-color)', marginTop: '0.25rem' }}>
+                  Mínimo de 10 caracteres ({archiveReason.trim().length}/10)
+                </p>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button className="btn-secondary" onClick={() => setArchiveCandidate(null)} disabled={archiving}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleArchive}
+                disabled={archiving || archiveReason.trim().length < 10}
+                style={{
+                  padding: '0.6rem 1.25rem', borderRadius: 'var(--radius-md)', cursor: archiveReason.trim().length < 10 ? 'not-allowed' : 'pointer',
+                  backgroundColor: archiveReason.trim().length >= 10 ? 'var(--danger-color)' : 'var(--border-color)',
+                  color: 'white', border: 'none', fontWeight: '600', fontSize: '0.9rem',
+                  display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: archiving ? 0.7 : 1,
+                }}
+              >
+                <Trash2 size={15} />
+                {archiving ? 'Arquivando...' : 'Confirmar Arquivamento'}
+              </button>
+            </div>
           </div>
         </div>
       )}
