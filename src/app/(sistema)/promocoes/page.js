@@ -41,7 +41,7 @@ export default function PromocoesPage() {
     
     const intervalId = setInterval(() => {
       fetchData(true); // Cargas subsequentes em background (silenciosas)
-    }, 10000);
+    }, 3000);
     
     return () => clearInterval(intervalId); // Limpa o intervalo ao sair da tela
   }, []);

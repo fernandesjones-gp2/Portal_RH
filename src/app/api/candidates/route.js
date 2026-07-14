@@ -104,6 +104,26 @@ export async function POST(req) {
 
   if (columns.length === 0) return json({ error: 'no_fields' }, 400);
 
+  // Verificação server-side de CPF duplicado (Admissão / Readmissão)
+  if (body.cpf && ['Admissão', 'Readmissão'].includes(body.process_type)) {
+    const cleanCpf = String(body.cpf).replace(/[^0-9]/g, '');
+    if (cleanCpf.length === 11) {
+      const TERMINAL = ['Concluído','Cancelado','Reprovado','Reprovado Documentação','Reprovado pelo Médico','Inapto Médico','Desistência','Falta'];
+      const { rows: dupes } = await query(
+        `SELECT id, name, status, created_at FROM candidates WHERE regexp_replace(COALESCE(cpf,''),'[^0-9]','','g') = $1 LIMIT 5`,
+        [cleanCpf]
+      );
+      if (dupes.length > 0) {
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const blocking = dupes.find(c =>
+          !TERMINAL.includes(c.status) || new Date(c.created_at) > sixMonthsAgo
+        );
+        if (blocking) return json({ error: 'duplicate', candidate: blocking }, 409);
+      }
+    }
+  }
+
   try {
     const sql = `INSERT INTO candidates (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
     const { rows } = await query(sql, values);

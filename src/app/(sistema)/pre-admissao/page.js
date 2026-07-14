@@ -40,7 +40,7 @@ export default function PipelineAdmissaoPage() {
 
   useEffect(() => { 
     fetchData(false); 
-    const motorRealTime = setInterval(() => { fetchData(true); }, 10000);
+    const motorRealTime = setInterval(() => { fetchData(true); }, 3000);
     return () => clearInterval(motorRealTime);
   }, []);
 

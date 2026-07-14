@@ -64,10 +64,12 @@ export default function ConfiguracoesPage() {
     { path: '/configuracoes', label: 'Configurações do Sistema' }
   ];
 
-  useEffect(() => { 
-    checkAccessAndFetchData(); 
+  useEffect(() => {
+    checkAccessAndFetchData();
     const savedTargets = localStorage.getItem('portal_rh_targets');
     if (savedTargets) setDashTargets(JSON.parse(savedTargets));
+    const interval = setInterval(fetchAllData, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   async function checkAccessAndFetchData() {

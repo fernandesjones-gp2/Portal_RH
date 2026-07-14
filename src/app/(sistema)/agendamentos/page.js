@@ -39,7 +39,7 @@ export default function AgendamentosPage() {
     fetchData(false); 
     const motorRealTime = setInterval(() => {
       fetchData(true);
-    }, 10000);
+    }, 3000);
     return () => clearInterval(motorRealTime);
   }, []);
 
@@ -238,7 +238,15 @@ export default function AgendamentosPage() {
     const interviewIso = getBrazilIsoDate(formData.interview_date);
     const dataToSave = { ...formData, interview_date: interviewIso, responsible_id, gender: formData.gender || null, is_pcd: formData.is_pcd ? true : false };
 
-    try { await api.candidates.create(dataToSave); } catch (e) { return alert('Erro ao salvar candidato: ' + e.message); }
+    try {
+      await api.candidates.create(dataToSave);
+    } catch (e) {
+      if (e.status === 409 && e.body?.error === 'duplicate') {
+        const c = e.body.candidate;
+        return alert(`❌ BLOQUEIO DE SEGURANÇA: CPF JÁ CADASTRADO!\n\nCandidato: ${c?.name || ''}\nStatus atual: ${c?.status || ''}\n\nNão é possível cadastrar o mesmo CPF enquanto o processo estiver ativo ou tiver sido finalizado há menos de 6 meses.`);
+      }
+      return alert('Erro ao salvar candidato: ' + e.message);
+    }
 
     const roleName = roles.find(r => r.id === formData.job_role_id)?.name || '';
     const unitName = units.find(u => u.id === formData.unit_id)?.name || '';

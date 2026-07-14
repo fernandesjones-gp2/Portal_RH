@@ -108,38 +108,54 @@ export default function DashboardPage() {
   const [viewLeadtime,  setViewLeadtime]  = useState('psicologo');
   const [hoverLeadtime, setHoverLeadtime] = useState(null);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData(false);
+    const interval = setInterval(() => fetchData(true), 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ── Fetch: busca + enriquece apenas ──────────────────────────────────────
-  async function fetchData() {
-    setLoading(true);
+  async function fetchData(silent = false) {
+    if (!silent) setLoading(true);
     try {
-      const [candsRes, rolesRes, unitsRes, usersRes] = await Promise.all([
-        api.candidates.list({ _t: Date.now() }).catch(() => []),
-        api.jobRoles.list().catch(() => []),
-        api.units.list().catch(() => []),
-        api.users.list().catch(() => []),
-      ]);
-      const cands = Array.isArray(candsRes) ? candsRes : [];
-      const roles = Array.isArray(rolesRes) ? rolesRes : [];
-      const units = Array.isArray(unitsRes) ? unitsRes : [];
-      const users = Array.isArray(usersRes) ? usersRes : [];
+      if (!silent) {
+        const [candsRes, rolesRes, unitsRes, usersRes] = await Promise.all([
+          api.candidates.list({ _t: Date.now() }).catch(() => []),
+          api.jobRoles.list().catch(() => []),
+          api.units.list().catch(() => []),
+          api.users.list().catch(() => []),
+        ]);
+        const cands = Array.isArray(candsRes) ? candsRes : [];
+        const roles = Array.isArray(rolesRes) ? rolesRes : [];
+        const units = Array.isArray(unitsRes) ? unitsRes : [];
+        const users = Array.isArray(usersRes) ? usersRes : [];
 
-      cands.forEach(c => {
-        c.roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
-        c.unitName = units.find(u => u.id === c.unit_id)?.name    || c.unit_name      || 'N/A';
-        c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
-      });
+        cands.forEach(c => {
+          c.roleName = roles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
+          c.unitName = units.find(u => u.id === c.unit_id)?.name    || c.unit_name      || 'N/A';
+          c.respName = users.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
+        });
 
-      setRawCands(cands);
-      setAllUnits([...units].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
-      setAllRoles([...roles].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
-      setAllUsers([...users].filter(u => u.name && u.name !== 'Sistema').sort((a, b) => a.name.localeCompare(b.name)));
-      setAllTipos([...new Set(cands.map(c => c.process_type).filter(Boolean))].sort());
+        setRawCands(cands);
+        setAllUnits([...units].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+        setAllRoles([...roles].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+        setAllUsers([...users].filter(u => u.name && u.name !== 'Sistema').sort((a, b) => a.name.localeCompare(b.name)));
+        setAllTipos([...new Set(cands.map(c => c.process_type).filter(Boolean))].sort());
+      } else {
+        const candsRes = await api.candidates.list({ _t: Date.now() }).catch(() => null);
+        if (!candsRes) return;
+        const cands = Array.isArray(candsRes) ? candsRes : [];
+        cands.forEach(c => {
+          c.roleName = allRoles.find(r => r.id === c.job_role_id)?.name || c.job_role_name || 'N/A';
+          c.unitName = allUnits.find(u => u.id === c.unit_id)?.name    || c.unit_name      || 'N/A';
+          c.respName = allUsers.find(u => u.id === c.responsible_id)?.name || c.responsible_name || 'Sistema';
+        });
+        setRawCands(cands);
+      }
     } catch (err) {
-      console.error('Erro ao montar dashboard:', err);
+      if (!silent) console.error('Erro ao montar dashboard:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 

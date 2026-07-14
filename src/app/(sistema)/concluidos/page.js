@@ -77,45 +77,48 @@ export default function ConcluidosPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData(false);
+    const interval = setInterval(() => fetchData(true), 5000);
+    return () => clearInterval(interval);
+  }, []);
 
-  async function fetchData() {
-    setLoading(true);
+  async function fetchData(silent = false) {
+    if (!silent) setLoading(true);
     try {
-      const me = await api.me();
-      let roleName = '';
-      if (me) {
-        roleName = me.role || '';
-        setCurrentUserRole(roleName);
-      }
-
-      const [candidatesData, unitsData, rolesData, usersData, customRolesData] = await Promise.all([
-        api.candidates.list({ status: 'Concluído', orderBy: 'admission_date', order: 'desc' }),
-        api.units.list(),
-        api.jobRoles.list(),
-        api.users.list(),
-        api.customRoles.list().catch(() => []) 
-      ]);
-
-      if (me && customRolesData) {
-        const myRoleObj = customRolesData.find(r => r.name === roleName);
-        if (myRoleObj && myRoleObj.permissions) {
-          setUserPermissions(myRoleObj.permissions);
+      if (!silent) {
+        const me = await api.me();
+        let roleName = '';
+        if (me) {
+          roleName = me.role || '';
+          setCurrentUserRole(roleName);
         }
-      }
 
-      if (candidatesData) {
-        const apenasConcluidos = candidatesData.filter(c => c.status === 'Concluído');
-        setCandidates(apenasConcluidos);
+        const [candidatesData, unitsData, rolesData, usersData, customRolesData] = await Promise.all([
+          api.candidates.list({ status: 'Concluído', orderBy: 'admission_date', order: 'desc' }),
+          api.units.list(),
+          api.jobRoles.list(),
+          api.users.list(),
+          api.customRoles.list().catch(() => [])
+        ]);
+
+        if (me && customRolesData) {
+          const myRoleObj = customRolesData.find(r => r.name === roleName);
+          if (myRoleObj && myRoleObj.permissions) setUserPermissions(myRoleObj.permissions);
+        }
+
+        if (candidatesData) setCandidates(candidatesData.filter(c => c.status === 'Concluído'));
+        if (unitsData) setUnits(unitsData);
+        if (rolesData) setRoles(rolesData);
+        if (usersData) setResponsibles(usersData);
+      } else {
+        const candidatesData = await api.candidates.list({ status: 'Concluído', orderBy: 'admission_date', order: 'desc', _t: Date.now() }).catch(() => null);
+        if (candidatesData) setCandidates(candidatesData.filter(c => c.status === 'Concluído'));
       }
-      
-      if (unitsData) setUnits(unitsData);
-      if (rolesData) setRoles(rolesData);
-      if (usersData) setResponsibles(usersData);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      if (!silent) console.error('Error fetching data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
