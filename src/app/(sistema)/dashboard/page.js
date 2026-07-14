@@ -221,7 +221,7 @@ export default function DashboardPage() {
         totalEntrevistados++;
         if (!aprovacaoPorPsicoMap[psico]) aprovacaoPorPsicoMap[psico] = { name: psico, aprovados: 0, total: 0 };
         aprovacaoPorPsicoMap[psico].total++;
-        if (c.analysis_status === 'Aprovado') {
+        if (c.interview_approved === true) {
           totalAprovados++;
           aprovacaoPorPsicoMap[psico].aprovados++;
         }

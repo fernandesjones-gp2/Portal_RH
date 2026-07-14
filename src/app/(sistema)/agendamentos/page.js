@@ -338,12 +338,13 @@ export default function AgendamentosPage() {
     
     try {
       if (candidate.process_type === 'Promoção') {
-        await api.candidates.update(candidate.id, { status: 'Promoção (Em Andamento)' });
+        await api.candidates.update(candidate.id, { status: 'Promoção (Em Andamento)', interview_approved: true });
       } else {
-        await api.candidates.update(candidate.id, { 
-          status: 'Pré-Admissão (Pendente)', 
-          docs_status: 'Solicitada', 
-          docs_request_date: new Date().toISOString() 
+        await api.candidates.update(candidate.id, {
+          status: 'Pré-Admissão (Pendente)',
+          docs_status: 'Solicitada',
+          docs_request_date: new Date().toISOString(),
+          interview_approved: true,
         });
       }
       fetchData(true);
