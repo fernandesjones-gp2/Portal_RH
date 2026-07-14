@@ -226,30 +226,27 @@ export default function DashboardPage() {
           aprovacaoPorPsicoMap[psico].aprovados++;
         }
       }
-      if (st === 'Concluído' && c.admission_date) {
-        const dataAprov = c.analysis_update_date || c.interview_date;
-        if (dataAprov) {
-          const diff = Math.floor((new Date(c.admission_date) - new Date(dataAprov)) / 86400000);
-          if (diff >= 0) {
-            leadtimeValues.push(diff);
-            if (!leadtimePorPsicoMap[psico]) leadtimePorPsicoMap[psico] = { name: psico, sum: 0, count: 0 };
-            leadtimePorPsicoMap[psico].sum   += diff;
-            leadtimePorPsicoMap[psico].count += 1;
-            const admD   = new Date(c.admission_date);
-            const admKey = `${admD.getFullYear()}-${String(admD.getMonth()+1).padStart(2,'0')}`;
-            const admLbl = `${String(admD.getMonth()+1).padStart(2,'0')}/${admD.getFullYear()}`;
-            if (!leadtimeMensalMap[admKey]) leadtimeMensalMap[admKey] = { key: admKey, label: admLbl, sum: 0, count: 0 };
-            leadtimeMensalMap[admKey].sum   += diff;
-            leadtimeMensalMap[admKey].count += 1;
-            const unidade = c.unitName || 'N/A';
-            if (!leadtimeUnidadeMap[unidade]) leadtimeUnidadeMap[unidade] = { name: unidade, sum: 0, count: 0 };
-            leadtimeUnidadeMap[unidade].sum   += diff;
-            leadtimeUnidadeMap[unidade].count += 1;
-            const funcao = c.roleName || 'N/A';
-            if (!leadtimeFuncaoMap[funcao]) leadtimeFuncaoMap[funcao] = { name: funcao, sum: 0, count: 0 };
-            leadtimeFuncaoMap[funcao].sum   += diff;
-            leadtimeFuncaoMap[funcao].count += 1;
-          }
+      if (st === 'Concluído' && c.admission_date && c.interview_date) {
+        const diff = Math.floor((new Date(c.admission_date) - new Date(c.interview_date)) / 86400000);
+        if (diff >= 0) {
+          leadtimeValues.push(diff);
+          if (!leadtimePorPsicoMap[psico]) leadtimePorPsicoMap[psico] = { name: psico, sum: 0, count: 0 };
+          leadtimePorPsicoMap[psico].sum   += diff;
+          leadtimePorPsicoMap[psico].count += 1;
+          const admD   = new Date(c.admission_date);
+          const admKey = `${admD.getFullYear()}-${String(admD.getMonth()+1).padStart(2,'0')}`;
+          const admLbl = `${String(admD.getMonth()+1).padStart(2,'0')}/${admD.getFullYear()}`;
+          if (!leadtimeMensalMap[admKey]) leadtimeMensalMap[admKey] = { key: admKey, label: admLbl, sum: 0, count: 0 };
+          leadtimeMensalMap[admKey].sum   += diff;
+          leadtimeMensalMap[admKey].count += 1;
+          const unidade = c.unitName || 'N/A';
+          if (!leadtimeUnidadeMap[unidade]) leadtimeUnidadeMap[unidade] = { name: unidade, sum: 0, count: 0 };
+          leadtimeUnidadeMap[unidade].sum   += diff;
+          leadtimeUnidadeMap[unidade].count += 1;
+          const funcao = c.roleName || 'N/A';
+          if (!leadtimeFuncaoMap[funcao]) leadtimeFuncaoMap[funcao] = { name: funcao, sum: 0, count: 0 };
+          leadtimeFuncaoMap[funcao].sum   += diff;
+          leadtimeFuncaoMap[funcao].count += 1;
         }
       }
 
@@ -372,6 +369,9 @@ export default function DashboardPage() {
   } = comp;
 
   // ── Derivações de render ──────────────────────────────────────────────────
+  const taxaConvAprovados = aprovadosEntrevista > 0 ? Math.round((admitidos.length / aprovadosEntrevista) * 100) : null;
+  const taxaConvGeral     = totalFunil > 0          ? Math.round((admitidos.length / totalFunil) * 100)          : null;
+
   const entrevistasAtrasadas  = funil.entrevistas.filter(c => c.tempoParado > 2);
   const gargaloPorResponsavel = entrevistasAtrasadas.reduce((acc, c) => { acc[c.respName] = (acc[c.respName] || 0) + 1; return acc; }, {});
   const gargaloPorFuncao      = entrevistasAtrasadas.reduce((acc, c) => { acc[c.roleName] = (acc[c.roleName] || 0) + 1; return acc; }, {});
@@ -841,7 +841,7 @@ export default function DashboardPage() {
               {leadtimeMedio > 0 ? leadtimeMedio : '—'}
               {leadtimeMedio > 0 && <span style={{ fontSize: '0.9rem', fontWeight: '400', marginLeft: '5px' }}>dias</span>}
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>Aprovação → Admissão · passe o mouse</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>Entrevista → Admissão · passe o mouse</div>
           </div>
           {hoverCard === 'leadtime' && leadtimePorPsicologo.length > 0 && (
             <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50, backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '0.85rem', boxShadow: '0 8px 24px rgba(0,0,0,0.18)' }}>
@@ -857,6 +857,28 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Card 5: Taxa de Conversão */}
+        <div className="glass-panel" style={{ padding: '1rem', borderRadius: 'var(--radius-lg)', backgroundColor: 'var(--surface-color)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.6rem' }}>
+            <TrendingUp size={14} color="#f59e0b" /> Taxa de Conversão
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Aprovados → Admitidos</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: '900', color: '#f59e0b', lineHeight: '1' }}>
+              {taxaConvAprovados !== null ? `${taxaConvAprovados}%` : '—'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '0.4rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.4rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Geral (concluídos)</span>
+            <span style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--saritur-orange)', lineHeight: '1' }}>
+              {taxaConvGeral !== null ? `${taxaConvGeral}%` : '—'}
+            </span>
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+            {admitidos.length} admitidos de {totalFunil} concluídos
+          </div>
         </div>
       </div>
 
