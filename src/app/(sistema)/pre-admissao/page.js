@@ -324,7 +324,31 @@ export default function PipelineAdmissaoPage() {
       if (warning) { if (warning.block) { alert(warning.message); return; } else { if (!confirm(warning.message)) return; } }
     }
     const interviewIso = getBrazilIsoDate(interview_date);
-    try { await api.candidates.update(id, { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd, responsible_id, interview_date: interviewIso }); } catch (err) { return alert('Erro ao atualizar: ' + err.message); }
+    const updates = { process_type, name, mother_name, phone, cpf, rg, job_role_id, unit_id, gender, is_pcd, responsible_id, interview_date: interviewIso };
+
+    const old = candidates.find(c => c.id === id);
+    if (old?.status === 'Pré-Admissão (Pronto)') {
+      const LABELS = { process_type: 'Tipo de Processo', name: 'Nome', mother_name: 'Nome da Mãe', phone: 'Telefone', cpf: 'CPF', rg: 'RG', gender: 'Sexo', is_pcd: 'PCD', job_role_id: 'Função', unit_id: 'Unidade', responsible_id: 'Responsável', interview_date: 'Data da Entrevista' };
+      const resolve = (field, val) => {
+        if (field === 'job_role_id') return roles.find(r => r.id === val)?.name || val || '(não informado)';
+        if (field === 'unit_id') return units.find(u => u.id === val)?.name || val || '(não informado)';
+        if (field === 'responsible_id') return responsibles.find(u => u.id === val)?.name || val || '(não informado)';
+        if (field === 'is_pcd') return val ? 'Sim' : 'Não';
+        if (val === null || val === undefined || val === '') return '(não informado)';
+        return String(val);
+      };
+      const oldMap = { process_type: old.process_type, name: old.name, mother_name: old.mother_name, phone: old.phone, cpf: old.cpf, rg: old.rg, gender: old.gender, is_pcd: old.is_pcd, job_role_id: old.job_role_id, unit_id: old.unit_id, responsible_id: old.responsible_id, interview_date: getBrazilIsoDate(old.interview_date) };
+      const ts = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const auditLines = [];
+      for (const field of Object.keys(LABELS)) {
+        if (String(oldMap[field] ?? '') !== String(updates[field] ?? '')) {
+          auditLines.push(`🔄 [AUDITORIA CADASTRAL] "${LABELS[field]}" alterado.\n   Antes: ${resolve(field, oldMap[field])} | Depois: ${resolve(field, updates[field])}\n   Por: ${currentUserName} em ${ts}.`);
+        }
+      }
+      if (auditLines.length > 0) updates.feedback = (old.feedback || '') + '\n' + auditLines.join('\n');
+    }
+
+    try { await api.candidates.update(id, updates); } catch (err) { return alert('Erro ao atualizar: ' + err.message); }
     setEditingBasicData(null); fetchData(true);
   }
 
@@ -505,6 +529,7 @@ export default function PipelineAdmissaoPage() {
 
         {isBloco3 && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            {currentUserRole === 'ADMIN' && (<button onClick={() => setEditingBasicData({...c})} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Editar Dados Cadastrais (somente ADMIN)"><Lock size={16} style={{ marginRight: '6px' }} /> Editar Cadastro</button>)}
             <button onClick={() => { markAsRead(c); setDetailsCandidate(c); }} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }} title="Ver Informações Completas"><Eye size={16} style={{ marginRight: '6px' }} /> Ver Detalhes</button>
             {isPendingCancellation ? (
               ['ADMIN', 'DP'].includes(currentUserRole) && (<button onClick={() => handleConfirmCancellationDP(c)} className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', backgroundColor: 'var(--danger-color)' }}><ShieldAlert size={16} style={{ marginRight: '6px' }} /> Confirmar Cancelamento</button>)
