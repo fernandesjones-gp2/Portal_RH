@@ -14,7 +14,7 @@ export default function SystemLogsPage() {
     checkAccessAndFetch();
   }, []);
 
-async function checkAccessAndFetch() {
+  async function checkAccessAndFetch() {
     setLoading(true);
     try {
       const user = await api.me();
@@ -27,7 +27,7 @@ async function checkAccessAndFetch() {
       }
       setIsAdmin(true);
 
-      // 2. BUSCA OS LOGS NO BANCO DE DADOS
+      // 2. BUSCA OS LOGS 
       const res = await fetch('/api/audit-logs');
       if (res.ok) {
         const logsData = await res.json();
@@ -46,10 +46,10 @@ async function checkAccessAndFetch() {
 
   // Filtro de pesquisa (pesquisa por nome, módulo ou ação)
   const filteredLogs = logs.filter(log => 
-    log.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.module.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.description.toLowerCase().includes(searchTerm.toLowerCase())
+    (log.user_name && log.user_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (log.module && log.module.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (log.action && log.action.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (log.description && log.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   // Tela de bloqueio para não-admins
