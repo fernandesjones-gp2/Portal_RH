@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, MessageSquareText, PieChart, Lock, UserCog } from 'lucide-react';
+import { Plus, Edit2, Trash2, Check, X, ShieldAlert, Save, Users, Settings2, BarChart3, MessageSquareText, PieChart, Lock, UserCog, History } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ConfiguracoesPage() {
   const [isAdmin, setIsAdmin] = useState(null);
@@ -230,7 +231,21 @@ export default function ConfiguracoesPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', paddingBottom: '3rem' }}>
-      <div><h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Painel de Governança Integrada</h1></div>
+      
+      {/* CABEÇALHO COM O NOVO BOTÃO DE LOGS DE AUDITORIA */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Painel de Governança Integrada</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Gerencie permissões, tabelas base e configurações do sistema.</p>
+        </div>
+        
+        <Link href="/configuracoes/logs" style={{ textDecoration: 'none' }}>
+          <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', padding: '0.6rem 1rem', fontWeight: 'bold' }}>
+            <History size={18} />
+            Logs de Auditoria (Sistema)
+          </button>
+        </Link>
+      </div>
 
       <div className="glass-panel" style={{ padding: '2rem', backgroundColor: 'var(--surface-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
