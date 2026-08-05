@@ -16,7 +16,7 @@ export default function SistemaLayout({ children }) {
   const [userRole, setUserRole] = useState('');
   const [userStatus, setUserStatus] = useState(''); 
   const [userVacation, setUserVacation] = useState(null);
-  const [sidebarVisible, setSidebarVisible] = useState(true); // Controle de visibilidade da barra lateral
+  const [sidebarVisible, setSidebarVisible] = useState(true);
 
   const menuItems = [
     { name: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
@@ -155,7 +155,12 @@ export default function SistemaLayout({ children }) {
   }
 
   const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
-  const isAllowed = allowedPaths.includes(pathname);
+  
+  // VERIFICAÇÃO DE SEGURANÇA (MODIFICADA)
+  // Permite acesso se o caminho estiver na matriz OU se for o Admin tentando aceder aos logs
+  const isLogsRoute = pathname.startsWith('/configuracoes/logs');
+  const isAdminAndLogs = userRole === 'ADMIN' && isLogsRoute;
+  const isAllowed = allowedPaths.includes(pathname) || isAdminAndLogs;
   
   if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
     router.push(allowedPaths[0]);
@@ -180,6 +185,10 @@ export default function SistemaLayout({ children }) {
   }
 
   const initials = userName ? userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'RH';
+  
+  // Obter o nome dinâmico para o Header
+  let headerTitle = menuItems.find(i => i.path === pathname)?.name || 'Sistema';
+  if (isLogsRoute) headerTitle = 'Logs de Auditoria';
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }}>
@@ -203,7 +212,7 @@ export default function SistemaLayout({ children }) {
           <nav style={{ padding: '1rem', flex: 1 }}>
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.5rem', margin: 0, padding: 0 }}>
               {filteredMenuItems.map((item) => {
-                const isActive = pathname === item.path;
+                const isActive = pathname === item.path || (item.path === '/configuracoes' && isLogsRoute);
                 return (
                   <li key={item.path}>
                     <Link href={item.path} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)', color: isActive ? 'var(--text-main)' : 'var(--text-muted)', backgroundColor: isActive ? 'var(--bg-color)' : 'transparent', fontWeight: isActive ? '500' : '400', fontSize: '0.9rem', transition: 'all 0.1s ease', textDecoration: 'none' }}>
@@ -240,7 +249,7 @@ export default function SistemaLayout({ children }) {
               <Menu size={20} color="var(--text-main)" />
             </button>
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: '600', margin: 0 }}>
-              {menuItems.find(i => i.path === pathname)?.name || 'Sistema'}
+              {headerTitle}
             </h2>
           </div>
 
