@@ -156,11 +156,13 @@ export default function SistemaLayout({ children }) {
 
   const filteredMenuItems = menuItems.filter(item => allowedPaths.includes(item.path));
   
-  // VERIFICAÇÃO DE SEGURANÇA (MODIFICADA)
-  // Permite acesso se o caminho estiver na matriz OU se for o Admin tentando aceder aos logs
+  // VERIFICAÇÃO DE SEGURANÇA (BLINDADA)
   const isLogsRoute = pathname.startsWith('/configuracoes/logs');
-  const isAdminAndLogs = userRole === 'ADMIN' && isLogsRoute;
-  const isAllowed = allowedPaths.includes(pathname) || isAdminAndLogs;
+  
+  // Deixa a rota de logs passar SEMPRE pela portaria do layout. 
+  // A segurança definitiva de ADMIN é executada dentro da própria página de logs.
+  // Isso mata o erro de redirecionamento por corrida de estado.
+  const isAllowed = allowedPaths.includes(pathname) || isLogsRoute;
   
   if (!isAllowed && allowedPaths.length > 0 && pathname !== '/') {
     router.push(allowedPaths[0]);
@@ -186,17 +188,15 @@ export default function SistemaLayout({ children }) {
 
   const initials = userName ? userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'RH';
   
-  // Obter o nome dinâmico para o Header
   let headerTitle = menuItems.find(i => i.path === pathname)?.name || 'Sistema';
   if (isLogsRoute) headerTitle = 'Logs de Auditoria';
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }}>
-      {/* Sidebar - Controlada pelo estado sidebarVisible */}
+      {/* Sidebar */}
       {sidebarVisible && (
         <aside style={{ width: '250px', backgroundColor: 'var(--surface-color)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
           
-          {/* CABEÇALHO ALTERADO: LOGO EM CIMA E TÍTULO DEBAIXO */}
           <div style={{ padding: '2rem 1.5rem 1.5rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', textAlign: 'center' }}>
             <img 
               src="/logo.png" 
@@ -238,7 +238,6 @@ export default function SistemaLayout({ children }) {
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <header style={{ backgroundColor: 'var(--surface-color)', padding: '1.25rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           
-          {/* SEÇÃO DO TÍTULO COM O BOTÃO DE ALTERNÂNCIA (TOGGLE) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <button 
               onClick={() => setSidebarVisible(!sidebarVisible)} 
