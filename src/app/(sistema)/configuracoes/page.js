@@ -21,7 +21,6 @@ export default function ConfiguracoesPage() {
   const [selectedReasonId, setSelectedReasonId] = useState(''); 
   const [newUnit, setNewUnit] = useState('');
   
-  // MUDANÇA: Novo estado para capturar a função + setor
   const [newRoleForm, setNewRoleForm] = useState({ name: '', sector: '' });
   
   const [newReason, setNewReason] = useState(''); 
@@ -56,13 +55,15 @@ export default function ConfiguracoesPage() {
   const [archivedDateTo, setArchivedDateTo] = useState('');
   const [archivedLoading, setArchivedLoading] = useState(false);
 
+  // MUDANÇA AQUI: A rota de logs foi registrada na matriz do sistema!
   const menusAcessiveis = [
     { path: '/dashboard', label: 'Dashboard' }, 
     { path: '/agendamentos', label: 'Agendamentos' },
     { path: '/pre-admissao', label: 'Pipeline de Admissão' }, 
     { path: '/promocoes', label: 'Gestão de Promoções' },
     { path: '/concluidos', label: 'Processos Concluídos' }, 
-    { path: '/configuracoes', label: 'Configurações do Sistema' }
+    { path: '/configuracoes', label: 'Configurações do Sistema' },
+    { path: '/configuracoes/logs', label: 'Logs de Auditoria' } 
   ];
 
   useEffect(() => {
@@ -176,7 +177,6 @@ export default function ConfiguracoesPage() {
   async function handleUpdateUnit() { if (!editingUnit.name) return; try { await api.units.update(editingUnit.id, { name: editingUnit.name.toUpperCase() }); setEditingUnit(null); fetchAllData(); } catch (error) {} }
   async function handleDeleteUnit(id) { if (!confirm('Excluir unidade?')) return; try { await api.units.remove(id); setSelectedUnitId(''); fetchAllData(); } catch (error) { alert('Existem vínculos ativos.'); } }
   
-  // LÓGICA DE FUNÇÕES (Atualizado para suportar Setor)
   async function handleAddRole(e) { 
     e.preventDefault(); 
     if (!newRoleForm.name) return; 
@@ -232,18 +232,20 @@ export default function ConfiguracoesPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem', paddingBottom: '3rem' }}>
       
-      {/* CABEÇALHO COM O NOVO BOTÃO DE LOGS DE AUDITORIA */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Painel de Governança Integrada</h1>
           <p style={{ color: 'var(--text-muted)' }}>Gerencie permissões, tabelas base e configurações do sistema.</p>
         </div>
         
-        <Link href="/configuracoes/logs" style={{ textDecoration: 'none' }}>
-          <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', padding: '0.6rem 1rem', fontWeight: 'bold' }}>
-            <History size={18} />
-            Logs de Auditoria (Sistema)
-          </button>
+        {/* MUDANÇA AQUI: Link com formatação aprimorada para Next.js 13+ */}
+        <Link 
+          href="/configuracoes/logs" 
+          className="btn-secondary" 
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--saritur-orange)', borderColor: 'var(--saritur-orange)', padding: '0.6rem 1rem', fontWeight: 'bold', textDecoration: 'none' }}
+        >
+          <History size={18} />
+          Logs de Auditoria (Sistema)
         </Link>
       </div>
 
